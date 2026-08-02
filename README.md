@@ -1,5 +1,5 @@
 # IBC Manager
-
+![GUI](images/GUI.png)
 IBC Manager is a Windows-first graphical front end for configuring, launching,
 monitoring, and controlling multiple IBC-managed Trader Workstation or IB
 Gateway sessions.
