@@ -1,0 +1,414 @@
+package io.github.ibcmanager.tests;
+
+import io.github.ibcmanager.app.Version;
+import io.github.ibcmanager.model.Profile;
+
+import java.io.DataInputStream;
+import java.io.InputStream;
+import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
+
+public final class ArchitectureTests implements TestSuite {
+    private static final Path ROOT = locateProjectRoot();
+    private static final Pattern PACKAGE = Pattern.compile("(?m)^package\\s+([a-zA-Z0-9_.]+);$");
+    private static final Pattern IMPORT = Pattern.compile("(?m)^import\\s+(?:static\\s+)?([a-zA-Z0-9_.*]+);$");
+
+    @Override public String name() { return "Source architecture, dependency, packaging, and release invariants"; }
+
+    @Override
+    public List<NamedTest> tests() {
+        return List.of(
+                new NamedTest("all Java source files satisfy strict hygiene rules", this::sourceHygiene),
+                new NamedTest("Java packages match source-tree paths", this::packageLayout),
+                new NamedTest("production code has no third-party Java dependencies", this::dependencyBoundary),
+                new NamedTest("profile persistence model has no password or secret field", this::profileHasNoSecret),
+                new NamedTest("launcher and startup task never pass credentials in arguments", this::noCredentialArguments),
+                new NamedTest("runtime supervision avoids global desktop and process automation", this::noGlobalAutomation),
+                new NamedTest("manual start stop restart and pause actions require confirmation", this::sessionActionConfirmationWiring),
+                new NamedTest("test subprocesses are platform-neutral", this::portableTestSubprocesses),
+                new NamedTest("no TOTP generator or cryptographic OTP implementation is present", this::noTotpImplementation),
+                new NamedTest("IBC baseline resource and GPL notices are retained", this::ibcNotices),
+                new NamedTest("release documentation and build scripts are present", this::releaseFiles),
+                new NamedTest("Windows packaging launchers enforce the complete release gates", this::windowsPackagingScripts),
+                new NamedTest("source directories contain no generated binary artifacts", this::noGeneratedArtifacts),
+                new NamedTest("compiled production classes target Java 17 bytecode", this::java17Bytecode),
+                new NamedTest("every concrete test suite is registered", this::allSuitesRegistered),
+                new NamedTest("default IBC configuration resource is present and parseable", this::defaultConfigResource),
+                new NamedTest("manager distribution does not bundle the IBC executable JAR", this::noBundledIbcJar),
+                new NamedTest("asynchronous assertions count one logical assertion", this::eventuallyCountsOnce));
+    }
+
+    private void sourceHygiene() throws Exception {
+        List<Path> files = javaSources();
+        Assertions.isTrue(files.size() >= 90, "expected a substantial production and test source tree");
+        Pattern unresolvedMarker = Pattern.compile("(?i)\\b(?:" + "TO" + "DO|FIX" + "ME|X" + "XX)\\b");
+        String stackTraceCall = ".printStack" + "Trace(";
+        for (Path file : files) {
+            byte[] bytes = Files.readAllBytes(file);
+            Assertions.isFalse(bytes.length >= 3 && bytes[0] == (byte) 0xEF
+                            && bytes[1] == (byte) 0xBB && bytes[2] == (byte) 0xBF,
+                    file + " must not contain a UTF-8 BOM");
+            String source = new String(bytes, StandardCharsets.UTF_8);
+            Assertions.isFalse(source.contains("\t"), file + " contains a tab character");
+            Assertions.isFalse(Pattern.compile("(?m)[ \\t]+$").matcher(source).find(),
+                    file + " contains trailing whitespace");
+            Assertions.isFalse(unresolvedMarker.matcher(source).find(),
+                    file + " contains an unresolved work marker");
+            Assertions.isFalse(Pattern.compile("(?m)^import\\s+(?:static\\s+)?[^;]+\\.\\*;").matcher(source).find(),
+                    file + " contains a wildcard import");
+            if (file.startsWith(ROOT.resolve("src/main/java"))) {
+                Assertions.isFalse(source.contains(stackTraceCall),
+                        file + " must use controlled logging instead of printStackTrace");
+            }
+        }
+    }
+
+    private void packageLayout() throws Exception {
+        for (Path sourceFile : javaSources()) {
+            String source = Files.readString(sourceFile, StandardCharsets.UTF_8);
+            Matcher matcher = PACKAGE.matcher(source);
+            Assertions.isTrue(matcher.find(), sourceFile + " must declare a package");
+            Path sourceRoot;
+            if (sourceFile.startsWith(ROOT.resolve("src/main/java"))) {
+                sourceRoot = ROOT.resolve("src/main/java");
+            } else if (sourceFile.startsWith(ROOT.resolve("src/test/java"))) {
+                sourceRoot = ROOT.resolve("src/test/java");
+            } else {
+                sourceRoot = ROOT.resolve("src/build/java");
+            }
+            String expected = sourceRoot.relativize(sourceFile.getParent()).toString()
+                    .replace(sourceFile.getFileSystem().getSeparator(), ".");
+            Assertions.equals(expected, matcher.group(1), sourceFile + " package/path mismatch");
+        }
+    }
+
+    private void dependencyBoundary() throws Exception {
+        Set<String> external = new HashSet<>();
+        for (Path file : mainSources()) {
+            Matcher matcher = IMPORT.matcher(Files.readString(file, StandardCharsets.UTF_8));
+            while (matcher.find()) {
+                String imported = matcher.group(1);
+                if (!imported.startsWith("java.") && !imported.startsWith("javax.")
+                        && !imported.startsWith("io.github.ibcmanager.")) {
+                    external.add(imported);
+                }
+            }
+        }
+        Assertions.equals(Set.of(), external, "production imports must be JDK or internal only");
+        String build = Files.readString(ROOT.resolve("build.xml"), StandardCharsets.UTF_8);
+        Assertions.notContains(build, "<dependency", "Ant build must not fetch hidden dependencies");
+        Assertions.notContains(build, "maven", "Ant build must remain offline and dependency-free");
+    }
+
+    private void profileHasNoSecret() {
+        for (Field field : Profile.class.getDeclaredFields()) {
+            String name = field.getName().toLowerCase(Locale.ROOT);
+            Assertions.isFalse(name.contains("password") || name.contains("secret") || name.contains("token"),
+                    "persistent profile model contains a secret field: " + field.getName());
+        }
+    }
+
+    private void noCredentialArguments() throws Exception {
+        String launch = source("src/main/java/io/github/ibcmanager/runtime/LaunchScriptFactory.java");
+        Assertions.notContains(launch, "/PW:", "IBC launch command must not contain password argument syntax");
+        Assertions.notContains(launch, "/User:", "IBC launch command must not contain username argument syntax");
+        Assertions.notContains(launch, "/FIXPW:", "IBC launch command must not contain FIX password syntax");
+        String task = source("src/main/java/io/github/ibcmanager/task/TaskSchedulerCommandBuilder.java");
+        Assertions.notContains(task.toUpperCase(Locale.ROOT), "/RU SYSTEM",
+                "startup task must not run as LocalSystem");
+        Assertions.contains(task, "/IT", "startup task must require an interactive desktop");
+        Assertions.contains(task, "/RL", "startup task must specify privilege level");
+        Assertions.contains(task, "LIMITED", "startup task must use limited privilege");
+    }
+
+    private void noGlobalAutomation() throws Exception {
+        String all = allMainSource();
+        Assertions.notContains(all, "java.awt.Robot", "global keyboard/mouse automation is forbidden");
+        Assertions.notContains(all, "ProcessHandle.allProcesses", "global process enumeration is forbidden");
+        Assertions.notContains(all, "EnumWindows", "global title-based window enumeration is forbidden");
+        Assertions.notContains(all, "SetForegroundWindow", "global focus manipulation is forbidden");
+        Assertions.notContains(all, "pyautogui", "Python screen automation must not be introduced");
+        Assertions.contains(all, "StartIBC.bat", "official IBC launcher delegation must remain present");
+    }
+
+    private void sessionActionConfirmationWiring() throws Exception {
+        String mainFrame = source("src/main/java/io/github/ibcmanager/ui/MainFrame.java");
+        Assertions.contains(mainFrame, "startButton.addActionListener(event -> confirmStartSelected())",
+                "manual Start must pass through its confirmation handler");
+        Assertions.contains(mainFrame, "ProfileSessionAction.STOP.configureButton(stopButton)",
+                "Stop must use the same emphasized session-button presentation as the other actions");
+        Assertions.contains(mainFrame, "stopButton.addActionListener(event -> confirmStopSelected())",
+                "manual Stop must pass through its confirmation handler");
+        Assertions.contains(mainFrame,
+                "if (!ProfileSessionAction.STOP.confirm(this, controller.profile())) return;",
+                "Stop must stop immediately when confirmation is declined");
+        Assertions.contains(mainFrame, "stop(controller, false)",
+                "confirmed normal Stop must remain a graceful stop operation");
+        Assertions.notContains(mainFrame, "stopButton.addActionListener(event -> stopSelected(false))",
+                "normal Stop must not bypass confirmation");
+        Assertions.contains(mainFrame, "ProfileSessionAction.RESTART, \"Restart\"",
+                "manual Restart must pass through its confirmation handler");
+        Assertions.contains(mainFrame, "ProfileSessionAction.PAUSE, \"Pause\"",
+                "manual Pause must pass through its confirmation handler");
+        Assertions.contains(mainFrame, "if (!ProfileSessionAction.START.confirm(this, controller.profile())) return;",
+                "Start must stop immediately when confirmation is declined");
+        Assertions.contains(mainFrame, "if (!action.confirm(this, controller.profile())) return;",
+                "Restart and Pause must stop immediately when confirmation is declined");
+        Assertions.notContains(mainFrame,
+                "restartButton.addActionListener(event -> runCommand(\"Restart\"",
+                "Restart must not bypass confirmation");
+        Assertions.notContains(mainFrame,
+                "pauseButton.addActionListener(event -> runCommand(\"Pause\"",
+                "Pause must not bypass confirmation");
+        String policy = source("src/main/java/io/github/ibcmanager/ui/ProfileSessionAction.java");
+        Assertions.contains(policy, "Object[] options = {prompt.confirmationLabel(), \"Cancel\"}",
+                "session confirmations must always provide an explicit Cancel option");
+        Assertions.contains(policy, "options, options[1]",
+                "Cancel must be the initially selected session-confirmation option");
+    }
+
+    private void portableTestSubprocesses() throws Exception {
+        String quotedShell = "\"ba" + "sh\"";
+        String processBuilderShell = "new ProcessBuilder(" + quotedShell;
+        String commandListShell = "List.of(" + quotedShell;
+        String unixZeroDevice = "/dev/" + "zero";
+        try (Stream<Path> stream = Files.walk(ROOT.resolve("src/test/java"))) {
+            for (Path file : stream.filter(path -> path.getFileName().toString().endsWith(".java")).toList()) {
+                String testSource = Files.readString(file, StandardCharsets.UTF_8);
+                Assertions.notContains(testSource, processBuilderShell,
+                        file + " must not require bash for an executable test");
+                Assertions.notContains(testSource, commandListShell,
+                        file + " must not require bash for an executable test");
+                Assertions.notContains(testSource, unixZeroDevice,
+                        file + " must not require Unix device files");
+            }
+        }
+        String support = source("src/test/java/io/github/ibcmanager/tests/TestSupport.java");
+        String fixture = source("src/test/java/io/github/ibcmanager/tests/SubprocessFixture.java");
+        Assertions.contains(support, "System.getProperty(\"java.home\")",
+                "test subprocesses must use the current JDK instead of a platform shell");
+        Assertions.contains(support, "java.class.path",
+                "test subprocesses must retain the active compiled-test classpath");
+        Assertions.contains(fixture, "TestSupport.javaCommand(\"sleep\"",
+                "process-tree fixture must create its child through the same portable Java path");
+    }
+
+    private void noTotpImplementation() throws Exception {
+        String all = allMainSource();
+        Assertions.notContains(all, "javax.crypto.Mac", "no OTP HMAC implementation should be present");
+        Assertions.notContains(all, "HmacSHA1", "no TOTP algorithm should be present");
+        Assertions.notContains(all, "Base32", "no TOTP Base32 secret handling should be present");
+        Assertions.isFalse(mainSources().stream().anyMatch(path ->
+                        path.getFileName().toString().toLowerCase(Locale.ROOT).contains("totp")),
+                "no TOTP implementation class should exist");
+    }
+
+    private void ibcNotices() throws Exception {
+        Path retainedLicense = ROOT.resolve("third_party/ibc-3.24.1/LICENSE.txt");
+        Path projectLicense = ROOT.resolve("LICENSE.txt");
+        Path version = ROOT.resolve("third_party/ibc-3.24.1/version.txt");
+        Assertions.fileExists(retainedLicense, "IBC license must be retained");
+        Assertions.fileExists(projectLicense, "project GPL license must be present");
+        Assertions.fileExists(version, "IBC baseline marker must be retained");
+        String license = Files.readString(retainedLicense, StandardCharsets.UTF_8);
+        Assertions.contains(license, "GNU GENERAL PUBLIC LICENSE", "retained license is not GPL");
+        Assertions.contains(license, "Version 3", "retained license must be GPL version 3");
+        Assertions.equals(Version.IBC_BASELINE, Files.readString(version, StandardCharsets.UTF_8).trim(),
+                "code and retained IBC baseline must agree");
+        Assertions.contains(Files.readString(ROOT.resolve("NOTICE.txt"), StandardCharsets.UTF_8),
+                "not affiliated", "unofficial-project notice must be explicit");
+    }
+
+    private void releaseFiles() {
+        for (String file : List.of(
+                "README.md", "CHANGELOG.md", "LICENSE.txt", "NOTICE.txt", "TEST_REPORT.md", "CODE_REVIEW.md", "build.xml",
+                "run.bat", "build.bat", "test.bat", "package-windows.bat", "validate-windows.bat",
+                "docs/ARCHITECTURE.md", "docs/SECURITY.md", "docs/TESTING.md",
+                "docs/USER_GUIDE.md", "docs/WINDOWS_VALIDATION_CHECKLIST.md",
+                "scripts/bootstrap.bat", "scripts/ensure-prerequisites.ps1",
+                "src/build/java/io/github/ibcmanager/build/BuildProject.java",
+                "scripts/build.bat", "scripts/test.bat", "scripts/run.bat",
+                "scripts/package-windows.bat", "scripts/validate-windows.bat")) {
+            Assertions.fileExists(ROOT.resolve(file), "missing release file: " + file);
+        }
+    }
+
+    private void windowsPackagingScripts() throws Exception {
+        String wrapper = Files.readString(ROOT.resolve("package-windows.bat"), StandardCharsets.UTF_8);
+        String canonical = Files.readString(ROOT.resolve("scripts/package-windows.bat"), StandardCharsets.UTF_8);
+        Assertions.contains(wrapper, "scripts\\package-windows.bat",
+                "root packaging launcher must delegate to the canonical script");
+        Assertions.contains(wrapper, "%*", "root packaging launcher must forward arguments");
+        Assertions.contains(wrapper, "exit /b %ERRORLEVEL%",
+                "root packaging launcher must preserve the canonical script exit code");
+        Assertions.contains(canonical, "bootstrap.bat\" Package",
+                "packaging must use the permission-based prerequisite bootstrap");
+        Assertions.contains(canonical, "%IBC_MANAGER_JAVA_EXE%",
+                "packaging must invoke the bootstrap-selected Java executable");
+        Assertions.contains(canonical,
+                "src\\build\\java\\io\\github\\ibcmanager\\build\\BuildProject.java",
+                "packaging must use the dependency-free JDK-native build driver");
+        Assertions.notContains(canonical, "IBC_MANAGER_ANT_BAT",
+                "Windows packaging must not depend on an Apache Ant download");
+        Assertions.contains(canonical, "%IBC_MANAGER_JPACKAGE_EXE%",
+                "packaging must invoke the verified jpackage path");
+        Assertions.contains(canonical, "clean test jar smoke gui-smoke dist",
+                "packaging must run all automated build and smoke gates");
+        Assertions.contains(canonical, "--type app-image",
+                "packaging must produce a self-contained application image");
+        Assertions.contains(canonical, "--type exe", "packaging must attempt an EXE installer");
+        int exePackaging = canonical.indexOf("--type exe");
+        int releaseArchive = canonical.indexOf("windows-release-zip");
+        Assertions.isTrue(releaseArchive > exePackaging,
+                "the Windows release ZIP must be assembled only after EXE installer creation");
+        Assertions.contains(canonical, "IBC_Manager_1.0.8_Release_windows.zip",
+                "Windows release ZIP must use the requested versioned filename");
+        Assertions.contains(canonical, "--main-class io.github.ibcmanager.app.IbcManagerApp",
+                "packaging must use the production entry point");
+        Assertions.contains(canonical, "IBC-Manager-1.0.8.jar",
+                "packaging must use the versioned release JAR");
+        String driver = Files.readString(
+                ROOT.resolve("src/build/java/io/github/ibcmanager/build/BuildProject.java"),
+                StandardCharsets.UTF_8);
+        Assertions.contains(driver, "_Release_windows.zip",
+                "the build driver must create the Windows release archive name");
+        Assertions.contains(driver, "findSingleWindowsInstaller",
+                "Windows release assembly must reject missing or ambiguous installers");
+        Assertions.contains(driver, "copyTree(normalReleaseRoot, stageRoot)",
+                "Windows release archive must retain the normal release files alongside the installer");
+        Assertions.contains(driver, "SHA256SUMS.txt",
+                "the Windows release archive must contain an installer checksum");
+        Assertions.contains(driver, "verifyWindowsReleaseArchiveAssembly",
+                "the executable build-driver self-test must assemble and inspect a synthetic Windows archive");
+        Assertions.notContains(canonical, "/PW:", "packaging script must not accept an IBC password");
+        Assertions.notContains(canonical, "/User:", "packaging script must not accept an IBC username");
+    }
+
+    private void noGeneratedArtifacts() throws Exception {
+        for (Path sourceRoot : List.of(ROOT.resolve("src"), ROOT.resolve("docs"), ROOT.resolve("scripts"))) {
+            try (Stream<Path> stream = Files.walk(sourceRoot)) {
+                for (Path file : stream.filter(Files::isRegularFile).toList()) {
+                    String lower = file.getFileName().toString().toLowerCase(Locale.ROOT);
+                    Assertions.isFalse(lower.endsWith(".class") || lower.endsWith(".exe")
+                                    || lower.endsWith(".dll") || lower.endsWith(".jar")
+                                    || lower.endsWith(".tmp") || lower.endsWith(".pyc"),
+                            "generated binary found in source/documentation tree: " + file);
+                }
+            }
+        }
+    }
+
+    private void java17Bytecode() throws Exception {
+        try (InputStream raw = Version.class.getResourceAsStream("/io/github/ibcmanager/app/Version.class")) {
+            Assertions.isTrue(raw != null, "compiled Version.class resource must be available");
+            try (DataInputStream input = new DataInputStream(raw)) {
+                Assertions.equals(0xCAFEBABE, input.readInt(), "invalid class-file magic");
+                input.readUnsignedShort();
+                int major = input.readUnsignedShort();
+                Assertions.equals(61, major, "production bytecode must target Java 17");
+            }
+        }
+    }
+
+    private void allSuitesRegistered() throws Exception {
+        String runner = source("src/test/java/io/github/ibcmanager/tests/TestRunner.java");
+        List<Path> suiteFiles;
+        try (Stream<Path> stream = Files.walk(ROOT.resolve("src/test/java"))) {
+            suiteFiles = stream.filter(path -> path.getFileName().toString().endsWith("Tests.java"))
+                    .sorted().toList();
+        }
+        Assertions.isTrue(suiteFiles.size() >= 12, "expected broad suite coverage");
+        for (Path file : suiteFiles) {
+            String source = Files.readString(file, StandardCharsets.UTF_8);
+            if (!source.contains("implements TestSuite")) continue;
+            Matcher matcher = PACKAGE.matcher(source);
+            Assertions.isTrue(matcher.find(), file + " package declaration missing");
+            String className = file.getFileName().toString().replace(".java", "");
+            String fullyQualified = matcher.group(1) + "." + className;
+            Assertions.contains(runner, '"' + fullyQualified + '"',
+                    "test suite is not registered: " + fullyQualified);
+        }
+    }
+
+    private void defaultConfigResource() throws Exception {
+        Path resource = ROOT.resolve("src/main/resources/default-config.ini");
+        Assertions.fileExists(resource, "default IBC config resource missing");
+        String text = Files.readString(resource, StandardCharsets.UTF_8);
+        Assertions.isTrue(text.length() > 10_000, "retained config template appears truncated");
+        Assertions.contains(text, "IbLoginId=", "config template lacks login setting");
+        Assertions.contains(text, "CommandServerPort=", "config template lacks command server setting");
+        Assertions.contains(text, "TradingMode=", "config template lacks trading mode setting");
+        Class<?> documentType = Class.forName("io.github.ibcmanager.config.IbcConfigDocument");
+        Object parsed = documentType.getMethod("parse", String.class).invoke(null, text);
+        String rendered = (String) documentType.getMethod("render").invoke(parsed);
+        Assertions.equals(text, rendered, "unmodified template must parse/render exactly");
+    }
+
+    private void noBundledIbcJar() throws Exception {
+        List<Path> matches = new ArrayList<>();
+        try (Stream<Path> stream = Files.walk(ROOT)) {
+            for (Path path : stream.filter(Files::isRegularFile).toList()) {
+                if (path.getFileName().toString().equalsIgnoreCase("IBC.jar")) matches.add(path);
+            }
+        }
+        Assertions.equals(List.of(), matches, "IBC binary must remain a separate user installation");
+    }
+
+    private void eventuallyCountsOnce() throws Exception {
+        Assertions.eventually(Duration.ofMillis(100), () -> true,
+                "immediate asynchronous condition should pass");
+        if (Assertions.count() != 1) {
+            Assertions.fail("eventually must count one logical assertion, actual=" + Assertions.count());
+        }
+    }
+
+    private static List<Path> javaSources() throws Exception {
+        List<Path> result = new ArrayList<>(mainSources());
+        for (Path sourceRoot : List.of(ROOT.resolve("src/test/java"), ROOT.resolve("src/build/java"))) {
+            try (Stream<Path> stream = Files.walk(sourceRoot)) {
+                result.addAll(stream.filter(path -> path.getFileName().toString().endsWith(".java")).toList());
+            }
+        }
+        result.sort(Comparator.naturalOrder());
+        return List.copyOf(result);
+    }
+
+    private static List<Path> mainSources() throws Exception {
+        try (Stream<Path> stream = Files.walk(ROOT.resolve("src/main/java"))) {
+            return stream.filter(path -> path.getFileName().toString().endsWith(".java"))
+                    .sorted().toList();
+        }
+    }
+
+    private static String allMainSource() throws Exception {
+        StringBuilder result = new StringBuilder();
+        for (Path file : mainSources()) result.append(Files.readString(file, StandardCharsets.UTF_8)).append('\n');
+        return result.toString();
+    }
+
+    private static String source(String relative) throws Exception {
+        return Files.readString(ROOT.resolve(relative), StandardCharsets.UTF_8);
+    }
+
+    private static Path locateProjectRoot() {
+        Path current = Path.of("").toAbsolutePath().normalize();
+        for (int i = 0; i < 8 && current != null; i++, current = current.getParent()) {
+            if (Files.isDirectory(current.resolve("src/main/java")) && Files.isRegularFile(current.resolve("build.xml"))) {
+                return current;
+            }
+        }
+        throw new IllegalStateException("Could not locate IBC Manager source root");
+    }
+}

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="IBC Manager" default="dist" basedir=".">
+    <property name="app.version" value="1.0.8"/>
+    <property name="build.driver"
+              value="src/build/java/io/github/ibcmanager/build/BuildProject.java"/>
+
+    <condition property="java.executable" value="${java.home}/bin/java.exe">
+        <os family="windows"/>
+    </condition>
+    <property name="java.executable" value="${java.home}/bin/java"/>
+
+    <!--
+        Optional Apache Ant compatibility wrapper. All real compilation,
+        testing, locking, smoke checks, and archive generation remain in the
+        dependency-free JDK-native build driver used by the Windows scripts.
+    -->
+    <macrodef name="run-build-driver">
+        <attribute name="targets"/>
+        <sequential>
+            <exec executable="${java.executable}" dir="${basedir}" failonerror="true">
+                <arg value="-Dfile.encoding=UTF-8"/>
+                <arg value="${build.driver}"/>
+                <arg line="@{targets}"/>
+            </exec>
+        </sequential>
+    </macrodef>
+
+    <target name="clean">
+        <run-build-driver targets="clean"/>
+    </target>
+
+    <target name="compile">
+        <run-build-driver targets="compile"/>
+    </target>
+
+    <target name="compile-tests">
+        <run-build-driver targets="compile-tests"/>
+    </target>
+
+    <target name="test">
+        <run-build-driver targets="test"/>
+    </target>
+
+    <target name="jar">
+        <run-build-driver targets="jar"/>
+    </target>
+
+    <target name="smoke">
+        <run-build-driver targets="smoke"/>
+    </target>
+
+    <target name="gui-smoke">
+        <run-build-driver targets="gui-smoke"/>
+    </target>
+
+    <target name="dist">
+        <run-build-driver targets="dist"/>
+    </target>
+
+    <target name="self-test">
+        <run-build-driver targets="self-test"/>
+    </target>
+
+    <target name="version">
+        <run-build-driver targets="version"/>
+    </target>
+</project>

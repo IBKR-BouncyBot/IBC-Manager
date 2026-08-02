@@ -1,0 +1,397 @@
+package io.github.ibcmanager.ui;
+
+import io.github.ibcmanager.config.IbcConfigSchema;
+import io.github.ibcmanager.config.SettingDefinition;
+import io.github.ibcmanager.model.Profile;
+import io.github.ibcmanager.tests.Assertions;
+import io.github.ibcmanager.tests.NamedTest;
+import io.github.ibcmanager.tests.TestSuite;
+import io.github.ibcmanager.tests.TestSupport;
+
+import javax.swing.DefaultCellEditor;
+import javax.swing.JPanel;
+import javax.swing.JTable;
+import javax.swing.SwingUtilities;
+import java.awt.GridBagConstraints;
+import java.awt.Point;
+import java.awt.Rectangle;
+import java.awt.event.MouseEvent;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+
+public final class UiModelTests implements TestSuite {
+    @Override public String name() { return "Swing UI models, controls, and secret-lifecycle helpers"; }
+
+    @Override
+    public List<NamedTest> tests() {
+        return List.of(
+                new NamedTest("settings model exposes stable columns and editable values", this::modelStructure),
+                new NamedTest("settings model filters sensitive and profile-controlled keys", this::modelFiltering),
+                new NamedTest("settings model trims edits and resets overrides", this::modelEditing),
+                new NamedTest("settings model returns values in schema order and independent maps", this::modelOrdering),
+                new NamedTest("profile tab owns and normalizes SecondFactorDevice", this::secondFactorDevice),
+                new NamedTest("installation action buttons retain preferred dimensions", this::installationButtons),
+                new NamedTest("session actions present explicit profile-specific confirmations", this::sessionActionPrompts),
+                new NamedTest("session action buttons are larger and visually distinct", this::sessionActionButtons),
+                new NamedTest("settings table uses enumerated editors and escaped tooltips", this::settingsTable),
+                new NamedTest("profile edit result copies and clears password material", this::profileEditResult),
+                new NamedTest("UI layout helpers create predictable grid constraints", this::layoutHelpers),
+                new NamedTest("EDT helper executes both queued and direct actions safely", this::eventDispatchHelper),
+                new NamedTest("theme installation is repeatable in a headless test process", this::themeInstall));
+    }
+
+    private void modelStructure() {
+        ProfileSettingsTableModel model = new ProfileSettingsTableModel(Map.of());
+        Assertions.isTrue(model.getRowCount() > 20, "the structured editor must expose a useful IBC schema");
+        Assertions.equals(3, model.getColumnCount(), "settings model column count changed");
+        Assertions.equals("Category", model.getColumnName(0), "category column mismatch");
+        Assertions.equals("Setting", model.getColumnName(1), "setting column mismatch");
+        Assertions.equals("Value", model.getColumnName(2), "value column mismatch");
+        Assertions.equals(String.class, model.getColumnClass(0), "category type mismatch");
+        Assertions.equals(String.class, model.getColumnClass(1), "setting type mismatch");
+        Assertions.equals(String.class, model.getColumnClass(2), "value type mismatch");
+        Assertions.isFalse(model.isCellEditable(0, 0), "category must be read-only");
+        Assertions.isFalse(model.isCellEditable(0, 1), "setting name must be read-only");
+        Assertions.isTrue(model.isCellEditable(0, 2), "setting value must be editable");
+        Assertions.equals("", model.getColumnName(99), "unknown columns must have a safe name");
+    }
+
+    private void modelFiltering() {
+        Map<String, String> initial = Map.of(
+                "IbPassword", "secret",
+                "IbLoginId", "user",
+                "TradingMode", "live",
+                "CommandServerPort", "7462",
+                "SecondFactorDevice", "IBKR Mobile",
+                "AcceptIncomingConnectionAction", "accept");
+        ProfileSettingsTableModel model = new ProfileSettingsTableModel(initial);
+        List<String> keys = definitions(model).stream().map(SettingDefinition::key).toList();
+        for (String excluded : List.of("IbPassword", "IbLoginId", "TradingMode", "CommandServerPort",
+                "BindAddress", "OverrideTwsApiPort", "MinimizeMainWindow", "IbDir", "SecondFactorDevice")) {
+            Assertions.isFalse(keys.contains(excluded), excluded + " must be controlled outside the settings table");
+        }
+        Assertions.equals(Map.of("AcceptIncomingConnectionAction", "accept"), model.settings(),
+                "only editable non-sensitive overrides may be emitted");
+        Assertions.isFalse(keys.stream().anyMatch(IbcConfigSchema::isSensitive),
+                "no sensitive schema entry may reach the settings table");
+    }
+
+    private void modelEditing() {
+        ProfileSettingsTableModel model = new ProfileSettingsTableModel(Map.of());
+        int row = rowFor(model, "AcceptIncomingConnectionAction");
+        model.setValueAt("  accept  ", row, 2);
+        Assertions.equals("accept", model.settings().get("AcceptIncomingConnectionAction"),
+                "edited values must be trimmed");
+        Assertions.equals("accept", model.getValueAt(row, 2), "edited value must be shown");
+        model.setValueAt(null, row, 2);
+        Assertions.isFalse(model.settings().containsKey("AcceptIncomingConnectionAction"),
+                "null edit must remove the override");
+        model.setValueAt("reject", row, 1);
+        Assertions.isFalse(model.settings().containsKey("AcceptIncomingConnectionAction"),
+                "edits to read-only columns must be ignored");
+        model.setValueAt("reject", row, 2);
+        model.reset(row);
+        Assertions.equals("", model.getValueAt(row, 2), "reset must restore blank override");
+        model.reset(-1);
+        model.reset(model.getRowCount());
+        Assertions.equals(Map.of(), model.settings(), "out-of-range reset must be harmless");
+    }
+
+    private void modelOrdering() {
+        ProfileSettingsTableModel model = new ProfileSettingsTableModel(Map.of(
+                "AllowBlindTrading", "yes",
+                "AcceptIncomingConnectionAction", "accept",
+                "UnknownFutureSetting", "preserve elsewhere"));
+        List<String> expected = definitions(model).stream()
+                .map(SettingDefinition::key)
+                .filter(key -> key.equals("AllowBlindTrading") || key.equals("AcceptIncomingConnectionAction"))
+                .toList();
+        List<String> actual = new ArrayList<>(model.settings().keySet());
+        Assertions.equals(expected, actual, "emitted overrides must follow schema order");
+        Map<String, String> first = model.settings();
+        first.put("AllowBlindTrading", "no");
+        Assertions.equals("yes", model.settings().get("AllowBlindTrading"),
+                "callers must receive an independent settings map");
+        Assertions.isFalse(model.settings().containsKey("UnknownFutureSetting"),
+                "unknown settings belong in the raw managed-config editor, not this table");
+    }
+
+
+    private void secondFactorDevice() {
+        Map<String, String> original = new java.util.LinkedHashMap<>();
+        original.put("AllowBlindTrading", "yes");
+        original.put("secondfactordevice", "old device");
+        Map<String, String> updated = ProfileEditorDialog.withSecondFactorDevice(original, "  IBKR Mobile  ");
+        Assertions.equals("yes", updated.get("AllowBlindTrading"), "ordinary setting was lost");
+        Assertions.equals("IBKR Mobile", updated.get("SecondFactorDevice"),
+                "SecondFactorDevice must be trimmed and use canonical casing");
+        Assertions.isFalse(updated.containsKey("secondfactordevice"),
+                "case-variant duplicate SecondFactorDevice must be removed");
+        Assertions.equals("old device", original.get("secondfactordevice"),
+                "profile merge must not mutate its input map");
+
+        Map<String, String> removed = ProfileEditorDialog.withSecondFactorDevice(updated, "  ");
+        Assertions.isFalse(removed.keySet().stream().anyMatch(key -> key.equalsIgnoreCase("SecondFactorDevice")),
+                "blank profile field must remove the override");
+        Assertions.throwsType(NullPointerException.class,
+                () -> ProfileEditorDialog.withSecondFactorDevice(null, "device"),
+                "null settings map must be rejected");
+    }
+
+    private void installationButtons() {
+        javax.swing.JButton detect = new javax.swing.JButton("Detect common installations...");
+        javax.swing.JButton install = new javax.swing.JButton("Install IBC 3.24.1 from GitHub...");
+        java.awt.Dimension detectPreferred = detect.getPreferredSize();
+        java.awt.Dimension installPreferred = install.getPreferredSize();
+        JPanel panel = ProfileEditorDialog.installationActions(detect, install);
+        panel.setSize(detectPreferred.width + installPreferred.width + 80,
+                Math.max(detectPreferred.height, installPreferred.height) + 8);
+        panel.doLayout();
+        Assertions.equals(detectPreferred, detect.getMinimumSize(),
+                "detect button minimum size must equal its preferred size");
+        Assertions.equals(installPreferred, install.getMinimumSize(),
+                "install button minimum size must equal its preferred size");
+        Assertions.isTrue(detect.getWidth() >= detectPreferred.width,
+                "detect button was compressed horizontally");
+        Assertions.isTrue(detect.getHeight() >= detectPreferred.height,
+                "detect button was compressed vertically");
+        Assertions.isTrue(install.getWidth() >= installPreferred.width,
+                "install button was compressed horizontally");
+        Assertions.isTrue(install.getHeight() >= installPreferred.height,
+                "install button was compressed vertically");
+    }
+
+    private void sessionActionPrompts() {
+        Profile live = Profile.builder()
+                .name("Live gateway")
+                .tradingMode(io.github.ibcmanager.model.TradingMode.LIVE)
+                .targetType(io.github.ibcmanager.model.TargetType.GATEWAY)
+                .apiPort(4001)
+                .build();
+        Profile paper = live.toBuilder()
+                .name("Paper workstation")
+                .tradingMode(io.github.ibcmanager.model.TradingMode.PAPER)
+                .targetType(io.github.ibcmanager.model.TargetType.TWS)
+                .apiPort(7497)
+                .build();
+
+        ProfileSessionAction.Prompt liveStart = ProfileSessionAction.START.prompt(live);
+        Assertions.equals("Confirm start", liveStart.title(), "start confirmation title mismatch");
+        Assertions.equals("Start", liveStart.confirmationLabel(), "start confirmation label mismatch");
+        Assertions.equals(javax.swing.JOptionPane.WARNING_MESSAGE, liveStart.messageType(),
+                "live start must use a warning confirmation");
+        Assertions.contains(liveStart.message(), "Live gateway", "start confirmation must identify the profile");
+        Assertions.contains(liveStart.message(), "IB Gateway", "start confirmation must identify the application");
+        Assertions.contains(liveStart.message(), "Trading mode: Live", "start confirmation must identify live mode");
+        Assertions.contains(liveStart.message(), "API port: 4001", "start confirmation must identify the API port");
+        Assertions.contains(liveStart.message(), "LIVE trading profile",
+                "live start confirmation must include an explicit live warning");
+
+        ProfileSessionAction.Prompt paperStart = ProfileSessionAction.START.prompt(paper);
+        Assertions.equals(javax.swing.JOptionPane.QUESTION_MESSAGE, paperStart.messageType(),
+                "paper start may use an informational confirmation");
+        Assertions.contains(paperStart.message(), "Trader Workstation",
+                "paper start confirmation must identify TWS");
+        Assertions.notContains(paperStart.message(), "LIVE trading profile",
+                "paper start must not display the live-mode warning");
+
+        ProfileSessionAction.Prompt stop = ProfileSessionAction.STOP.prompt(live);
+        Assertions.equals("Confirm stop", stop.title(), "stop confirmation title mismatch");
+        Assertions.equals("Stop", stop.confirmationLabel(), "stop confirmation label mismatch");
+        Assertions.contains(stop.message(), "graceful shutdown",
+                "stop confirmation must explain graceful shutdown");
+        Assertions.contains(stop.message(), "connectivity will stop",
+                "stop confirmation must explain the connectivity impact");
+        Assertions.equals(javax.swing.JOptionPane.WARNING_MESSAGE, stop.messageType(),
+                "stop must use a warning confirmation");
+
+        ProfileSessionAction.Prompt restart = ProfileSessionAction.RESTART.prompt(live);
+        Assertions.equals("Confirm restart", restart.title(), "restart confirmation title mismatch");
+        Assertions.contains(restart.message(), "connectivity may be interrupted",
+                "restart confirmation must explain its connectivity impact");
+        Assertions.equals(javax.swing.JOptionPane.WARNING_MESSAGE, restart.messageType(),
+                "restart must use a warning confirmation");
+
+        ProfileSessionAction.Prompt pause = ProfileSessionAction.PAUSE.prompt(live);
+        Assertions.equals("Confirm pause", pause.title(), "pause confirmation title mismatch");
+        Assertions.contains(pause.message(), "Trading connectivity stops",
+                "pause confirmation must explain that trading connectivity stops");
+        Assertions.contains(pause.message(), "started again",
+                "pause confirmation must explain how to resume");
+        Assertions.throwsType(NullPointerException.class,
+                () -> ProfileSessionAction.START.prompt(null),
+                "session confirmations must reject a null profile");
+    }
+
+    private void sessionActionButtons() {
+        javax.swing.JButton start = new javax.swing.JButton();
+        javax.swing.JButton stop = new javax.swing.JButton();
+        javax.swing.JButton restart = new javax.swing.JButton();
+        javax.swing.JButton pause = new javax.swing.JButton();
+        ProfileSessionAction.START.configureButton(start);
+        ProfileSessionAction.STOP.configureButton(stop);
+        ProfileSessionAction.RESTART.configureButton(restart);
+        ProfileSessionAction.PAUSE.configureButton(pause);
+
+        for (javax.swing.JButton button : List.of(start, stop, restart, pause)) {
+            Assertions.isTrue(button.getPreferredSize().width >= ProfileSessionAction.MINIMUM_BUTTON_WIDTH,
+                    button.getText() + " button is not wide enough");
+            Assertions.isTrue(button.getPreferredSize().height >= ProfileSessionAction.MINIMUM_BUTTON_HEIGHT,
+                    button.getText() + " button is not tall enough");
+            Assertions.equals(button.getPreferredSize(), button.getMinimumSize(),
+                    button.getText() + " minimum size must retain its action presentation");
+            Assertions.equals(button.getPreferredSize(), button.getMaximumSize(),
+                    button.getText() + " maximum size must prevent toolbar layout from shrinking it");
+            Assertions.isTrue(button.getFont().isBold(), button.getText() + " button must use bold text");
+            Assertions.isTrue(button.getBorder() != null, button.getText() + " button must have a distinct border");
+            Assertions.isTrue(button.getToolTipText() != null && !button.getToolTipText().isBlank(),
+                    button.getText() + " button must explain its action");
+            Assertions.equals(button.getText(), button.getAccessibleContext().getAccessibleName(),
+                    button.getText() + " accessible name mismatch");
+            Assertions.equals(button.getToolTipText(), button.getAccessibleContext().getAccessibleDescription(),
+                    button.getText() + " accessible description mismatch");
+        }
+        Assertions.equals("startProfileButton", start.getName(), "start component name mismatch");
+        Assertions.equals("stopProfileButton", stop.getName(), "stop component name mismatch");
+        Assertions.equals("restartProfileButton", restart.getName(), "restart component name mismatch");
+        Assertions.equals("pauseProfileButton", pause.getName(), "pause component name mismatch");
+        List<javax.swing.JButton> actions = List.of(start, stop, restart, pause);
+        for (int first = 0; first < actions.size(); first++) {
+            for (int second = first + 1; second < actions.size(); second++) {
+                Assertions.notEquals(actions.get(first).getForeground(), actions.get(second).getForeground(),
+                        actions.get(first).getText() + " and " + actions.get(second).getText()
+                                + " buttons must have distinct accents");
+            }
+        }
+    }
+
+
+    private void settingsTable() throws Exception {
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        SwingUtilities.invokeAndWait(() -> {
+            try {
+                ProfileSettingsTableModel model = new ProfileSettingsTableModel(Map.of());
+                SettingsTable table = new SettingsTable(model);
+                table.setSize(760, Math.max(300, model.getRowCount() * table.getRowHeight()));
+                table.doLayout();
+                int enumRow = rowFor(model, "AcceptIncomingConnectionAction");
+                Assertions.isTrue(table.getCellEditor(enumRow, 2) instanceof DefaultCellEditor,
+                        "enumerated values must use a constrained editor");
+                int textRow = rowFor(model, "CommandPrompt");
+                Assertions.isFalse(table.getCellEditor(textRow, 2) instanceof DefaultCellEditor
+                                && ((DefaultCellEditor) table.getCellEditor(textRow, 2)).getComponent()
+                                instanceof javax.swing.JComboBox,
+                        "free-text values must not use an enum combo box");
+                Rectangle cell = table.getCellRect(enumRow, 1, true);
+                Point point = new Point(cell.x + 2, cell.y + 2);
+                MouseEvent event = new MouseEvent(table, MouseEvent.MOUSE_MOVED,
+                        System.currentTimeMillis(), 0, point.x, point.y, 0, false);
+                String tooltip = table.getToolTipText(event);
+                Assertions.contains(tooltip, "AcceptIncomingConnectionAction",
+                        "tooltip must identify the exact IBC key");
+                Assertions.contains(tooltip, "Default:", "tooltip must include default information");
+                Assertions.equals(null, table.getToolTipText(new MouseEvent(table, MouseEvent.MOUSE_MOVED,
+                        System.currentTimeMillis(), 0, -10, -10, 0, false)),
+                        "points outside rows must not produce a tooltip");
+            } catch (Throwable throwable) {
+                failure.set(throwable);
+            }
+        });
+        if (failure.get() != null) throw new AssertionError("Swing table test failed", failure.get());
+    }
+
+    private void profileEditResult() throws Exception {
+        Path root = TestSupport.tempDirectory("edit-result");
+        try {
+            Profile profile = TestSupport.validProfile(root.resolve("install"));
+            char[] original = "temporary-password".toCharArray();
+            ProfileEditResult result = new ProfileEditResult(profile, original);
+            original[0] = 'X';
+            Assertions.equals(profile, result.profile(), "result must retain profile");
+            Assertions.isTrue(result.hasPassword(), "non-empty password must be reported");
+            char[] first = result.passwordCopy();
+            Assertions.equals('t', first[0], "constructor must defensively copy password");
+            first[1] = 'X';
+            Assertions.equals('e', result.passwordCopy()[1], "passwordCopy must be defensive");
+            result.close();
+            char[] cleared = result.passwordCopy();
+            for (char value : cleared) Assertions.equals('\0', value, "close must clear internal password array");
+            ProfileEditResult empty = new ProfileEditResult(profile, null);
+            Assertions.isFalse(empty.hasPassword(), "null password must become empty");
+            Assertions.equals(0, empty.passwordCopy().length, "empty password copy must have zero length");
+            empty.close();
+        } finally {
+            TestSupport.deleteTree(root);
+        }
+    }
+
+    private void layoutHelpers() {
+        GridBagConstraints constraints = UiUtil.constraints(2, 3);
+        Assertions.equals(2, constraints.gridx, "grid x mismatch");
+        Assertions.equals(3, constraints.gridy, "grid y mismatch");
+        Assertions.equals(GridBagConstraints.WEST, constraints.anchor, "grid anchor mismatch");
+        Assertions.equals(GridBagConstraints.HORIZONTAL, constraints.fill, "grid fill mismatch");
+        Assertions.isTrue(constraints.insets.top > 0, "grid constraints must provide spacing");
+        JPanel panel = UiUtil.formPanel();
+        Assertions.isTrue(panel.getLayout() instanceof java.awt.GridBagLayout,
+                "form panel must use GridBagLayout");
+        javax.swing.JTextField field = new javax.swing.JTextField();
+        UiUtil.addRow(panel, 0, "Label", field);
+        Assertions.equals(2, panel.getComponentCount(), "form row must add label and field");
+        JPanel path = UiUtil.pathField(panel, field, true);
+        Assertions.equals(2, path.getComponentCount(), "path field must combine input and browse button");
+    }
+
+    private void eventDispatchHelper() throws Exception {
+        CountDownLatch queued = new CountDownLatch(1);
+        AtomicBoolean queuedOnEdt = new AtomicBoolean();
+        Thread worker = new Thread(() -> UiUtil.onEdt(() -> {
+            queuedOnEdt.set(SwingUtilities.isEventDispatchThread());
+            queued.countDown();
+        }), "ui-test-worker");
+        worker.start();
+        worker.join();
+        Assertions.eventually(Duration.ofSeconds(2), () -> queued.getCount() == 0,
+                "off-EDT action must be queued");
+        Assertions.isTrue(queuedOnEdt.get(), "queued action must execute on EDT");
+
+        AtomicBoolean direct = new AtomicBoolean();
+        SwingUtilities.invokeAndWait(() -> UiUtil.onEdt(() ->
+                direct.set(SwingUtilities.isEventDispatchThread())));
+        Assertions.isTrue(direct.get(), "EDT action must execute immediately on EDT");
+    }
+
+    private void themeInstall() throws Exception {
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        SwingUtilities.invokeAndWait(() -> {
+            try {
+                UiTheme.install();
+                UiTheme.install();
+                Assertions.isTrue(javax.swing.UIManager.getLookAndFeel() != null,
+                        "theme installation must leave a usable look and feel");
+            } catch (Throwable throwable) {
+                failure.set(throwable);
+            }
+        });
+        if (failure.get() != null) throw new AssertionError("theme installation failed", failure.get());
+    }
+
+    private static int rowFor(ProfileSettingsTableModel model, String key) {
+        for (int row = 0; row < model.getRowCount(); row++) {
+            if (model.definitionAt(row).key().equals(key)) return row;
+        }
+        throw new AssertionError("Missing schema row: " + key);
+    }
+
+    private static List<SettingDefinition> definitions(ProfileSettingsTableModel model) {
+        List<SettingDefinition> result = new ArrayList<>();
+        for (int row = 0; row < model.getRowCount(); row++) result.add(model.definitionAt(row));
+        return result;
+    }
+}
