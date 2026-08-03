@@ -29,8 +29,9 @@ The dependency-free runner covers:
   timeouts/output caps, and file/directory permission hardening;
 - atomic storage and recovery;
 - IBC command protocol, log parser, occupied-port preflight, process identity,
-  launch-script quoting, configuration-injection rejection, and incremental
-  UTF-8 log tailing;
+  launch-script quoting, configuration-injection rejection, incremental UTF-8
+  log tailing, 60-second application/process disk batching, detached live-output
+  relay survival, descriptor validation, and final partial-batch commits;
 - complete controller state transitions, failure cleanup, exact process-tree
   termination, and runtime credential-file lifecycle;
 - diagnostics redaction, unique naming, permissions, and failure cleanup;
@@ -45,11 +46,11 @@ The dependency-free runner covers:
   removal, and generated-config plumbing;
 - real profile-dialog construction, installation-action sizing, vertical scrolling,
   and field visibility;
-- profile-specific Start/Restart/Pause prompt content, live warning severity,
-  confirmation wiring, cancellation behavior, and the shared emphasized
-  Start/Stop/Restart/Pause accessibility, accent, and rendered-dimension policy;
-- app bootstrap, paths, locking, CLI smoke mode, logger isolation, and service
-  lifecycle;
+- profile-specific Start/Stop/Restart/Pause prompt content, live warning
+  severity, confirmation wiring, cancellation behavior, and the shared
+  emphasized action-button accessibility, accent, and rendered-dimension policy;
+- app bootstrap, paths, locking, CLI smoke mode, redacted 60-second
+  application-log batching, final close commit, and service lifecycle;
 - Swing table models, constrained editors, command availability, explicit
   force-stop controls, EDT helpers, and secret result lifecycle;
 - Java 8 version parsing/rejection and Java 17+ selection;
@@ -68,7 +69,13 @@ The dependency-free runner covers:
 - verified executable use by every Windows launcher;
 - PowerShell lexical balance, Windows PowerShell 5.1-compatible syntax policy,
   parser/escaping self-test presence, CRLF line endings, and release inclusion;
-- source architecture, package layout, dependency boundaries, Java class-file
+- detached process-output relay lifecycle, owner-restricted descriptor
+  round trips, live-before-disk output, 60-second production cadence, final
+  process-exit commit, and continued persistence after the manager process exits;
+- traffic-light status mapping, explicit non-color text, API-handshake caveat,
+  profile-list rendering, and real-window visibility;
+- source architecture, README image/release inclusion, Windows archive-only
+  installer/portable-image layout, dependency boundaries, Java class-file
   version, licensing, absence of global desktop automation, and deterministic
   logical assertion accounting.
 
@@ -125,6 +132,19 @@ classes, and `default-config.ini` resource.
   expected process exit that must remain PAUSED.
 - SHA-256 checksums are generated for final artifacts.
 
+### Release security and rollback audit gate
+
+The 1.0.10 audit suite exercises bounded and strict-encoding reads, symbolic-link
+substitution, atomic-write targets, profile/config/credential rollback, durable
+profile-deletion tombstones, incomplete-rollback retention and startup recovery,
+process fingerprints, exit-time metadata loss, PID-reuse protection, descendants
+created during root shutdown, one-deadline IBC command responses, response/line
+caps, line-boundary parsing, cross-role port collisions, log-memory caps, retry of
+a failed final process-log write, interrupted subprocess cleanup, relay-descriptor
+path restrictions, expanded secret redaction, and invalid path diagnostics.
+Failure cases assert that unrelated files, processes, profiles, and credentials
+remain unchanged.
+
 ### Cross-platform subprocess and lock regression gate
 
 Tests that exercise command execution, process lifecycle, process trees, and
@@ -136,23 +156,78 @@ test reads lock metadata only after release so it remains valid under Windows
 mandatory file-lock behavior. The lock regression also proves that a rejected
 same-JVM overlap does not release the cross-process native lock.
 
-## 1.0.8 automated result
+The dynamic-descendant test is also platform-neutral. A root Java fixture waits
+for a standard-input signal, creates a child after termination begins, publishes
+the child PID atomically, and stays alive long enough for the production
+terminator to discover the child. It deliberately does not use a JVM shutdown
+hook because external process termination does not provide portable shutdown-hook
+semantics across Windows and Unix-like systems. A source-architecture assertion
+rejects reintroduction of that non-portable test pattern.
 
-Validated on 2026-08-02 in the release build environment:
+## 1.0.13 automated result
 
-- 91 production source files and 23 test source files;
-- 425 automated test cases;
-- 5,113 assertions;
+Validated on 2026-08-03 in the release build environment:
+
+- 101 production source files and 24 test source files;
+- 477 automated test cases;
+- 5,484 assertions;
 - zero failed or skipped cases;
 - Java 17 bytecode target verified as class-file major version 61;
 - real `MainFrame` GUI smoke test under Xvfb;
 - packaged JAR `--version` and isolated `--headless-smoke`;
 - release and source archive extraction/rebuild checks.
 
+The 1.0.13 regression gate proves that periodic controller refreshes do not
+connect to the IBC command server. It checks lifecycle-state parsing, direct
+command dispatch without a preliminary socket probe, one cached fallback probe
+when reattaching without historical startup output, and continued one-time
+occupied-port preflight before launch. Architecture tests reject any future
+command-port probe inside the steady-state refresh or command-send paths.
+
+## 1.0.12 automated result
+
+Validated on 2026-08-03 in the release build environment:
+
+- 101 production source files and 24 test source files;
+- 474 automated test cases;
+- 5,458 assertions;
+- zero failed or skipped cases;
+- Java 17 bytecode target verified as class-file major version 61;
+- real `MainFrame` GUI smoke test under Xvfb;
+- packaged JAR `--version` and isolated `--headless-smoke`;
+- release and source archive extraction/rebuild checks.
+
+The Windows-package regression gate now checks the actual runtime requirement
+that failed in 1.0.11 packages. Both jpackage invocations must override the
+default jlink options without `--strip-native-commands`, and the portable app
+image must contain a nonempty `runtime\bin\java.exe`, and the completed
+`IBC_Manager_<version>_Release_windows.zip` is reopened and checked for that exact
+entry. Synthetic package assembly also proves that an app image with a runtime
+directory but no Java process launcher is rejected.
+
+The runtime launcher has a separate cross-platform test that rejects an empty or
+missing Java launcher, prefers `java.exe` on Windows, and accepts nonempty
+`javaw.exe` as a fallback.
+
+## 1.0.11 automated result
+
+Validated on 2026-08-03 in the release build environment:
+
+- 101 production source files and 24 test source files;
+- 473 automated test cases;
+- 5,431 assertions;
+- zero failed or skipped cases;
+- 30 consecutive targeted runs of the cooperative-shutdown process-tree test;
+- Java 17 bytecode target verified as class-file major version 61;
+- real `MainFrame` GUI smoke test under Xvfb;
+- packaged JAR `--version` and isolated `--headless-smoke`;
+- release and source archive extraction/rebuild checks.
+
 The build-driver self-test additionally assembles a synthetic Windows release
-archive from a normal release staging tree and fake jpackage outputs. It verifies
-the exact `IBC_Manager_<version>_Release_windows.zip` filename, installer/JAR/
-launcher retention, the embedded installer checksum, completed-ZIP readability,
+archive from fake jpackage outputs. It verifies the exact
+`IBC_Manager_<version>_Release_windows.zip` filename, a root-level versioned
+installer, the complete portable app-image folder with application and runtime
+payloads, absence of unrelated normal-release files, completed-ZIP readability,
 and rejection of multiple direct EXE installers.
 
 The compiler used for cross-platform validation is OpenJDK 21 with
@@ -212,8 +287,11 @@ public/live release, execute `validate-windows.bat` and complete
   access-denied handling, and non-overwrite behavior for `C:\IBC`;
 - profile-dialog layout at common Windows DPI scales and
   `SecondFactorDevice` persistence;
-- the larger/distinct Start/Stop/Restart/Pause row and cancellation of all three
+- the larger/distinct Start/Stop/Restart/Pause row and cancellation of all four
   confirmation dialogs at common Windows DPI scales;
+- green/yellow/red profile status presentation and API-handshake caveat;
+- live log display before the 60-second manager-owned disk commit, periodic
+  commit timing, final close/process-exit commits, and no duplicate records;
 - offline paper IB Gateway/TWS;
 - a real manual second-factor login.
 

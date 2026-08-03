@@ -37,6 +37,7 @@ Per-profile runtime controller
   ├─ runtime config lease
   ├─ official StartIBC.bat launch script
   ├─ exact process identity
+  ├─ detached live-output and 60-second disk-buffer relay
   ├─ log tailer/state parser
   ├─ command-server client
   └─ API/command TCP probes
@@ -96,20 +97,28 @@ or required. `build.xml` remains only as an optional compatibility wrapper for
 developers who already have Ant installed; every target delegates to the same
 driver and therefore participates in the same project lock.
 
+For Windows packaging, both jpackage invocations override the default jlink
+options so native Java commands are retained while debug data, headers, and
+manual pages remain stripped. The detached relay starts a child JVM and therefore
+requires a nonempty `runtime\bin\java.exe`; the script checks that exact file
+immediately after app-image creation.
+
 After `jpackage` successfully creates the Windows app image and EXE installer,
 `package-windows.bat` invokes the build driver's `windows-release-zip` target.
-That target copies the already validated normal release staging tree, adds the
-single versioned installer and its SHA-256 checksum, and writes:
+That target writes:
 
 ```text
 dist\IBC_Manager_<version>_Release_windows.zip
 ```
 
-The archive keeps the same internal `IBC_Manager_<version>` root as the normal
-release ZIP. ZIP assembly fails closed when the app-image launcher, normal
-release staging tree, or installer is missing or empty; when more than one
-installer is present; when the installer name does not match the current
-version; or when the completed ZIP cannot be reopened and validated.
+The Windows archive has no versioned wrapper directory and contains only the
+single versioned installer at its root plus the complete portable `IBC Manager`
+app-image directory. It intentionally does not duplicate the normal JAR release,
+documentation, launch scripts, notices, or checksum files. ZIP assembly fails
+closed when the app-image launcher, versioned application JAR,
+`runtime/bin/java.exe`, or installer is missing or empty; when more than one installer is present; when the
+installer name does not match the current version; when any unrelated file is
+staged; or when the completed ZIP cannot be reopened and validated.
 
 Java 8 can remain installed for other applications. No persistent `PATH` or
 `JAVA_HOME` mutation is performed.
@@ -176,6 +185,21 @@ API port. Cancel is the default option, and only an explicit action-specific
 choice reaches the runtime controller. Confirmed Stop requests a graceful stop;
 the destructive force-stop path has its own separate confirmation.
 
+## Status presentation
+
+`StatusIndicator` maps runtime states to a text-backed traffic-light status.
+Color is supplementary: the selected profile always has an explicit headline
+and detail message, and each profile-list entry includes its state in text.
+
+- Green is reserved for the directly observed condition that the configured API
+  TCP socket accepts connections.
+- Yellow covers transitional, waiting, paused, unknown, and logged-in states
+  where the API socket is not open.
+- Red covers stopped and error states.
+
+The green state does not imply an IB API handshake, account match, permission
+check, or trading readiness.
+
 ## Profile isolation
 
 Every profile has a UUID and independent:
@@ -214,6 +238,59 @@ bind address, legacy settings path, and `SecondFactorDevice`.
 saving removes case-variant duplicates, trims the value, and writes the canonical
 key. Blank removes the profile override and results in an empty IBC setting.
 
+## Buffered logging
+
+The manager-owned application logger formats and redacts records in memory.
+`PeriodicFileHandler` commits the pending batch to the rotating application log
+once every 60 seconds during normal operation and commits the final partial
+batch when the logger closes.
+
+Profile process output is handled by `BufferedProcessRelay`, a small detached
+Java process launched as the exact managed process root. It starts the official
+IBC launch command as its child, continuously drains merged stdout/stderr, and:
+
+1. forwards the bytes to the GUI over a pipe for immediate display and state
+   parsing;
+2. buffers the same bytes in memory;
+3. appends one batch to the profile log every 60 seconds;
+4. performs a final commit when the child exits.
+
+The relay remains alive when the GUI exits, so IBC/TWS output continues to be
+drained and periodically persisted. Its owner-only descriptor is created in the
+profile runtime directory and deleted before the child command is started. A
+reattached manager cannot recover the old live pipe and therefore follows the
+60-second disk log instead.
+
+Disk-write failures leave the pending batch in memory for the next interval or
+final close attempt. A hard crash or power loss can still lose the current
+partial interval. Logging performed independently by IBC, TWS, or IB Gateway is
+outside this mechanism.
+
+## Persistent-state transactions and bounded control files
+
+Application-owned state is treated as bounded, untrusted input even though it is
+stored under the current user's data directory. `BoundedFileReader` performs
+strict character decoding, enforces a caller-specific byte limit while reading,
+and opens files without following symbolic links. `SecureFileOperations`
+protects directory creation, file classification, moves, and recursive cleanup
+from link substitution.
+
+`AtomicFileWriter` writes through a same-directory, forced temporary file and
+activates it with an atomic replacement when the file system supports it. Profile
+save captures the prior profile, managed configuration, and encrypted credential
+state and restores all three after a late failure.
+
+Profile deletion uses a private tombstone directory under `.deletions`. A
+`PREPARED` transaction restores staged profile/runtime directories after an
+interrupted deletion; a `COMMITTED` transaction completes credential removal and
+cleanup. The tombstone directory name must contain the same profile UUID as its
+bounded metadata, preventing one transaction from targeting another profile.
+
+Control-file limits are explicit for profiles, IBC configurations, credentials,
+process identities, relay descriptors, installer metadata, diagnostic log tails,
+and deletion metadata. Malformed, oversized, symbolic, or unexpected file types
+fail closed.
+
 ## Runtime state
 
 A controller combines:
@@ -224,7 +301,7 @@ A controller combines:
 - API TCP-port availability.
 
 Possible states include validating, starting, waiting for login, waiting for
-second factor, running, API socket open, paused, stopping, stopped, and error.
+second factor, logged in with API closed, API TCP open, paused, stopping, stopped, and error.
 
 An expected termination reason distinguishes STOP, PAUSE, and an unrequested
 exit. PAUSE is retained after TWS/Gateway exits so the resumable session is not
@@ -232,6 +309,23 @@ misreported as a crash.
 
 The API socket state is intentionally described as a TCP check only. No account
 or protocol handshake is inferred.
+
+## IBC command-server safety
+
+Steady-state command readiness is passive. `IbcLogStateParser` tracks IBC's
+command-server starting, ready, accepted-command, failure, and shutdown messages.
+`ProfileRuntimeController.refresh()` never opens a command-server connection.
+When reattaching to an already-running process whose startup line is outside the
+bounded log tail, one fallback TCP probe is allowed and the result is cached.
+Launch preflight still checks the configured port once before credentials are
+loaded, and explicit commands connect directly without a preliminary probe.
+
+The command client validates host, port, and timeout values, applies one total
+operation deadline across connect and response reads, and bounds response lines,
+total characters, and line count. It retains IBC's partial-response behavior only
+when at least part of a response was received before timeout. Profile-set
+validation prevents API/API, command/command, and API/command cross-profile port
+collisions.
 
 ## Process ownership
 

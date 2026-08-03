@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -305,7 +306,7 @@ public final class ApplicationTests implements TestSuite {
         Thread.setDefaultUncaughtExceptionHandler(previous);
         try {
             AppPaths paths = new AppPaths(root);
-            AppLog logService = AppLog.initialize(paths);
+            AppLog logService = AppLog.initialize(paths, Duration.ofMillis(220));
             try {
                 Assertions.notEquals(previous, Thread.getDefaultUncaughtExceptionHandler(),
                         "logger must install its uncaught exception handler");
@@ -313,6 +314,13 @@ public final class ApplicationTests implements TestSuite {
                         "application records must not reach an unredacted parent console handler");
                 AppLog.get(ApplicationTests.class).log(Level.WARNING,
                         "IbPassword=LogSecret", new IllegalStateException("StartIBC /PW:ThrownSecret"));
+                Thread.sleep(60);
+                Assertions.isFalse(Files.exists(paths.appLog()) && Files.size(paths.appLog()) > 0,
+                        "application records must remain in memory before the scheduled disk commit");
+                Assertions.eventually(Duration.ofSeconds(3),
+                        () -> Files.exists(paths.appLog()) && Files.size(paths.appLog()) > 0,
+                        "application records must be committed on the configured interval");
+                AppLog.get(ApplicationTests.class).info("close-flush-marker");
             } finally {
                 logService.close();
             }
@@ -323,6 +331,9 @@ public final class ApplicationTests implements TestSuite {
             Assertions.notContains(log, "ThrownSecret", "formatted exception must redact command password");
             Assertions.contains(log, "[REDACTED]", "redaction must remain visible in logs");
             Assertions.contains(log, IllegalStateException.class.getName(), "exception type must remain diagnosable");
+            Assertions.contains(log, "close-flush-marker", "closing the logger must commit the final partial interval");
+            Assertions.equals(Duration.ofSeconds(60), AppLog.DISK_FLUSH_INTERVAL,
+                    "production application-log disk cadence must remain 60 seconds");
         } finally {
             Thread.setDefaultUncaughtExceptionHandler(original);
             TestSupport.deleteTree(root);

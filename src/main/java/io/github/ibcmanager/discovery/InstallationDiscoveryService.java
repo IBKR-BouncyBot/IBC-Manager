@@ -2,6 +2,7 @@ package io.github.ibcmanager.discovery;
 
 import io.github.ibcmanager.app.OperatingSystem;
 import io.github.ibcmanager.model.TargetType;
+import io.github.ibcmanager.security.SecureFileOperations;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -120,19 +121,19 @@ public final class InstallationDiscoveryService {
     }
 
     private static boolean isIbcDirectory(Path directory) {
-        return Files.isRegularFile(directory.resolve("IBC.jar"))
-                && Files.isRegularFile(directory.resolve("scripts").resolve("StartIBC.bat"));
+        return SecureFileOperations.isRegularFile(directory.resolve("IBC.jar"))
+                && SecureFileOperations.isRegularFile(directory.resolve("scripts").resolve("StartIBC.bat"));
     }
 
     private static boolean hasJarsDirectory(Path versionDirectory) {
-        return Files.isDirectory(versionDirectory.resolve("jars"))
-                || Files.isDirectory(versionDirectory.resolve("JARS"));
+        return SecureFileOperations.isDirectory(versionDirectory.resolve("jars"))
+                || SecureFileOperations.isDirectory(versionDirectory.resolve("JARS"));
     }
 
     private static List<Path> children(Path directory) {
-        if (!Files.isDirectory(directory)) return List.of();
+        if (!SecureFileOperations.isDirectory(directory)) return List.of();
         try (Stream<Path> stream = Files.list(directory)) {
-            return stream.filter(Files::isDirectory).toList();
+            return stream.filter(SecureFileOperations::isDirectory).toList();
         } catch (IOException | SecurityException ignored) {
             return List.of();
         }

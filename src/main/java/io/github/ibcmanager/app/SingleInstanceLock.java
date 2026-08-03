@@ -1,10 +1,13 @@
 package io.github.ibcmanager.app;
 
 import io.github.ibcmanager.security.FilePermissionHardener;
+import io.github.ibcmanager.security.SecureFileOperations;
 
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
+import java.nio.file.LinkOption;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Objects;
@@ -36,9 +39,15 @@ public final class SingleInstanceLock implements AutoCloseable {
         try {
             Path parent = normalized.getParent();
             if (parent != null) FilePermissionHardener.hardenDirectory(parent);
+            if (Files.isSymbolicLink(normalized)) {
+                throw new IOException("Single-instance lock must not be a symbolic link: " + normalized);
+            }
+            if (Files.exists(normalized, LinkOption.NOFOLLOW_LINKS)) {
+                SecureFileOperations.requireRegularFile(normalized, "Single-instance lock");
+            }
             FileChannel channel = FileChannel.open(normalized,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.WRITE);
+                    java.util.Set.of(StandardOpenOption.CREATE, StandardOpenOption.WRITE,
+                            LinkOption.NOFOLLOW_LINKS));
             try {
                 FilePermissionHardener.hardenFile(normalized);
                 FileLock lock = channel.tryLock();

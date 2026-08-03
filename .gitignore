@@ -1,0 +1,12 @@
+/build/
+/dist/
+*.class
+*.jar
+*.log
+*.tmp
+*.swp
+*.swo
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

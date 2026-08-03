@@ -32,6 +32,7 @@ public final class AppServices implements AutoCloseable {
     private final ProfileRepository profileRepository;
     private final ManagedConfigService managedConfigService;
     private final ProfileSaveService profileSaveService;
+    private final ProfileDeletionService profileDeletionService;
     private final ProfileValidator profileValidator;
     private final ProfileSetValidator profileSetValidator;
     private final RuntimeRegistry runtimeRegistry;
@@ -40,7 +41,8 @@ public final class AppServices implements AutoCloseable {
 
     private AppServices(AppPaths paths, CredentialStore credentialStore,
             ProfileRepository profileRepository, ManagedConfigService managedConfigService,
-            ProfileSaveService profileSaveService, ProfileValidator profileValidator, ProfileSetValidator profileSetValidator,
+            ProfileSaveService profileSaveService, ProfileDeletionService profileDeletionService,
+            ProfileValidator profileValidator, ProfileSetValidator profileSetValidator,
             RuntimeRegistry runtimeRegistry, DiagnosticBundleService diagnosticBundleService,
             TaskSchedulerService taskSchedulerService) {
         this.paths = paths;
@@ -48,6 +50,7 @@ public final class AppServices implements AutoCloseable {
         this.profileRepository = profileRepository;
         this.managedConfigService = managedConfigService;
         this.profileSaveService = profileSaveService;
+        this.profileDeletionService = profileDeletionService;
         this.profileValidator = profileValidator;
         this.profileSetValidator = profileSetValidator;
         this.runtimeRegistry = runtimeRegistry;
@@ -63,6 +66,7 @@ public final class AppServices implements AutoCloseable {
         FilePermissionHardener.hardenDirectory(paths.runtime());
         FilePermissionHardener.hardenDirectory(paths.logs());
         FilePermissionHardener.hardenDirectory(paths.diagnostics());
+        FilePermissionHardener.hardenDirectory(paths.deletions());
 
         OperatingSystem os = OperatingSystem.current();
         CredentialStore credentialStore = os == OperatingSystem.WINDOWS
@@ -71,6 +75,8 @@ public final class AppServices implements AutoCloseable {
         ProfileRepository repository = new ProfileRepository(paths);
         ManagedConfigService configService = new ManagedConfigService(paths);
         ProfileSaveService saveService = new ProfileSaveService(repository, credentialStore, configService);
+        ProfileDeletionService deletionService = new ProfileDeletionService(paths, repository, credentialStore);
+        deletionService.cleanupStaleTransactions();
         ProfileValidator validator = new ProfileValidator(credentialStore);
         ProfileSetValidator setValidator = new ProfileSetValidator();
         RuntimeConfigFactory runtimeConfigFactory = new RuntimeConfigFactory(paths, configService);
@@ -92,7 +98,7 @@ public final class AppServices implements AutoCloseable {
                 clock));
         DiagnosticBundleService diagnostics = new DiagnosticBundleService(paths, configService, validator, clock);
         TaskSchedulerService scheduler = new WindowsTaskSchedulerService();
-        return new AppServices(paths, credentialStore, repository, configService, saveService, validator,
+        return new AppServices(paths, credentialStore, repository, configService, saveService, deletionService, validator,
                 setValidator, registry, diagnostics, scheduler);
     }
 
@@ -101,6 +107,7 @@ public final class AppServices implements AutoCloseable {
     public ProfileRepository profileRepository() { return profileRepository; }
     public ManagedConfigService managedConfigService() { return managedConfigService; }
     public ProfileSaveService profileSaveService() { return profileSaveService; }
+    public ProfileDeletionService profileDeletionService() { return profileDeletionService; }
     public ProfileValidator profileValidator() { return profileValidator; }
     public ProfileSetValidator profileSetValidator() { return profileSetValidator; }
     public RuntimeRegistry runtimeRegistry() { return runtimeRegistry; }

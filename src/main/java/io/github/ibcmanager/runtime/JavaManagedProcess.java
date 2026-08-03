@@ -10,10 +10,22 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 final class JavaManagedProcess implements ManagedProcess {
+    private static final Duration OUTPUT_DRAIN_TIMEOUT = Duration.ofSeconds(2);
     private final Process process;
+    private final LiveProcessOutput liveOutput;
+    private final CompletableFuture<ProcessHandle> exitFuture;
 
     JavaManagedProcess(Process process) {
+        this(process, null);
+    }
+
+    JavaManagedProcess(Process process, LiveProcessOutput liveOutput) {
         this.process = process;
+        this.liveOutput = liveOutput;
+        this.exitFuture = process.toHandle().onExit().thenApply(handle -> {
+            if (this.liveOutput != null) this.liveOutput.await(OUTPUT_DRAIN_TIMEOUT);
+            return handle;
+        });
     }
 
     @Override public long pid() { return process.pid(); }
@@ -24,9 +36,11 @@ final class JavaManagedProcess implements ManagedProcess {
             return stream.sorted(Comparator.comparingLong(ProcessHandle::pid).reversed()).toList();
         }
     }
-    @Override public CompletableFuture<ProcessHandle> onExit() { return process.toHandle().onExit(); }
+    @Override public CompletableFuture<ProcessHandle> onExit() { return exitFuture; }
     @Override public boolean waitFor(Duration timeout) throws InterruptedException {
-        return process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        boolean exited = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        if (exited && liveOutput != null) liveOutput.await(OUTPUT_DRAIN_TIMEOUT);
+        return exited;
     }
     @Override public void destroy() { process.destroy(); }
     @Override public void destroyForcibly() { process.destroyForcibly(); }
@@ -34,5 +48,11 @@ final class JavaManagedProcess implements ManagedProcess {
         if (process.isAlive()) return OptionalInt.empty();
         try { return OptionalInt.of(process.exitValue()); }
         catch (IllegalThreadStateException ex) { return OptionalInt.empty(); }
+    }
+    @Override public boolean hasLiveOutput() { return liveOutput != null; }
+    @Override public List<String> drainOutputLines() {
+        if (liveOutput == null) return List.of();
+        if (!process.isAlive()) liveOutput.await(OUTPUT_DRAIN_TIMEOUT);
+        return liveOutput.drain();
     }
 }

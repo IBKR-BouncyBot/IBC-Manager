@@ -1,10 +1,16 @@
 package io.github.ibcmanager.tests;
 
 import io.github.ibcmanager.app.SingleInstanceLock;
+import io.github.ibcmanager.runtime.DefaultProcessLauncher;
+import io.github.ibcmanager.runtime.LaunchSpec;
+import io.github.ibcmanager.runtime.ManagedProcess;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.Map;
 import java.util.Arrays;
 
 /**
@@ -26,7 +32,14 @@ public final class SubprocessFixture {
             case "output" -> writeOutput(intArgument(arguments, 1));
             case "exit" -> System.exit(intArgument(arguments, 1));
             case "stdout-stderr" -> writeBothStreams();
+            case "line-then-sleep" -> lineThenSleep(stringArgument(arguments, 1), longArgument(arguments, 2));
+            case "launch-buffered-and-exit" -> launchBufferedAndExit(
+                    stringArgument(arguments, 1), longArgument(arguments, 2));
             case "spawn-child" -> spawnChild(longArgument(arguments, 1));
+            case "spawn-child-after-signal" -> spawnChildAfterSignal(
+                    stringArgument(arguments, 1), longArgument(arguments, 2));
+            case "write-pid-and-sleep" -> writePidAndSleep(
+                    stringArgument(arguments, 1), longArgument(arguments, 2));
             case "try-lock" -> tryLock(stringArgument(arguments, 1));
             default -> throw new IllegalArgumentException("Unknown subprocess-fixture mode: " + arguments[0]);
         }
@@ -62,12 +75,67 @@ public final class SubprocessFixture {
         System.err.flush();
     }
 
+    private static void lineThenSleep(String line, long sleepMillis) throws Exception {
+        System.out.println(line);
+        System.out.flush();
+        Thread.sleep(sleepMillis);
+    }
+
+    private static void launchBufferedAndExit(String logValue, long flushMillis) throws Exception {
+        Path log = Path.of(logValue).toAbsolutePath().normalize();
+        Files.createDirectories(log.getParent());
+        LaunchSpec spec = new LaunchSpec(
+                TestSupport.javaCommand("line-then-sleep", "detached-buffered-line", "600"),
+                log.getParent(), Map.of(), log.getParent().resolve("none"), "detached test");
+        ManagedProcess relay = new DefaultProcessLauncher(Duration.ofMillis(flushMillis))
+                .launch(spec, log, "detached-session-header\n");
+        System.out.println("RELAY:" + relay.pid());
+        System.out.flush();
+    }
+
     private static void spawnChild(long sleepMillis) throws Exception {
         Process child = new ProcessBuilder(TestSupport.javaCommand("sleep", Long.toString(sleepMillis))).start();
         System.out.println("CHILD:" + child.pid());
         System.out.flush();
         int result = child.waitFor();
         System.exit(result);
+    }
+
+    private static void writePidAndSleep(String pidFile, long sleepMillis) throws Exception {
+        writePidAtomically(Path.of(pidFile), ProcessHandle.current().pid());
+        Thread.sleep(sleepMillis);
+    }
+
+    private static void spawnChildAfterSignal(String childPidFile, long childSleepMillis) throws Exception {
+        Path pidFile = Path.of(childPidFile).toAbsolutePath().normalize();
+        Files.createDirectories(pidFile.getParent());
+        System.out.println("READY");
+        System.out.flush();
+        if (System.in.read() < 0) return;
+
+        Process child = new ProcessBuilder(
+                TestSupport.javaCommand("sleep", Long.toString(childSleepMillis))).start();
+        writePidAtomically(pidFile, child.pid());
+        System.out.println("CHILD:" + child.pid());
+        System.out.flush();
+        Thread.sleep(750);
+    }
+
+    private static void writePidAtomically(Path value, long pid) throws IOException {
+        Path target = value.toAbsolutePath().normalize();
+        Files.createDirectories(target.getParent());
+        Path temporary = Files.createTempFile(target.getParent(), target.getFileName().toString(), ".tmp");
+        try {
+            Files.writeString(temporary, Long.toString(pid), StandardCharsets.US_ASCII);
+            try {
+                Files.move(temporary, target, java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+                Files.move(temporary, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(temporary);
+        }
     }
 
     private static void tryLock(String value) throws Exception {

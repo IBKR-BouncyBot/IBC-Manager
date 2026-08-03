@@ -315,6 +315,7 @@ public final class BuildProject {
             Files.copy(root.resolve(file), releaseRoot.resolve(file));
         }
         copyTree(root.resolve("docs"), releaseRoot.resolve("docs"));
+        copyTree(root.resolve("images"), releaseRoot.resolve("images"));
         Files.copy(root.resolve("run.bat"), releaseRoot.resolve("run.bat"));
         Path releaseScripts = releaseRoot.resolve("scripts");
         Files.createDirectories(releaseScripts);
@@ -343,32 +344,24 @@ public final class BuildProject {
             Path projectDistributionDirectory,
             String releaseVersion) throws IOException {
         Path windowsDirectory = projectDistributionDirectory.resolve("windows");
-        Path appImageLauncher = windowsDirectory.resolve("IBC Manager").resolve("IBC Manager.exe");
+        Path appImageDirectory = windowsDirectory.resolve("IBC Manager");
+        Path appImageLauncher = appImageDirectory.resolve("IBC Manager.exe");
+        Path appImageJar = appImageDirectory.resolve("app/IBC-Manager-" + releaseVersion + ".jar");
+        Path appImageJava = appImageDirectory.resolve("runtime/bin/java.exe");
         requireRegularNonemptyFile(appImageLauncher,
                 "The jpackage application image launcher is missing or empty: " + appImageLauncher);
+        requireRegularNonemptyFile(appImageJar,
+                "The portable application payload is missing or empty: " + appImageJar);
+        requireRegularNonemptyFile(appImageJava,
+                "The portable Java process launcher is missing or empty: " + appImageJava
+                        + ". Rebuild the app image without jlink --strip-native-commands.");
 
         Path installer = findSingleWindowsInstaller(windowsDirectory, releaseVersion);
-        Path normalReleaseRoot = projectBuildDirectory.resolve("release")
-                .resolve("IBC_Manager_" + releaseVersion);
-        if (!Files.isDirectory(normalReleaseRoot)) {
-            throw new IOException("The normal release staging directory does not exist: " + normalReleaseRoot);
-        }
-        requireRegularNonemptyFile(normalReleaseRoot.resolve("README.md"),
-                "The normal release staging directory is incomplete: " + normalReleaseRoot);
-        requireRegularNonemptyFile(normalReleaseRoot.resolve("IBC-Manager-" + releaseVersion + ".jar"),
-                "The normal release staging directory has no versioned application JAR: " + normalReleaseRoot);
-        requireRegularNonemptyFile(normalReleaseRoot.resolve("run.bat"),
-                "The normal release staging directory has no Windows launcher: " + normalReleaseRoot);
-
         Path stageBase = projectBuildDirectory.resolve("windows-release");
-        Path stageRoot = stageBase.resolve(normalReleaseRoot.getFileName());
         deleteTree(stageBase);
-        copyTree(normalReleaseRoot, stageRoot);
-        Files.copy(installer, stageRoot.resolve(installer.getFileName()));
-
-        String installerName = installer.getFileName().toString();
-        String checksum = sha256(installer) + "  " + installerName + "\n";
-        Files.writeString(stageRoot.resolve("SHA256SUMS.txt"), checksum, StandardCharsets.UTF_8);
+        Files.createDirectories(stageBase);
+        copyTree(appImageDirectory, stageBase.resolve("IBC Manager"));
+        Files.copy(installer, stageBase.resolve(installer.getFileName()));
 
         Files.createDirectories(projectDistributionDirectory);
         Path destination = projectDistributionDirectory.resolve(
@@ -379,7 +372,7 @@ public final class BuildProject {
                 ".zip.tmp");
         try {
             writeZip(stageBase, temporary, ignored -> true, "");
-            validateWindowsReleaseArchive(temporary, stageRoot.getFileName().toString(), installerName, checksum);
+            validateWindowsReleaseArchive(temporary, installer.getFileName().toString(), releaseVersion);
             replaceFile(temporary, destination);
         } finally {
             Files.deleteIfExists(temporary);
@@ -416,26 +409,43 @@ public final class BuildProject {
 
     private static void validateWindowsReleaseArchive(
             Path archive,
-            String rootName,
             String installerName,
-            String expectedChecksum) throws IOException {
+            String releaseVersion) throws IOException {
         requireRegularNonemptyFile(archive, "The Windows release ZIP was not created: " + archive);
-        String prefix = rootName + "/";
         try (ZipFile zip = new ZipFile(archive.toFile(), StandardCharsets.UTF_8)) {
-            require(zip.getEntry(prefix + installerName) != null,
-                    "Windows release ZIP does not contain its EXE installer.");
-            require(zip.getEntry(prefix + "README.md") != null,
-                    "Windows release ZIP does not contain README.md.");
-            require(zip.getEntry(prefix + "run.bat") != null,
-                    "Windows release ZIP does not retain the normal release launcher.");
-            ZipEntry checksumEntry = zip.getEntry(prefix + "SHA256SUMS.txt");
-            require(checksumEntry != null, "Windows release ZIP does not contain SHA256SUMS.txt.");
-            String actualChecksum;
-            try (InputStream input = zip.getInputStream(checksumEntry)) {
-                actualChecksum = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+            require(zip.getEntry(installerName) != null,
+                    "Windows release ZIP does not contain its EXE installer at the archive root.");
+            requireNonemptyZipEntry(zip, "IBC Manager/IBC Manager.exe",
+                    "Windows release ZIP does not contain a nonempty portable application launcher.");
+            requireNonemptyZipEntry(zip,
+                    "IBC Manager/app/IBC-Manager-" + releaseVersion + ".jar",
+                    "Windows release ZIP does not contain the versioned portable application payload.");
+            requireNonemptyZipEntry(zip, "IBC Manager/runtime/bin/java.exe",
+                    "Windows release ZIP does not contain the Java launcher required by the process relay.");
+            var entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                if (entry.isDirectory()) continue;
+                String name = entry.getName();
+                require(name.equals(installerName) || name.startsWith("IBC Manager/"),
+                        "Windows release ZIP contains an unexpected file: " + name);
             }
-            require(expectedChecksum.equals(actualChecksum),
-                    "Windows release ZIP contains an unexpected installer checksum file.");
+            require(zip.getEntry("README.md") == null,
+                    "Windows release ZIP must not duplicate normal release documentation.");
+            require(zip.getEntry("run.bat") == null,
+                    "Windows release ZIP must not duplicate the normal JAR launcher.");
+            require(zip.getEntry("SHA256SUMS.txt") == null,
+                    "Windows release ZIP must contain only the installer and portable application folder.");
+        }
+    }
+
+
+    private static void requireNonemptyZipEntry(ZipFile zip, String name, String message)
+            throws IOException {
+        ZipEntry entry = zip.getEntry(name);
+        if (entry == null || entry.isDirectory()) throw new IOException(message);
+        try (InputStream input = zip.getInputStream(entry)) {
+            if (input.read() < 0) throw new IOException(message);
         }
     }
 
@@ -443,25 +453,6 @@ public final class BuildProject {
         if (!Files.isRegularFile(path) || Files.size(path) <= 0) {
             throw new IOException(message);
         }
-    }
-
-    private static String sha256(Path file) throws IOException {
-        MessageDigest digest;
-        try {
-            digest = MessageDigest.getInstance("SHA-256");
-        } catch (NoSuchAlgorithmException impossible) {
-            throw new IOException("SHA-256 is unavailable.", impossible);
-        }
-        try (InputStream input = Files.newInputStream(file)) {
-            byte[] buffer = new byte[64 * 1024];
-            int count;
-            while ((count = input.read(buffer)) >= 0) {
-                if (count > 0) {
-                    digest.update(buffer, 0, count);
-                }
-            }
-        }
-        return HexFormat.of().formatHex(digest.digest());
     }
 
     private static void replaceFile(Path source, Path destination) throws IOException {
@@ -554,6 +545,11 @@ public final class BuildProject {
         require("a/b/c.txt".equals(zipName(Path.of("a", "b", "c.txt"))), "ZIP path normalization failed");
         require(Files.isRegularFile(root.resolve("scripts/ensure-prerequisites.ps1")),
                 "runtime prerequisite bootstrap is missing");
+        requireRegularNonemptyFile(root.resolve("images/GUI.png"),
+                "README screenshot is missing or empty: images/GUI.png");
+        require(Files.readString(root.resolve("README.md"), StandardCharsets.UTF_8)
+                        .contains("![IBC Manager main window](images/GUI.png)"),
+                "README must display images/GUI.png near its title.");
         Path compileOutput = Files.createTempDirectory("ibc-manager-build-driver-self-test-");
         Path lockRoot = Files.createTempDirectory("ibc-manager-build-lock-self-test-");
         Path windowsReleaseRoot = Files.createTempDirectory("ibc-manager-windows-release-self-test-");
@@ -577,52 +573,56 @@ public final class BuildProject {
     private static void verifyWindowsReleaseArchiveAssembly(Path testRoot) throws IOException {
         String testVersion = "9.8.7";
         Path projectRoot = testRoot.resolve("project");
-        Path projectBuild = projectRoot.resolve("build");
         Path projectDist = projectRoot.resolve("dist");
-        Path normalReleaseRoot = projectBuild.resolve("release/IBC_Manager_" + testVersion);
-        Files.createDirectories(normalReleaseRoot);
-        for (String file : RELEASE_ROOT_FILES) {
-            Path target = normalReleaseRoot.resolve(file);
-            Files.createDirectories(target.getParent());
-            Files.writeString(target, "self-test " + file + "\n", StandardCharsets.UTF_8);
-        }
-        Path guide = normalReleaseRoot.resolve("docs/USER_GUIDE.md");
-        Files.createDirectories(guide.getParent());
-        Files.writeString(guide, "self-test guide\n", StandardCharsets.UTF_8);
-        Path notice = normalReleaseRoot.resolve("third_party/ibc-3.24.1/NOTICE.txt");
-        Files.createDirectories(notice.getParent());
-        Files.writeString(notice, "self-test notice\n", StandardCharsets.UTF_8);
-        Files.writeString(normalReleaseRoot.resolve("run.bat"), "@echo off\r\n", StandardCharsets.UTF_8);
-        Files.write(normalReleaseRoot.resolve("IBC-Manager-" + testVersion + ".jar"),
-                new byte[] {0x50, 0x4b, 0x03, 0x04});
-
         Path appImageLauncher = projectDist.resolve("windows/IBC Manager/IBC Manager.exe");
         Files.createDirectories(appImageLauncher.getParent());
         Files.write(appImageLauncher, new byte[] {0x4d, 0x5a, 0x01});
+        Path portableJar = projectDist.resolve("windows/IBC Manager/app/IBC-Manager-" + testVersion + ".jar");
+        Files.createDirectories(portableJar.getParent());
+        Files.write(portableJar, new byte[] {0x50, 0x4b, 0x03, 0x04});
+        Path portableRuntime = projectDist.resolve("windows/IBC Manager/runtime/bin/java.exe");
+        Files.createDirectories(portableRuntime.getParent());
+        Files.write(portableRuntime, new byte[] {0x4d, 0x5a, 0x05});
         Path installer = projectDist.resolve("windows/IBC Manager-" + testVersion + ".exe");
         Files.write(installer, new byte[] {0x4d, 0x5a, 0x02, 0x03});
 
-        Path archive = createWindowsReleaseArchive(
-                projectBuild, projectDist, testVersion);
+        Path archive = createWindowsReleaseArchive(projectRoot.resolve("build"), projectDist, testVersion);
         require(archive.equals(projectDist.resolve("IBC_Manager_9.8.7_Release_windows.zip")),
                 "Windows release ZIP filename is incorrect: " + archive);
         require(Files.isRegularFile(archive), "Windows release ZIP self-test did not create an archive.");
 
         try (ZipFile zip = new ZipFile(archive.toFile(), StandardCharsets.UTF_8)) {
-            String prefix = "IBC_Manager_9.8.7/";
-            require(zip.getEntry(prefix + "IBC Manager-9.8.7.exe") != null,
+            require(zip.getEntry("IBC Manager-9.8.7.exe") != null,
                     "Windows release ZIP self-test lost its installer.");
-            require(zip.getEntry(prefix + "IBC-Manager-9.8.7.jar") != null,
-                    "Windows release ZIP self-test lost the normal release JAR.");
-            require(zip.getEntry(prefix + "run.bat") != null,
-                    "Windows release ZIP self-test lost the normal release launcher.");
+            require(zip.getEntry("IBC Manager/IBC Manager.exe") != null,
+                    "Windows release ZIP self-test lost the portable launcher.");
+            require(zip.getEntry("IBC Manager/app/IBC-Manager-9.8.7.jar") != null,
+                    "Windows release ZIP self-test lost the portable application payload.");
+            require(zip.getEntry("IBC Manager/runtime/bin/java.exe") != null,
+                    "Windows release ZIP self-test lost the Java process launcher.");
+            require(zip.getEntry("README.md") == null,
+                    "Windows release ZIP self-test included normal release documentation.");
+            require(zip.getEntry("run.bat") == null,
+                    "Windows release ZIP self-test included the normal JAR launcher.");
         }
+
+        Files.delete(portableRuntime);
+        boolean missingRuntimeRejected = false;
+        try {
+            createWindowsReleaseArchive(projectRoot.resolve("build"), projectDist, testVersion);
+        } catch (IOException expected) {
+            missingRuntimeRejected = expected.getMessage() != null
+                    && expected.getMessage().contains("portable Java process launcher");
+        }
+        require(missingRuntimeRejected,
+                "Windows release ZIP assembly must reject an app image without runtime/bin/java.exe.");
+        Files.write(portableRuntime, new byte[] {0x4d, 0x5a, 0x05});
 
         Path secondInstaller = projectDist.resolve("windows/unexpected.exe");
         Files.write(secondInstaller, new byte[] {0x4d, 0x5a, 0x04});
         boolean rejected = false;
         try {
-            createWindowsReleaseArchive(projectBuild, projectDist, testVersion);
+            createWindowsReleaseArchive(projectRoot.resolve("build"), projectDist, testVersion);
         } catch (IOException expected) {
             rejected = expected.getMessage() != null
                     && expected.getMessage().contains("exactly one jpackage EXE installer");

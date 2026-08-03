@@ -14,6 +14,7 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.io.IOException;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.concurrent.Callable;
 import java.util.function.Consumer;
@@ -51,7 +52,13 @@ public final class UiUtil {
         button.addActionListener(event -> {
             JFileChooser chooser = new JFileChooser();
             chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-            if (!field.getText().isBlank()) chooser.setCurrentDirectory(Path.of(field.getText()).toFile());
+            if (!field.getText().isBlank()) {
+                try { chooser.setCurrentDirectory(Path.of(field.getText()).toFile()); }
+                catch (InvalidPathException ex) {
+                    showError(parent, "Invalid directory path", ex);
+                    return;
+                }
+            }
             if (chooser.showOpenDialog(parent) == JFileChooser.APPROVE_OPTION) {
                 field.setText(chooser.getSelectedFile().toPath().toAbsolutePath().normalize().toString());
             }
@@ -64,7 +71,15 @@ public final class UiUtil {
         button.addActionListener(event -> {
             JFileChooser chooser = new JFileChooser();
             chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
-            if (!field.getText().isBlank()) chooser.setCurrentDirectory(Path.of(field.getText()).toFile().getParentFile());
+            if (!field.getText().isBlank()) {
+                try {
+                    java.io.File parentFile = Path.of(field.getText()).toFile().getParentFile();
+                    if (parentFile != null) chooser.setCurrentDirectory(parentFile);
+                } catch (InvalidPathException ex) {
+                    showError(parent, "Invalid file path", ex);
+                    return;
+                }
+            }
             if (chooser.showOpenDialog(parent) == JFileChooser.APPROVE_OPTION) {
                 field.setText(chooser.getSelectedFile().toPath().toAbsolutePath().normalize().toString());
             }

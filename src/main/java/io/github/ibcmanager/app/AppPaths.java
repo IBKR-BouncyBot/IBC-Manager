@@ -37,6 +37,7 @@ public final class AppPaths {
     public Path runtime() { return root.resolve("runtime"); }
     public Path logs() { return root.resolve("logs"); }
     public Path diagnostics() { return root.resolve("diagnostics"); }
+    public Path deletions() { return root.resolve(".deletions"); }
     public Path lockFile() { return root.resolve("ibc-manager.lock"); }
     public Path appLog() { return logs().resolve("ibc-manager-0.log"); }
     public Path profileDirectory(java.util.UUID profileId) { return profiles().resolve(profileId.toString()); }

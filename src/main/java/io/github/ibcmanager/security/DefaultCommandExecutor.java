@@ -21,25 +21,45 @@ public final class DefaultCommandExecutor implements CommandExecutor {
         Objects.requireNonNull(timeout, "timeout");
         if (command.isEmpty()) throw new IllegalArgumentException("Command must not be empty");
 
+        if (timeout.isZero() || timeout.isNegative()) {
+            throw new IllegalArgumentException("timeout must be positive");
+        }
         Process process = new ProcessBuilder(command).start();
-        CompletableFuture<String> stdout = readAsync(process.getInputStream());
-        CompletableFuture<String> stderr = readAsync(process.getErrorStream());
-        try (var writer = process.outputWriter(StandardCharsets.UTF_8)) {
-            if (stdin != null) writer.write(stdin);
-        }
+        CompletableFuture<OutputCapture> stdout = readAsync(process.getInputStream());
+        CompletableFuture<OutputCapture> stderr = readAsync(process.getErrorStream());
+        try {
+            try (var writer = process.outputWriter(StandardCharsets.UTF_8)) {
+                if (stdin != null) writer.write(stdin);
+            }
 
-        boolean finished = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
-        if (!finished) {
-            process.destroy();
-            if (!process.waitFor(2, TimeUnit.SECONDS)) process.destroyForcibly();
+            boolean finished = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
+            if (!finished) {
+                process.destroy();
+                if (!process.waitFor(2, TimeUnit.SECONDS)) {
+                    process.destroyForcibly();
+                    process.waitFor(2, TimeUnit.SECONDS);
+                }
+            }
+            int exitCode = finished ? process.exitValue() : -1;
+            boolean timedOut = !finished;
+            return new CommandResult(exitCode, await(stdout, timedOut), await(stderr, timedOut), timedOut);
+        } catch (IOException | InterruptedException | RuntimeException failure) {
+            terminateAfterFailure(process);
+            throw failure;
         }
-        int exitCode = finished ? process.exitValue() : -1;
-        return new CommandResult(exitCode, await(stdout), await(stderr), !finished);
     }
 
-    private static CompletableFuture<String> readAsync(InputStream stream) {
+    private static void terminateAfterFailure(Process process) {
+        if (process.isAlive()) process.destroyForcibly();
+        try { process.getOutputStream().close(); } catch (IOException ignored) { }
+        try { process.getInputStream().close(); } catch (IOException ignored) { }
+        try { process.getErrorStream().close(); } catch (IOException ignored) { }
+    }
+
+    private static CompletableFuture<OutputCapture> readAsync(InputStream stream) {
         return CompletableFuture.supplyAsync(() -> {
-            try (stream; ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            try (stream; output) {
                 byte[] buffer = new byte[8192];
                 int total = 0;
                 int read;
@@ -52,22 +72,29 @@ public final class DefaultCommandExecutor implements CommandExecutor {
                     output.write(buffer, 0, read);
                     total += read;
                 }
-                return output.toString(StandardCharsets.UTF_8);
+                return new OutputCapture(output.toString(StandardCharsets.UTF_8), null);
             } catch (IOException ex) {
-                throw new IllegalStateException(ex);
+                // Destroying a timed-out process can close its pipe while a
+                // reader is blocked. Preserve any bytes already captured and
+                // let the caller decide whether the read failure is expected
+                // for a timed-out command or must still fail a completed one.
+                return new OutputCapture(output.toString(StandardCharsets.UTF_8), ex);
             }
         });
     }
 
-    private static String await(CompletableFuture<String> future) throws IOException, InterruptedException {
+    private static String await(CompletableFuture<OutputCapture> future, boolean tolerateReadFailure)
+            throws IOException, InterruptedException {
         try {
-            return future.get(5, TimeUnit.SECONDS);
+            OutputCapture capture = future.get(5, TimeUnit.SECONDS);
+            if (capture.failure() != null && !tolerateReadFailure) throw capture.failure();
+            return capture.text();
         } catch (ExecutionException ex) {
-            Throwable cause = ex.getCause();
-            if (cause instanceof IllegalStateException state && state.getCause() instanceof IOException io) throw io;
-            throw new IOException("Could not capture command output", cause);
+            throw new IOException("Could not capture command output", ex.getCause());
         } catch (java.util.concurrent.TimeoutException ex) {
             throw new IOException("Timed out while capturing command output", ex);
         }
     }
+
+    private record OutputCapture(String text, IOException failure) { }
 }

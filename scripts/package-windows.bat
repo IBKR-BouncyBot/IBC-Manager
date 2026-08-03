@@ -16,42 +16,54 @@ if errorlevel 1 exit /b 1
 
 set "INPUT=build\jpackage-input"
 set "DEST=dist\windows"
+set "JLINK_OPTIONS=--strip-debug --no-man-pages --no-header-files"
 if exist "%INPUT%" rmdir /s /q "%INPUT%"
 if exist "%DEST%" rmdir /s /q "%DEST%"
 mkdir "%INPUT%" || exit /b 1
 mkdir "%DEST%" || exit /b 1
-copy /y "dist\IBC-Manager-1.0.8.jar" "%INPUT%\" >nul || exit /b 1
+copy /y "dist\IBC-Manager-1.0.13.jar" "%INPUT%\" >nul || exit /b 1
 
 "%IBC_MANAGER_JPACKAGE_EXE%" ^
   --type app-image ^
   --name "IBC Manager" ^
-  --app-version 1.0.8 ^
+  --app-version 1.0.13 ^
   --vendor "IBC Manager contributors" ^
   --description "Graphical manager for separately installed IBC" ^
   --input "%INPUT%" ^
-  --main-jar "IBC-Manager-1.0.8.jar" ^
+  --main-jar "IBC-Manager-1.0.13.jar" ^
   --main-class io.github.ibcmanager.app.IbcManagerApp ^
   --dest "%DEST%" ^
+  --jlink-options "%JLINK_OPTIONS%" ^
   --java-options "-Dfile.encoding=UTF-8"
 if errorlevel 1 exit /b 1
 if not exist "%DEST%\IBC Manager\IBC Manager.exe" (
   echo [IBC Manager] jpackage reported success but the application image was not created.
   exit /b 1
 )
+if not exist "%DEST%\IBC Manager\runtime\bin\java.exe" (
+  echo [IBC Manager] The portable application runtime is incomplete: runtime\bin\java.exe is missing.
+  echo [IBC Manager] The package must retain Java native commands for the detached process-log relay.
+  exit /b 1
+)
+for %%F in ("%DEST%\IBC Manager\runtime\bin\java.exe") do if %%~zF LEQ 0 (
+  echo [IBC Manager] The portable Java launcher is empty: %%~fF
+  exit /b 1
+)
 
 "%IBC_MANAGER_JPACKAGE_EXE%" ^
   --type exe ^
   --name "IBC Manager" ^
-  --app-version 1.0.8 ^
+  --app-version 1.0.13 ^
   --vendor "IBC Manager contributors" ^
   --description "Graphical manager for separately installed IBC" ^
   --input "%INPUT%" ^
-  --main-jar "IBC-Manager-1.0.8.jar" ^
+  --main-jar "IBC-Manager-1.0.13.jar" ^
   --main-class io.github.ibcmanager.app.IbcManagerApp ^
   --dest "%DEST%" ^
   --win-menu ^
   --win-shortcut ^
   --win-dir-chooser ^
+  --jlink-options "%JLINK_OPTIONS%" ^
   --java-options "-Dfile.encoding=UTF-8"
 if errorlevel 1 (
   echo [IBC Manager] The application image succeeded, but EXE installer creation failed.
@@ -64,7 +76,7 @@ if errorlevel 1 (
   echo [IBC Manager] The Windows installer was created, but the Windows release ZIP could not be assembled.
   exit /b 1
 )
-set "WINDOWS_RELEASE_ZIP=dist\IBC_Manager_1.0.8_Release_windows.zip"
+set "WINDOWS_RELEASE_ZIP=dist\IBC_Manager_1.0.13_Release_windows.zip"
 if not exist "%WINDOWS_RELEASE_ZIP%" (
   echo [IBC Manager] Windows release ZIP creation reported success, but the archive was not found:
   echo [IBC Manager]   %WINDOWS_RELEASE_ZIP%

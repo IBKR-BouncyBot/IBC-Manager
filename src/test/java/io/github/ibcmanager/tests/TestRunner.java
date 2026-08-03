@@ -21,6 +21,7 @@ public final class TestRunner {
             "io.github.ibcmanager.app.ApplicationTests",
             "io.github.ibcmanager.ui.UiModelTests",
             "io.github.ibcmanager.tests.PrerequisiteBootstrapTests",
+            "io.github.ibcmanager.runtime.ReleaseAuditTests",
             "io.github.ibcmanager.tests.ArchitectureTests");
 
     private TestRunner() { }

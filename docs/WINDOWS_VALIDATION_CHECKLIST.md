@@ -73,7 +73,7 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
   the GUI.
 - [ ] From a freshly extracted source ZIP with no `dist` directory or JAR,
   `run.bat` explains the on-demand build, requests JDK permission when necessary,
-  creates `dist\IBC-Manager-1.0.8.jar`, smoke-tests it, and opens the GUI without
+  creates `dist\IBC-Manager-1.0.13.jar`, smoke-tests it, and opens the GUI without
   requiring `build.bat` first.
 - [ ] Corrupt a copy of the release JAR and confirm `run.bat` reports the Java/JAR
   failure in the console and does not attempt the detached `javaw` launch.
@@ -86,21 +86,99 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
   gives a manual WiX instruction.
 - [ ] A successful `package-windows.bat` run creates the app image under
   `dist\windows\IBC Manager`, the versioned installer
-  `dist\windows\IBC Manager-1.0.8.exe`, and
-  `dist\IBC_Manager_1.0.8_Release_windows.zip`.
-- [ ] The Windows release ZIP has one `IBC_Manager_1.0.8` root and contains all
-  normal release files, `IBC Manager-1.0.8.exe`, and `SHA256SUMS.txt`.
-- [ ] The SHA-256 in the archive's `SHA256SUMS.txt` matches the installer bytes
-  after extraction.
+  `dist\windows\IBC Manager-1.0.13.exe`, and
+  `dist\IBC_Manager_1.0.13_Release_windows.zip`.
+- [ ] The Windows release ZIP contains `IBC Manager-1.0.13.exe` at its root and
+  one complete portable `IBC Manager` folder at its root.
+- [ ] The portable folder contains nonempty `IBC Manager.exe`, the versioned
+  application JAR, and `runtime\bin\java.exe`.
+- [ ] The Windows release ZIP contains no normal-release JAR, batch launcher,
+  README, documentation, notice, licence, or checksum file outside the portable
+  app image.
 - [ ] Add a second direct `.exe` file under `dist\windows` immediately before
   invoking the `windows-release-zip` build target and confirm the target rejects
   ambiguous installer output instead of creating a release archive.
+
+## Portable-runtime regression introduced in 1.0.12
+
+- [ ] Run `package-windows.bat` from a freshly extracted 1.0.13 source ZIP.
+- [ ] Confirm both jpackage commands show the explicit jlink option list without
+  `--strip-native-commands`.
+- [ ] Confirm `dist\windows\IBC Manager\runtime\bin\java.exe` exists and is
+  nonempty before the EXE installer stage begins.
+- [ ] Confirm `dist\IBC_Manager_1.0.13_Release_windows.zip` contains the exact
+  nonempty entry `IBC Manager/runtime/bin/java.exe`.
+- [ ] Extract only the portable `IBC Manager` folder to a new directory, start
+  `IBC Manager.exe`, and start a paper profile. The profile must not report
+  **Could not locate Java runtime**.
+- [ ] Confirm the detached process relay remains alive while IBC/Gateway runs,
+  live output appears in the Logs tab, and the manager-owned process log receives
+  its final batch when the managed process exits.
+- [ ] Install with `IBC Manager-1.0.13.exe`, start the installed application, and
+  repeat the paper-profile launch test. The installed runtime must also contain
+  `runtime\bin\java.exe`.
+- [ ] Remove or rename `runtime\bin\java.exe` in a copy of the app image and
+  confirm the Windows release-ZIP build target rejects it rather than publishing
+  an incomplete archive.
+
+## Windows process-tree regression introduced in 1.0.11
+
+- [ ] From a freshly extracted 1.0.13 source ZIP, both `validate-windows.bat`
+  and `package-windows.bat` pass the test named **process tree terminator captures
+  descendants spawned during cooperative shutdown**.
+- [ ] Repeat the complete Windows test gate at least three times; the dynamic
+  descendant test does not fail with a missing child-PID file.
+- [ ] Confirm the test uses the Java fixture's standard-input signal and does not
+  depend on a JVM shutdown hook running after an external process termination.
+- [ ] Confirm the spawned child is terminated while an unrelated Java process
+  remains alive.
+- [ ] After the complete tests pass, `package-windows.bat` proceeds to the real
+  `jpackage` application-image and WiX EXE stages.
+
+## 1.0.13 quiet command-server regression
+
+- [ ] Start a paper profile and leave it idle for at least 30 seconds.
+- [ ] Confirm IBC output does not repeatedly add `CommandServer: ControlFrom
+  setting =`, `CommandServer accepted connection from`, and `Closing command
+  channel` every two seconds.
+- [ ] Confirm the Overview tab changes the IBC command-server field to **Ready**
+  after IBC reports that the server is ready, without a monitoring connection.
+- [ ] Invoke one real command and confirm one normal accepted/closed command
+  channel sequence may appear for that command, but does not continue while idle.
+- [ ] Close and reopen IBC Manager while the profile remains running. At most one
+  fallback command-port connection is allowed during reattachment when the
+  command-server startup line is no longer available; subsequent refreshes must
+  remain quiet.
+- [ ] Confirm an occupied command port is still detected once during launch
+  preflight before credentials or a password-bearing runtime config are loaded.
+
+## Status and buffered logging
+
+- [ ] A stopped profile shows a red dot and explicit **Stopped** text in both
+  the profile list and selected-profile status panel.
+- [ ] Startup, login waiting, second-factor waiting, pause, and stopping show a
+  yellow indicator with explicit state text.
+- [ ] Opening the configured API TCP socket changes the indicator to green and
+  the headline to **API TCP open**, while the detail still states that the IB
+  API handshake is not verified.
+- [ ] A profile that is logged in but whose API socket is closed remains yellow.
+- [ ] Produce application and profile-process output and confirm manager-owned
+  log files do not change before the 60-second interval during normal running.
+- [ ] Confirm the live Logs tab updates before the 60-second disk commit.
+- [ ] Confirm the first disk commit occurs after approximately 60 seconds and
+  contains the buffered records once, without duplication.
+- [ ] Stop the profile before the next interval and confirm the final partial
+  process-log batch is committed immediately.
+- [ ] Close the manager before the next interval and confirm the final partial
+  application-log batch is committed immediately.
+- [ ] Confirm log files written independently by IBC/TWS/Gateway are not
+  represented as controlled by the manager's 60-second setting.
 
 ## Clean-machine package
 
 - [ ] `IBC Manager.exe` starts without a separately installed Java runtime.
 - [ ] The app image and installer are signed or Windows warning behavior is documented.
-- [ ] `--version` reports 1.0.8 and IBC baseline 3.24.1.
+- [ ] `--version` reports 1.0.13 and IBC baseline 3.24.1.
 - [ ] `--headless-smoke` succeeds in a clean data directory.
 - [ ] A second manager instance is rejected without corrupting the first.
 - [ ] Uninstall leaves user data untouched unless explicitly selected.
@@ -214,6 +292,31 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
 - [ ] API enablement is available for TWS and disabled for Gateway.
 - [ ] API TCP state matches the configured socket.
 - [ ] The trading client independently confirms the expected paper account and handshake.
+
+## 1.0.10 filesystem and transaction hardening
+
+- [ ] Oversized profile, managed-config, existing-config, credential, identity,
+  relay-descriptor, and transaction-metadata fixtures are rejected without high
+  memory growth or modification of unrelated files.
+- [ ] When Developer Mode or administrator rights permit test symbolic links,
+  links substituted for manager-owned profiles, configurations, credentials,
+  runtime files, lock files, identities, logs, and IBC required files are
+  rejected and their targets remain unchanged.
+- [ ] Simulate a late managed-config/profile-save failure and verify the previous
+  profile, managed configuration, and DPAPI credential are restored together.
+- [ ] Simulate an interrupted PREPARED profile deletion and verify startup
+  restores the profile/runtime state.
+- [ ] Simulate an interrupted COMMITTED deletion and verify startup completes
+  credential/tombstone cleanup without restoring the deleted profile.
+- [ ] A deletion tombstone whose directory UUID differs from its metadata UUID
+  cannot delete or restore another profile.
+- [ ] Reattachment rejects a copied identity with a stale PID, wrong start time,
+  or mismatched fingerprint.
+- [ ] Terminating a test root that creates a child during shutdown removes the
+  exact child and does not affect an unrelated Java process.
+- [ ] An IBC command server that sends an oversized line, too much response data,
+  too many lines, or data indefinitely is bounded by the configured limits and
+  one total deadline.
 
 ## Process isolation
 

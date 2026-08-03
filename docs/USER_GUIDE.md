@@ -101,7 +101,10 @@ explicit live-trading warning. **Cancel** is the default and performs no launch.
 After confirmation, and before credentials are decrypted, the manager verifies
 that the configured API and command ports are not already occupied. The
 dashboard then distinguishes process startup, login handling, second-factor
-waiting, IBC login completion, and API TCP availability.
+waiting, IBC login completion, and API TCP availability. A prominent status
+panel and the profile list use green, yellow, or red indicators together with
+explicit text. Green means the configured API TCP socket is open; it still does
+not claim that an IB API handshake or account validation completed.
 
 Complete second-factor authentication manually. `SecondFactorDevice` only tells
 IBC which registered device to select when multiple devices are presented.
@@ -122,7 +125,12 @@ The larger, bold, individually accented Start, Stop, Restart, and Pause buttons
 are on a separate session row so they remain visible and are not compressed by
 profile configuration actions.
 
-When the local IBC command server is available, the Commands tab can request:
+IBC Manager determines command-server readiness from IBC's own lifecycle log
+messages. It does not open and close a monitoring connection on every two-second
+status refresh. When reattaching to a process whose startup line is outside the
+bounded log tail, one fallback TCP probe is permitted and its result is cached.
+
+When the local IBC command server is reported ready, the Commands tab can request:
 
 - session restart;
 - pause;
@@ -145,11 +153,25 @@ configured timeout, only that profile's exact process tree is terminated. For a 
 termination, use **Tools > Force stop selected profile...**. Force stop is also
 limited to the selected PID, process creation time, and descendants.
 
+Each real Stop, Restart, Pause, reconnect, or enable-API request creates one
+normal IBC command connection, so one corresponding accepted/closed channel
+sequence in IBC output is expected. Repeating sequences every two seconds while
+idle indicate an older IBC Manager release is still running.
+
 ## 8. Logs and diagnostics
 
-The Logs tab tails the selected profile's IBC output. Diagnostic export creates
-a timestamped ZIP containing redacted configuration, runtime status, versions,
-and recent logs. Review the ZIP before sharing it.
+The Logs tab receives the selected profile's IBC/TWS console output live through
+a detached relay. Manager-owned application and profile-process log files are
+buffered in memory and committed to disk once every 60 seconds during normal
+operation. Closing the manager logger or termination of the managed process
+performs a final immediate commit for the partial interval.
+
+This policy reduces routine disk writes, but a hard crash or power loss can lose
+up to approximately 60 seconds of manager-owned buffered records. Log files
+written independently by IBC, TWS, or IB Gateway are not controlled by this
+setting. Diagnostic export creates a timestamped ZIP containing redacted
+configuration, runtime status, versions, and the recent records already present
+on disk. Review the ZIP before sharing it.
 
 ## 9. Automatic startup
 
@@ -166,10 +188,19 @@ Every simultaneously running profile requires:
 
 - a different IBC command-server port;
 - a different TWS/Gateway API port;
+- no cross-role collision where one profile's API port equals another profile's
+  IBC command port;
 - a different settings directory;
 - normally a separate IB Gateway/TWS process and API client ID.
 
 The validator blocks conflicting values before launch.
+
+Deleting a stopped profile is transactional. IBC Manager stages its profile and
+runtime directory, removes the stored credential, and either completes the
+operation or restores the prior state. An interrupted PREPARED deletion is
+restored at the next startup; a durable COMMITTED deletion is completed. This
+recovery does not replace normal backups of user-selected external IBC/TWS
+settings directories, which are not owned or deleted by IBC Manager.
 
 ## 11. Build, test, and package the source
 
@@ -199,17 +230,29 @@ exact `WiXToolset.WiXToolset` package identity. This may trigger Windows UAC.
 When WinGet is unavailable, packaging stops with a manual installation
 instruction.
 
-After the app image and EXE installer are created, version 1.0.8 also produces:
+After the app image and EXE installer are created, version 1.0.13 also produces:
 
 ```text
-dist\IBC_Manager_1.0.8_Release_windows.zip
+dist\IBC_Manager_1.0.13_Release_windows.zip
 ```
 
-This archive has the same `IBC_Manager_1.0.8` root and normal release contents
-as `IBC_Manager_1.0.8_Release.zip`, with the generated
-`IBC Manager-1.0.8.exe` installer and `SHA256SUMS.txt` added. The checksum file
-covers the installer. ZIP creation is rejected if the installer is missing,
-empty, duplicated, or not named for the current version.
+This Windows-only archive contains exactly:
+
+```text
+IBC Manager-1.0.13.exe
+IBC Manager\
+    IBC Manager.exe
+    app\...
+    runtime\...
+```
+
+It does not duplicate the normal release JAR, scripts, documentation, notices,
+or checksum files. ZIP creation is rejected if the installer is missing, empty,
+duplicated, or not named for the current version, or if the portable image is
+missing its launcher, versioned application JAR, or
+`runtime\bin\java.exe`. The package script overrides jpackage's default jlink
+options so the portable and installed runtimes retain the Java process launcher
+used by IBC Manager's detached output relay.
 
 The scripts never uninstall an existing Java release or permanently rewrite the
 system environment. Verified tool paths are passed through a temporary batch

@@ -3,13 +3,19 @@ package io.github.ibcmanager.app;
 import io.github.ibcmanager.config.ManagedConfigService;
 import io.github.ibcmanager.model.CredentialMode;
 import io.github.ibcmanager.model.Profile;
+import io.github.ibcmanager.security.BoundedFileReader;
 import io.github.ibcmanager.security.CredentialStore;
 import io.github.ibcmanager.security.CredentialStoreException;
 import io.github.ibcmanager.security.SecureChars;
+import io.github.ibcmanager.security.SecureFileOperations;
 import io.github.ibcmanager.security.TextSafety;
+import io.github.ibcmanager.storage.AtomicFileWriter;
 import io.github.ibcmanager.storage.ProfileRepository;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Objects;
 
@@ -25,7 +31,7 @@ public final class ProfileSaveService {
         this.configService = Objects.requireNonNull(configService, "configService");
     }
 
-    public void save(Profile previous, Profile updated, char[] newPassword)
+    public synchronized void save(Profile previous, Profile updated, char[] newPassword)
             throws IOException, CredentialStoreException {
         Objects.requireNonNull(updated, "updated");
         if (previous != null && !previous.id().equals(updated.id())) {
@@ -38,6 +44,15 @@ public final class ProfileSaveService {
             throw new CredentialStoreException(
                     "Passwords containing line breaks, Unicode line separators, or NUL characters are unsupported");
         }
+
+        Path managedPath = configService.managedConfigPath(updated);
+        byte[] previousConfig = null;
+        boolean previousConfigExisted = Files.exists(managedPath, LinkOption.NOFOLLOW_LINKS);
+        if (previousConfigExisted) {
+            previousConfig = BoundedFileReader.readBytes(managedPath,
+                    ManagedConfigService.MAX_CONFIG_BYTES, "Managed IBC configuration");
+        }
+
         SecureChars previousSecret = null;
         boolean previousCredentialExisted = credentialStore.exists(updated.id());
         try {
@@ -62,25 +77,47 @@ public final class ProfileSaveService {
                 credentialStore.delete(updated.id());
             }
         } catch (IOException | CredentialStoreException | RuntimeException failure) {
-            rollbackProfile(previous, updated);
-            rollbackCredential(updated, previousCredentialExisted, previousSecret);
+            rollbackProfile(previous, updated, failure);
+            rollbackConfig(managedPath, previousConfigExisted, previousConfig, failure);
+            rollbackCredential(updated, previousCredentialExisted, previousSecret, failure);
             throw failure;
         } finally {
             Arrays.fill(supplied, '\0');
+            if (previousConfig != null) Arrays.fill(previousConfig, (byte) 0);
             if (previousSecret != null) previousSecret.close();
         }
     }
 
-    private void rollbackProfile(Profile previous, Profile updated) {
+    private void rollbackProfile(Profile previous, Profile updated, Throwable primary) {
         try {
             if (previous == null) repository.delete(updated.id());
             else repository.save(previous);
         } catch (IOException rollbackFailure) {
-            // The original exception remains primary; AtomicFileWriter also retains a .bak copy.
+            primary.addSuppressed(rollbackFailure);
         }
     }
 
-    private void rollbackCredential(Profile updated, boolean existed, SecureChars previousSecret) {
+    private static void rollbackConfig(Path path, boolean existed, byte[] previous, Throwable primary) {
+        try {
+            if (existed && previous != null) {
+                AtomicFileWriter.write(path, previous, false);
+            } else {
+                if (Files.isSymbolicLink(path)) {
+                    throw new IOException("Refusing to follow symbolic managed configuration during rollback: " + path);
+                }
+                Files.deleteIfExists(path);
+                Path backup = path.resolveSibling(path.getFileName() + ".bak");
+                if (Files.isSymbolicLink(backup)) {
+                    throw new IOException("Refusing to follow symbolic managed configuration backup during rollback: " + backup);
+                }
+                if (SecureFileOperations.isRegularFile(backup)) Files.deleteIfExists(backup);
+            }
+        } catch (IOException rollbackFailure) {
+            primary.addSuppressed(rollbackFailure);
+        }
+    }
+
+    private void rollbackCredential(Profile updated, boolean existed, SecureChars previousSecret, Throwable primary) {
         try {
             if (existed && previousSecret != null) {
                 char[] copy = previousSecret.copy();
@@ -90,7 +127,7 @@ public final class ProfileSaveService {
                 credentialStore.delete(updated.id());
             }
         } catch (CredentialStoreException | IllegalStateException rollbackFailure) {
-            // The caller receives the primary failure. Diagnostics and the profile backup assist recovery.
+            primary.addSuppressed(rollbackFailure);
         }
     }
 }

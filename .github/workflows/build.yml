@@ -1,0 +1,52 @@
+name: Build and test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Clean build, tests, JAR smoke, and distributions
+        shell: bash
+        run: java src/build/java/io/github/ibcmanager/build/BuildProject.java clean test jar smoke dist
+      - name: Upload distributable artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ibc-manager-${{ matrix.os }}
+          path: |
+            dist/IBC-Manager-*.jar
+            dist/IBC_Manager_*_Release.zip
+            dist/IBC_Manager_*_Source.zip
+          if-no-files-found: error
+
+  gui-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install virtual display
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+      - name: Run real-window Swing smoke test
+        run: xvfb-run -a java src/build/java/io/github/ibcmanager/build/BuildProject.java gui-smoke

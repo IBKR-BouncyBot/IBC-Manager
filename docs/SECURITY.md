@@ -34,6 +34,29 @@ credentials after the active Windows user or machine is fully compromised.
 - Java parent console handlers are disabled for the application logger so
   unredacted records cannot bypass the safe formatter.
 
+## Buffered-log controls and trade-offs
+
+Manager-owned application and profile-process logs are buffered in memory and
+normally committed to disk once every 60 seconds. The application logger applies
+redaction before records enter its buffer. Profile console bytes are forwarded
+live to the GUI and buffered by a detached relay so the child process cannot
+block when the GUI exits. Windows packages retain the bundled runtime's Java
+process launcher specifically for this relay; package validation requires the
+exact nonempty `runtime\bin\java.exe` before publication.
+
+The relay descriptor is created in the owner-restricted profile runtime
+directory, is itself permission-hardened, contains no manager-stored password,
+and is deleted before the official IBC launch command begins. The relay keeps
+consuming process output after the GUI exits and performs a final disk commit
+when the child exits. Application shutdown similarly commits the final partial
+application-log batch.
+
+A failed scheduled write retains the pending data for a later retry or final
+close attempt. The reduced write cadence has an explicit durability trade-off:
+a hard process crash, operating-system failure, or power loss can lose up to
+approximately 60 seconds of manager-owned buffered records. IBC, TWS, and IB
+Gateway may independently write their own files at a different cadence.
+
 ## Prerequisite bootstrap controls
 
 The Windows launch/build scripts can install missing tools, but only after an
@@ -158,12 +181,35 @@ The default IBC command-server bind address is `127.0.0.1`. Non-loopback or
 blank bind addresses produce validation warnings. Remote `ControlFrom` entries
 also produce a warning.
 
-The manager application's normal runtime network activity is limited to local
-TCP probes and local IBC command-server requests. After an explicit GUI
-confirmation, the optional IBC installer contacts the fixed GitHub release and
-GitHub-controlled redirect hosts. The prerequisite bootstrap contacts official
-Microsoft endpoints and WinGet only after its own explicit consent. The manager
-does not contact IBKR directly.
+The manager application's normal runtime network activity is limited to the
+configured local IB API TCP check and explicit local IBC command-server requests.
+Command-server readiness is normally derived from IBC lifecycle output rather
+than recurring socket probes. One command-port fallback probe is allowed when
+reattaching to a process whose startup history is unavailable, and launch
+preflight checks the command port once before credentials are loaded. After an
+explicit GUI confirmation, the optional IBC installer contacts the fixed GitHub
+release and GitHub-controlled redirect hosts. The prerequisite bootstrap contacts
+official Microsoft endpoints and WinGet only after its own explicit consent. The
+manager does not contact IBKR directly.
+
+## Bounded control-file and transaction controls
+
+Application-owned profiles, configuration, credential blobs, runtime files,
+process identities, relay descriptors, installer control data, diagnostics, and
+deletion metadata have explicit byte limits and are opened without following
+symbolic links. Strict UTF-8/ASCII decoding is used where text is expected.
+Atomic replacement avoids partially written active state.
+
+Profile save restores the previous profile, managed configuration, and stored
+credential after a late failure. Profile deletion stages profile/runtime state in
+a private PREPARED/COMMITTED transaction directory, restores interrupted
+PREPARED work, completes durable COMMITTED work, and verifies that transaction
+metadata matches the profile UUID encoded in the transaction directory name.
+
+In-memory application, process, and GUI log queues are bounded. When a queue
+limit is reached, old data is discarded with an explicit marker rather than
+allowing unbounded memory growth. Routine disk writes remain batched every 60
+seconds, so a hard crash can still lose the current interval.
 
 ## Process controls
 

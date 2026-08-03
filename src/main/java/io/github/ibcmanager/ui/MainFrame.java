@@ -51,8 +51,6 @@ import java.awt.Insets;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -84,6 +82,7 @@ public final class MainFrame extends JFrame {
     private final JLabel messageValue = valueLabel();
     private final JTextArea logArea = new JTextArea();
     private final JLabel statusBar = new JLabel("Ready");
+    private final StatusIndicator profileStatusIndicator = new StatusIndicator();
     private final JButton startButton = new JButton("Start");
     private final JButton stopButton = new JButton("Stop");
     private final JButton restartButton = new JButton("Restart");
@@ -273,6 +272,7 @@ public final class MainFrame extends JFrame {
     private JPanel createOverviewPanel() {
         JPanel outer = new JPanel(new BorderLayout());
         outer.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+        outer.add(profileStatusIndicator, BorderLayout.NORTH);
         JPanel form = new JPanel(new GridBagLayout());
         int row = 0;
         addDetailRow(form, row++, "Profile", nameValue);
@@ -325,7 +325,8 @@ public final class MainFrame extends JFrame {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
         JLabel notice = new JLabel("<html>These controls use the selected profile's local IBC command server. "
-                + "They are enabled only while the process and command port are available.</html>");
+                + "They are enabled after IBC reports that the command server is ready; status monitoring does not "
+                + "open a recurring command connection.</html>");
         panel.add(notice, BorderLayout.NORTH);
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 12));
         reconnectDataButton.addActionListener(event -> runCommand("Reconnect market data", ProfileRuntimeController::reconnectData));
@@ -425,9 +426,7 @@ public final class MainFrame extends JFrame {
                 "Delete profile", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         if (choice != JOptionPane.YES_OPTION) return;
         try {
-            services.profileRepository().delete(profile.id());
-            if (services.credentialStore().exists(profile.id())) services.credentialStore().delete(profile.id());
-            deleteTree(services.paths().runtimeDirectory(profile.id()));
+            services.profileDeletionService().delete(profile);
             loadProfiles();
             setStatus("Deleted profile '" + profile.name() + "'");
         } catch (IOException | CredentialStoreException ex) {
@@ -578,13 +577,17 @@ public final class MainFrame extends JFrame {
             return;
         }
         ProfileStatus status = controller.get().status();
+        profileStatusIndicator.updateStatus(status);
         nameValue.setText(profile.name());
         stateValue.setText(formatState(status.state()));
         targetValue.setText(profile.targetType().toString() + " " + profile.twsMajorVersion());
         modeValue.setText(profile.tradingMode().toString());
         pidValue.setText(status.pid() > 0 ? Long.toString(status.pid()) : "-");
-        commandValue.setText(status.commandPortOpen() ? "Open on " + profile.bindAddress() + ":" + profile.commandServerPort()
-                : "Closed (" + profile.bindAddress() + ":" + profile.commandServerPort() + ")");
+        commandValue.setText(status.commandPortOpen()
+                ? "Ready on " + profile.bindAddress() + ":" + profile.commandServerPort() + " (reported by IBC)"
+                : "Not ready (" + profile.bindAddress() + ":" + profile.commandServerPort() + ")");
+        commandValue.setToolTipText("IBC Manager derives command-server readiness from IBC lifecycle output "
+                + "and real commands; it does not open a monitoring connection every two seconds.");
         apiValue.setText(status.apiPortOpen() ? "TCP open on 127.0.0.1:" + profile.apiPort()
                 : "Closed (127.0.0.1:" + profile.apiPort() + ")");
         startedValue.setText(status.startedAt() == null ? "-" : TIME_FORMAT.format(status.startedAt()));
@@ -623,6 +626,7 @@ public final class MainFrame extends JFrame {
     }
 
     private void clearDetails() {
+        profileStatusIndicator.updateStatus(null);
         for (JLabel label : List.of(nameValue, stateValue, targetValue, modeValue, pidValue,
                 commandValue, apiValue, startedValue, messageValue)) label.setText("-");
         logArea.setText("");
@@ -720,12 +724,6 @@ public final class MainFrame extends JFrame {
                 .replace(">", "&gt;").replace("\n", "<br>");
     }
 
-    private static void deleteTree(Path directory) throws IOException {
-        if (!Files.exists(directory)) return;
-        try (var paths = Files.walk(directory)) {
-            for (Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) Files.deleteIfExists(path);
-        }
-    }
 
     private final class ProfileRenderer extends DefaultListCellRenderer {
         @Override
@@ -735,26 +733,19 @@ public final class MainFrame extends JFrame {
             if (value instanceof Profile profile) {
                 RuntimeState state = services.runtimeRegistry().controller(profile.id())
                         .map(controller -> controller.status().state()).orElse(RuntimeState.STOPPED);
-                label.setText("[" + stateSymbol(state) + "] " + profile.name()
-                        + "  -  " + profile.tradingMode());
-                label.setToolTipText(profile.targetType() + ", API " + profile.apiPort()
-                        + ", IBC command " + profile.commandServerPort());
+                StatusIndicator.Presentation presentation = StatusIndicator.presentationFor(state);
+                label.setIcon(StatusIndicator.iconFor(state, 12));
+                label.setIconTextGap(7);
+                label.setText(profile.name() + "  -  " + profile.tradingMode()
+                        + "  [" + presentation.headline() + "]");
+                label.setToolTipText(presentation.headline() + "; " + profile.targetType()
+                        + ", API " + profile.apiPort() + ", IBC command " + profile.commandServerPort());
                 label.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
             }
             return label;
         }
     }
 
-    private static String stateSymbol(RuntimeState state) {
-        return switch (state) {
-            case API_SOCKET_OPEN, RUNNING -> "OK";
-            case ERROR -> "ERR";
-            case WAITING_FOR_SECOND_FACTOR -> "2FA";
-            case PAUSED -> "PAUSE";
-            case STOPPED -> "OFF";
-            default -> "...";
-        };
-    }
 
     @FunctionalInterface
     private interface ControllerCommand {

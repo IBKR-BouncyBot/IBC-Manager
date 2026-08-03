@@ -7,6 +7,7 @@ import io.github.ibcmanager.config.ManagedConfigService;
 import io.github.ibcmanager.model.Profile;
 import io.github.ibcmanager.model.ProfileStatus;
 import io.github.ibcmanager.security.SecretRedactor;
+import io.github.ibcmanager.security.SecureFileOperations;
 import io.github.ibcmanager.security.FilePermissionHardener;
 import io.github.ibcmanager.validation.ProfileValidator;
 import io.github.ibcmanager.validation.ValidationResult;
@@ -16,6 +17,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Clock;
@@ -47,7 +49,6 @@ public final class DiagnosticBundleService {
     public Path create(Profile profile, ProfileStatus status) throws IOException {
         Objects.requireNonNull(profile, "profile");
         Objects.requireNonNull(status, "status");
-        Files.createDirectories(paths.diagnostics());
         FilePermissionHardener.hardenDirectory(paths.diagnostics());
         Instant generated = clock.instant();
         String stem = "IBC-Manager-Diagnostics-" + safeName(profile.name()) + "-" + FILE_TIME.format(generated);
@@ -148,14 +149,16 @@ public final class DiagnosticBundleService {
     }
 
     private static void addTail(ZipOutputStream zip, Path file, String entryName) throws IOException {
-        if (!Files.isRegularFile(file)) {
+        if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
             putText(zip, entryName, "Log file does not exist.\n");
             return;
         }
+        SecureFileOperations.requireRegularFile(file, "Diagnostic log source");
         long size = Files.size(file);
         long start = Math.max(0, size - MAX_LOG_BYTES);
         byte[] data;
-        try (var channel = java.nio.channels.FileChannel.open(file, java.nio.file.StandardOpenOption.READ)) {
+        try (var channel = java.nio.channels.FileChannel.open(file,
+                java.util.Set.of(java.nio.file.StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS))) {
             channel.position(start);
             var buffer = java.nio.ByteBuffer.allocate((int) Math.min(MAX_LOG_BYTES, size));
             while (buffer.hasRemaining() && channel.read(buffer) >= 0) { }

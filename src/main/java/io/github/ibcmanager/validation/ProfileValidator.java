@@ -7,11 +7,11 @@ import io.github.ibcmanager.model.Severity;
 import io.github.ibcmanager.model.TargetType;
 import io.github.ibcmanager.model.ValidationIssue;
 import io.github.ibcmanager.security.CredentialStore;
+import io.github.ibcmanager.security.SecureFileOperations;
 import io.github.ibcmanager.security.TextSafety;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -58,10 +58,10 @@ public final class ProfileValidator {
         validatePath(profile.baseConfigPath(), "baseConfigPath", false, issues, false);
 
         if (requireInstalledFiles && !isEmpty(profile.ibcPath())) {
-            if (!Files.isRegularFile(profile.ibcPath().resolve("IBC.jar"))) {
+            if (!SecureFileOperations.isRegularFile(profile.ibcPath().resolve("IBC.jar"))) {
                 error(issues, "ibcPath", "IBC.jar was not found in the selected IBC directory");
             }
-            if (!Files.isRegularFile(profile.ibcPath().resolve("scripts").resolve("StartIBC.bat"))) {
+            if (!SecureFileOperations.isRegularFile(profile.ibcPath().resolve("scripts").resolve("StartIBC.bat"))) {
                 error(issues, "ibcPath", "scripts\\StartIBC.bat was not found in the selected IBC directory");
             }
         }
@@ -73,8 +73,10 @@ public final class ProfileValidator {
             Path alternate = profile.targetType() == TargetType.GATEWAY
                     ? profile.twsPath().resolve(profile.twsMajorVersion())
                     : profile.twsPath().resolve("ibgateway").resolve(profile.twsMajorVersion());
-            if (!Files.isDirectory(primary.resolve("jars")) && !Files.isDirectory(primary.resolve("JARS"))
-                    && !Files.isDirectory(alternate.resolve("jars")) && !Files.isDirectory(alternate.resolve("JARS"))) {
+            if (!SecureFileOperations.isDirectory(primary.resolve("jars"))
+                    && !SecureFileOperations.isDirectory(primary.resolve("JARS"))
+                    && !SecureFileOperations.isDirectory(alternate.resolve("jars"))
+                    && !SecureFileOperations.isDirectory(alternate.resolve("JARS"))) {
                 error(issues, "twsPath", "The selected offline TWS/Gateway version does not contain a jars directory");
             }
         }
@@ -110,7 +112,7 @@ public final class ProfileValidator {
             }
         }
         if (profile.credentialMode() == CredentialMode.EXISTING_CONFIG) {
-            if (isEmpty(profile.baseConfigPath()) || !Files.isRegularFile(profile.baseConfigPath())) {
+            if (isEmpty(profile.baseConfigPath()) || !SecureFileOperations.isRegularFile(profile.baseConfigPath())) {
                 error(issues, "baseConfigPath", "Select an existing readable IBC config.ini file");
             }
         }
@@ -142,7 +144,9 @@ public final class ProfileValidator {
             error(issues, field, "Path contains characters that cannot be passed safely to the official IBC Windows launcher");
         }
         if (!path.isAbsolute()) warning(issues, field, "Use an absolute path to avoid launcher ambiguity");
-        if (requireExists && !Files.isDirectory(path)) error(issues, field, "Directory does not exist");
+        if (requireExists && !SecureFileOperations.isDirectory(path)) {
+            error(issues, field, "Directory does not exist or is not a regular directory");
+        }
     }
 
     private static void rejectUnsafeControls(String value, String field, List<ValidationIssue> issues) {

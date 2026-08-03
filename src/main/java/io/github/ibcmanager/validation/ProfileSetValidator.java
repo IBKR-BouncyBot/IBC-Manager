@@ -16,16 +16,15 @@ public final class ProfileSetValidator {
     public ValidationResult validate(List<Profile> profiles) {
         List<ValidationIssue> issues = new ArrayList<>();
         Map<String, Profile> names = new HashMap<>();
-        Map<Integer, Profile> apiPorts = new HashMap<>();
-        Map<Integer, Profile> commandPorts = new HashMap<>();
+        Map<Integer, PortUse> ports = new HashMap<>();
         Map<Path, Profile> settingsPaths = new HashMap<>();
         Map<String, Profile> liveUsers = new HashMap<>();
 
         for (Profile profile : profiles) {
             if (!profile.enabled()) continue;
             detect(names, profile.name().toLowerCase(Locale.ROOT), profile, "name", "Duplicate profile name", issues);
-            detect(apiPorts, profile.apiPort(), profile, "apiPort", "API port is also used by", issues);
-            detect(commandPorts, profile.commandServerPort(), profile, "commandServerPort", "IBC command-server port is also used by", issues);
+            detectPort(ports, profile.apiPort(), profile, "API", "apiPort", issues);
+            detectPort(ports, profile.commandServerPort(), profile, "IBC command-server", "commandServerPort", issues);
             if (!profile.twsSettingsPath().toString().isBlank()) {
                 detect(settingsPaths, profile.twsSettingsPath().toAbsolutePath().normalize(), profile,
                         "twsSettingsPath", "TWS/Gateway settings directory is also used by", issues);
@@ -43,6 +42,16 @@ public final class ProfileSetValidator {
         return new ValidationResult(issues);
     }
 
+    private static void detectPort(Map<Integer, PortUse> seen, int port, Profile current,
+            String role, String field, List<ValidationIssue> issues) {
+        PortUse existing = seen.putIfAbsent(port, new PortUse(current, role));
+        if (existing != null) {
+            issues.add(new ValidationIssue(Severity.ERROR, field,
+                    role + " port " + port + " conflicts with the " + existing.role()
+                            + " port of profile '" + existing.profile().name() + "'"));
+        }
+    }
+
     private static <K> void detect(Map<K, Profile> seen, K key, Profile current, String field,
             String message, List<ValidationIssue> issues) {
         Profile existing = seen.putIfAbsent(key, current);
@@ -51,4 +60,6 @@ public final class ProfileSetValidator {
                     message + " profile '" + existing.name() + "'"));
         }
     }
+
+    private record PortUse(Profile profile, String role) { }
 }

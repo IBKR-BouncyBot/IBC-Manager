@@ -6,21 +6,23 @@ import io.github.ibcmanager.security.FilePermissionHardener;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
-import java.util.logging.FileHandler;
+import java.util.logging.Handler;
 import java.util.logging.Formatter;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 
 public final class AppLog implements AutoCloseable {
+    public static final Duration DISK_FLUSH_INTERVAL = Duration.ofSeconds(60);
     private static final Logger LOGGER = Logger.getLogger("io.github.ibcmanager");
-    private final FileHandler handler;
+    private final Handler handler;
     private final Thread.UncaughtExceptionHandler previousUncaughtHandler;
     private final Thread.UncaughtExceptionHandler installedUncaughtHandler;
 
-    private AppLog(FileHandler handler, Thread.UncaughtExceptionHandler previousUncaughtHandler,
+    private AppLog(Handler handler, Thread.UncaughtExceptionHandler previousUncaughtHandler,
             Thread.UncaughtExceptionHandler installedUncaughtHandler) {
         this.handler = handler;
         this.previousUncaughtHandler = previousUncaughtHandler;
@@ -28,20 +30,27 @@ public final class AppLog implements AutoCloseable {
     }
 
     public static AppLog initialize(AppPaths paths) throws IOException {
+        return initialize(paths, DISK_FLUSH_INTERVAL);
+    }
+
+    public static AppLog initialize(AppPaths paths, Duration flushInterval) throws IOException {
         Objects.requireNonNull(paths, "paths");
+        Objects.requireNonNull(flushInterval, "flushInterval");
         FilePermissionHardener.hardenDirectory(paths.logs());
         // Do not forward records to the JVM root logger. The root ConsoleHandler
         // does not use SafeFormatter and could therefore expose credentials in a
         // console or redirected stderr even though the application log is redacted.
         LOGGER.setUseParentHandlers(false);
         LOGGER.setLevel(Level.INFO);
-        FileHandler fileHandler = new FileHandler(
-                paths.logs().resolve("ibc-manager-%g.log").toString(), 2 * 1024 * 1024, 5, true);
-        fileHandler.setEncoding("UTF-8");
+        PeriodicFileHandler fileHandler = new PeriodicFileHandler(
+                paths.logs().resolve("ibc-manager-%g.log").toString(),
+                2 * 1024 * 1024,
+                5,
+                flushInterval,
+                () -> PathPatternHardener.harden(paths));
         fileHandler.setLevel(Level.ALL);
         fileHandler.setFormatter(new SafeFormatter());
         LOGGER.addHandler(fileHandler);
-        PathPatternHardener.harden(paths);
         Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
         Thread.UncaughtExceptionHandler installed = (thread, throwable) ->
                 LOGGER.log(Level.SEVERE, "Unhandled exception on thread " + thread.getName(), throwable);
@@ -56,7 +65,6 @@ public final class AppLog implements AutoCloseable {
     @Override
     public void close() {
         LOGGER.removeHandler(handler);
-        handler.flush();
         handler.close();
         if (Thread.getDefaultUncaughtExceptionHandler() == installedUncaughtHandler) {
             Thread.setDefaultUncaughtExceptionHandler(previousUncaughtHandler);
@@ -94,8 +102,14 @@ public final class AppLog implements AutoCloseable {
                         .append(": ")
                         .append(SecretRedactor.redact(String.valueOf(record.getThrown().getMessage())))
                         .append(System.lineSeparator());
-                for (StackTraceElement element : record.getThrown().getStackTrace()) {
-                    output.append("    at ").append(element).append(System.lineSeparator());
+                StackTraceElement[] stack = record.getThrown().getStackTrace();
+                int limit = Math.min(stack.length, 256);
+                for (int index = 0; index < limit; index++) {
+                    output.append("    at ").append(stack[index]).append(System.lineSeparator());
+                }
+                if (stack.length > limit) {
+                    output.append("    ... ").append(stack.length - limit)
+                            .append(" additional frame(s) omitted").append(System.lineSeparator());
                 }
             }
             return output.toString();

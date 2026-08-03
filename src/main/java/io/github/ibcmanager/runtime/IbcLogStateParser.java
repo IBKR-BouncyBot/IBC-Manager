@@ -7,11 +7,24 @@ import java.util.Locale;
 import java.util.Optional;
 
 public final class IbcLogStateParser {
+    public enum CommandServerState {
+        UNKNOWN,
+        STARTING,
+        OPEN,
+        CLOSED
+    }
+
     private StateHint latest;
+    private CommandServerState commandServerState = CommandServerState.UNKNOWN;
 
     public synchronized Optional<StateHint> accept(String line) {
         if (line == null) return Optional.empty();
         String lower = line.toLowerCase(Locale.ROOT);
+        if (lower.contains("===== ibc manager session ")) {
+            reset();
+            return Optional.empty();
+        }
+        updateCommandServerState(lower);
         StateHint hint = null;
         if (containsAny(lower, "second factor authentication initiated", "detected dialog entitled: second factor authentication")) {
             hint = hint(RuntimeState.WAITING_FOR_SECOND_FACTOR, "Waiting for second-factor authentication");
@@ -43,8 +56,45 @@ public final class IbcLogStateParser {
         return Optional.ofNullable(latest);
     }
 
+    public synchronized CommandServerState commandServerState() {
+        return commandServerState;
+    }
+
+    public synchronized void markCommandServerOpen() {
+        commandServerState = CommandServerState.OPEN;
+    }
+
+    public synchronized void markCommandServerClosed() {
+        commandServerState = CommandServerState.CLOSED;
+    }
+
+    public synchronized void resetSessionState() {
+        latest = null;
+    }
+
     public synchronized void reset() {
         latest = null;
+        commandServerState = CommandServerState.UNKNOWN;
+    }
+
+    private void updateCommandServerState(String lower) {
+        if (containsAny(lower,
+                "commandserver started and is ready to accept commands",
+                "commandserver started and is ready to accept connections",
+                "commandserver listening on address:",
+                "commandserver listening on addresses:",
+                "commandserver accepted connection from:")) {
+            commandServerState = CommandServerState.OPEN;
+        } else if (containsAny(lower, "commandserver is starting with port")) {
+            commandServerState = CommandServerState.STARTING;
+        } else if (containsAny(lower,
+                "commandserver is not started because the port is not configured",
+                "commandserver failed to create socket",
+                "commandserver cannot process commands",
+                "commandserver closing",
+                "commandserver is shutdown")) {
+            commandServerState = CommandServerState.CLOSED;
+        }
     }
 
     private static boolean containsAny(String value, String... patterns) {

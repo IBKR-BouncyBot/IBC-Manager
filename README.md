@@ -1,5 +1,7 @@
 # IBC Manager
-![GUI](images/GUI.png)
+
+![IBC Manager main window](images/GUI.png)
+
 IBC Manager is a Windows-first graphical front end for configuring, launching,
 monitoring, and controlling multiple IBC-managed Trader Workstation or IB
 Gateway sessions.
@@ -9,7 +11,7 @@ startup to the official `scripts\StartIBC.bat` from a separately installed IBC
 release and uses IBC's command server for supported session controls. This keeps
 IBC's mature Swing-dialog automation intact.
 
-- Version: **1.0.8**
+- Version: **1.0.13**
 - IBC compatibility baseline: **3.24.1**
 - Runtime target: **Java 17 or newer**
 
@@ -37,13 +39,104 @@ IBC's mature Swing-dialog automation intact.
   through the expected Gateway/TWS exit and remains distinguishable from an
   unexpected crash.
 - Process reattachment using exact PID and process start time.
-- Live IBC log tailing and state classification.
-- TCP checks for the IBC command port and configured IB API port.
+- Prominent text-backed green/yellow/red status presentation in the dashboard
+  and profile list. Green means only that the configured API TCP socket accepts
+  connections; it does not claim an IB API handshake.
+- Live IBC log viewing and state classification while manager-owned application
+  and process logs are batched to disk every 60 seconds during normal operation.
+- IBC command-server readiness derived from IBC lifecycle output, with a
+  one-time TCP fallback only when reattaching to an already-running process;
+  the configured IB API port retains its explicit TCP check.
 - Redacted diagnostic bundles.
 - Interactive Windows Task Scheduler startup task.
 - Windows DPAPI credential storage, manual-password mode, and external-config
   mode.
 - No TOTP generation or submission.
+
+## Version 1.0.13 quiet command-server monitoring
+
+Version 1.0.13 removes a noisy steady-state health check. Earlier releases
+opened and immediately closed a TCP connection to the IBC command server every
+two seconds. IBC records every accepted client connection, so an otherwise
+healthy session continuously produced groups such as:
+
+```text
+CommandServer: ControlFrom setting =
+CommandServer accepted connection from: /127.0.0.1
+Closing command channel
+```
+
+IBC Manager now derives command-server readiness from IBC's own startup,
+listening, accepted-command, failure, and shutdown messages. Real commands are
+sent directly without a preliminary socket probe. When the manager reattaches
+to a process whose startup line is no longer in the bounded log tail, it allows
+one fallback TCP probe and caches the result; it does not repeat that probe on
+the two-second status refresh.
+
+The occupied-port launch preflight remains in place before credentials are
+loaded, and the configured IB API socket retains its separate TCP-readiness
+check. One short command-channel sequence is still expected when the user
+actually sends Stop, Restart, Pause, reconnect, or enable-API commands.
+Historical lines already stored by an older release are not rewritten; use
+**Clear view** to clear the current in-memory display after upgrading.
+
+## Version 1.0.12 Windows portable-runtime fix
+
+Version 1.0.12 fixes a Windows-only failure in the portable application image
+and installed EXE package. IBC Manager itself could start, but starting a profile
+failed with a message such as:
+
+```text
+Could not locate Java runtime: ...\IBC Manager\runtime\bin\java.exe
+```
+
+`jpackage` creates a runtime with native Java commands stripped unless its jlink
+options are overridden. IBC Manager needs a child Java launcher for the detached
+process-output relay that keeps capturing IBC/TWS output after the GUI exits.
+The Windows packaging script now explicitly retains native commands in both the
+portable image and installer runtime.
+
+Packaging now fails before creating `_Release_windows.zip` unless the portable
+image contains nonempty copies of the launcher, versioned application JAR, and
+`runtime\bin\java.exe`. The ZIP is reopened and checked for those exact files.
+Runtime launch also accepts `javaw.exe` as a fallback when a valid Windows
+runtime provides it without `java.exe`.
+
+## Version 1.0.11 Windows release-gate fix
+
+Version 1.0.11 fixes the Windows build and validation failure reported for the
+process-tree regression test. The previous test launched a Java process whose
+shutdown hook created a child process, then assumed an external process
+termination request would always run that hook. That assumption is not portable
+to Windows and caused `package-windows.bat` and `validate-windows.bat` to stop
+after 472 otherwise successful tests.
+
+The regression now uses a platform-neutral cooperative shutdown fixture. The
+root Java process waits for a signal over its standard-input pipe, creates the
+child, publishes the child PID atomically, and remains alive long enough for the
+production `ProcessTreeTerminator` to discover and stop the new descendant. The
+test therefore validates the intended dynamic-descendant cleanup without relying
+on operating-system-specific JVM shutdown-hook behavior. An architecture check
+prevents that non-portable test pattern from being reintroduced.
+
+## Version 1.0.10 hardening
+
+The 1.0.10 release adds a dedicated release-audit suite and fail-closed handling
+for application-owned control files. Profiles, configuration, credentials,
+process identities, relay descriptors, installer metadata, diagnostic inputs,
+and profile-deletion transactions are size-bounded and read without following
+symbolic links. Profile save/delete operations have explicit rollback and startup
+recovery, process identities include a fingerprint in addition to PID/start time,
+and process-tree cleanup tracks descendants created during root shutdown.
+
+IBC command responses are governed by one total deadline and bounded line,
+response, and line-count limits. Cross-profile validation also blocks collisions
+between one profile's API port and another profile's IBC command port.
+
+The repository includes GitHub Actions for Ubuntu and Windows, a separate
+real-window Swing smoke job, a security policy, contribution guidance, a release
+checklist, and a structured bug-report template. The Windows-native checklist
+remains mandatory before publishing the EXE installer.
 
 ## Important boundaries
 
@@ -129,7 +222,7 @@ IBC Manager additionally requires:
 Advanced users who already have Java 17+ can also run:
 
 ```bat
-java -jar IBC-Manager-1.0.8.jar
+java -jar IBC-Manager-1.0.13.jar
 ```
 
 ## Creating a profile and installing IBC
@@ -176,6 +269,23 @@ Application data is stored by default under:
 
 Use `--data-dir <directory>` for an isolated or portable data directory.
 
+## Log write cadence
+
+IBC Manager keeps current application records and live IBC/TWS console output in
+memory and commits manager-owned log files in one batch every **60 seconds**
+during normal operation. The GUI continues to receive live process output from
+a detached relay, so the dashboard does not wait for the disk interval.
+
+An immediate final commit is made when the manager logger closes or a managed
+IBC/TWS process exits. This limits routine disk writes without deliberately
+losing the final partial interval. A hard crash or power loss can still lose up
+to approximately 60 seconds of manager-owned buffered log data. Logs written
+independently by IBC, TWS, or IB Gateway are outside this manager setting.
+
+IBC Manager does not poll the IBC command server with a new client connection on
+every status refresh. A real user command can still add one normal accepted/closed
+command-channel sequence to IBC output.
+
 ## Command-line options
 
 ```text
@@ -196,9 +306,10 @@ files. Running `run.bat` from an extracted source tree builds and smoke-tests th
 missing JAR before launching the GUI.
 
 The Windows packaging script additionally creates
-`IBC_Manager_1.0.8_Release_windows.zip`. It uses the same versioned release
-directory and contents as the normal release ZIP, then adds the generated
-Windows installer EXE and an installer `SHA256SUMS.txt` file.
+`IBC_Manager_1.0.13_Release_windows.zip`. This Windows-only archive intentionally
+contains exactly two payloads at its root: the generated installer EXE and the
+complete portable `IBC Manager` application-image folder. It does not duplicate
+the normal JAR release, documentation, batch launchers, or checksum files.
 
 ## Building and testing
 
@@ -243,8 +354,9 @@ The native build driver compiles with `--release 17`, `-Xlint:all`, and
 and smoke-tests the packaged JAR. Mutating build targets are serialized with an
 operating-system lock derived from the canonical source-tree path, so concurrent
 `clean`, compile, test, and distribution commands cannot delete each other's
-output. Version 1.0.8 includes **425 automated test cases with 5,113 assertions**,
-plus a real-window Swing GUI smoke gate. See
+output. Version 1.0.13 includes **477 automated test cases with 5,484 assertions**
+across 101 production and 24 test Java source files, plus a real-window Swing
+GUI smoke gate. See
 [TEST_REPORT.md](TEST_REPORT.md) and [docs/TESTING.md](docs/TESTING.md).
 
 ## Windows standalone package
@@ -267,14 +379,26 @@ installer. After the installer is created, the script validates that there is
 exactly one versioned installer in the Windows output directory and creates:
 
 ```text
-dist\IBC_Manager_1.0.8_Release_windows.zip
+dist\IBC_Manager_1.0.13_Release_windows.zip
 ```
 
-That archive contains the normal release files plus the generated
-`IBC Manager-1.0.8.exe` installer and its SHA-256 checksum. The script fails
-rather than creating an ambiguous release if the installer is missing, empty,
-misnamed, or duplicated. The packaged application includes a Java runtime but
-still uses a separately installed IBC and offline TWS/IB Gateway.
+That archive contains only:
+
+```text
+IBC Manager-1.0.13.exe
+IBC Manager\
+    IBC Manager.exe
+    app\...
+    runtime\...
+```
+
+The script fails rather than creating an ambiguous or incomplete archive if the
+installer is missing, empty, misnamed, or duplicated, or if the portable image
+is missing its launcher, versioned application payload, or
+`runtime\bin\java.exe`. Both jpackage invocations use explicit jlink options
+that retain the native Java launchers required by the detached process relay.
+The portable folder and installer each include a Java runtime but still use a
+separately installed IBC and offline TWS/IB Gateway.
 
 ## Documentation
 
@@ -283,6 +407,9 @@ still uses a separately installed IBC and offline TWS/IB Gateway.
 - [Security model](docs/SECURITY.md)
 - [Testing and release gates](docs/TESTING.md)
 - [Windows validation checklist](docs/WINDOWS_VALIDATION_CHECKLIST.md)
+- [Security reporting policy](SECURITY.md)
+- [Contributing guide](CONTRIBUTING.md)
+- [Release checklist](RELEASE_CHECKLIST.md)
 
 ## License
 
