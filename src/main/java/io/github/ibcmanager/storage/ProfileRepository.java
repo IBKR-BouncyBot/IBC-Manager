@@ -2,23 +2,27 @@ package io.github.ibcmanager.storage;
 
 import io.github.ibcmanager.app.AppPaths;
 import io.github.ibcmanager.model.Profile;
+import io.github.ibcmanager.security.BoundedFileReader;
 import io.github.ibcmanager.security.FilePermissionHardener;
+import io.github.ibcmanager.security.SecureFileOperations;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.List;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public final class ProfileRepository {
+    private static final int MAX_PROFILE_BYTES = 1024 * 1024;
     private final AppPaths paths;
     private final ProfileCodec codec;
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
@@ -41,9 +45,14 @@ public final class ProfileRepository {
             Set<UUID> loadedIds = new HashSet<>();
             try (DirectoryStream<Path> stream = Files.newDirectoryStream(paths.profiles())) {
                 for (Path directory : stream) {
-                    if (!Files.isDirectory(directory)) continue;
+                    if (!SecureFileOperations.isDirectory(directory)) {
+                        if (Files.isSymbolicLink(directory)) {
+                            warnings.add("Ignored symbolic profile directory " + directory);
+                        }
+                        continue;
+                    }
                     Path file = directory.resolve("profile.properties");
-                    if (!Files.isRegularFile(file)) continue;
+                    if (!SecureFileOperations.isRegularFile(file)) continue;
                     Path backup = directory.resolve("profile.properties.bak");
                     try {
                         Profile loaded = readValidated(file, directory);
@@ -53,7 +62,7 @@ public final class ProfileRepository {
                         }
                         profiles.add(loaded);
                     } catch (RuntimeException | IOException primaryFailure) {
-                        if (!Files.isRegularFile(backup)) {
+                        if (!SecureFileOperations.isRegularFile(backup)) {
                             warnings.add("Could not load " + file + ": " + primaryFailure.getMessage());
                             continue;
                         }
@@ -88,11 +97,14 @@ public final class ProfileRepository {
             Path directory = paths.profileDirectory(profile.id());
             FilePermissionHardener.hardenDirectory(directory);
             byte[] bytes = codec.encode(profile).getBytes(StandardCharsets.UTF_8);
+            if (bytes.length > MAX_PROFILE_BYTES) {
+                throw new IOException("Profile data exceeds the " + MAX_PROFILE_BYTES + " byte safety limit");
+            }
             Path target = paths.profileFile(profile.id());
             AtomicFileWriter.write(target, bytes, true);
             FilePermissionHardener.hardenFile(target);
             Path backup = target.resolveSibling(target.getFileName() + ".bak");
-            if (Files.isRegularFile(backup)) FilePermissionHardener.hardenFile(backup);
+            if (SecureFileOperations.isRegularFile(backup)) FilePermissionHardener.hardenFile(backup);
         } finally {
             lock.writeLock().unlock();
         }
@@ -102,20 +114,44 @@ public final class ProfileRepository {
         Objects.requireNonNull(profileId, "profileId");
         lock.writeLock().lock();
         try {
-            Path directory = paths.profileDirectory(profileId);
-            if (!Files.exists(directory)) return;
-            try (var walk = Files.walk(directory)) {
-                for (Path path : walk.sorted(Comparator.reverseOrder()).toList()) {
-                    Files.deleteIfExists(path);
-                }
+            SecureFileOperations.deleteTree(paths.profileDirectory(profileId));
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    public boolean stageDelete(UUID profileId, Path stagedDirectory) throws IOException {
+        Objects.requireNonNull(profileId, "profileId");
+        Objects.requireNonNull(stagedDirectory, "stagedDirectory");
+        lock.writeLock().lock();
+        try {
+            Path source = paths.profileDirectory(profileId);
+            if (!Files.exists(source, LinkOption.NOFOLLOW_LINKS)) return false;
+            SecureFileOperations.moveDirectory(source, stagedDirectory);
+            return true;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    public void restoreStagedDelete(UUID profileId, Path stagedDirectory) throws IOException {
+        Objects.requireNonNull(profileId, "profileId");
+        Objects.requireNonNull(stagedDirectory, "stagedDirectory");
+        lock.writeLock().lock();
+        try {
+            Path destination = paths.profileDirectory(profileId);
+            if (Files.exists(destination, LinkOption.NOFOLLOW_LINKS)) {
+                throw new IOException("Cannot restore a staged profile because the destination exists: " + destination);
             }
+            SecureFileOperations.moveDirectory(stagedDirectory, destination);
         } finally {
             lock.writeLock().unlock();
         }
     }
 
     private Profile readValidated(Path file, Path directory) throws IOException {
-        Profile profile = codec.decode(Files.readString(file, StandardCharsets.UTF_8));
+        Profile profile = codec.decode(BoundedFileReader.readString(
+                file, StandardCharsets.UTF_8, MAX_PROFILE_BYTES, "Profile file"));
         String directoryId = directory.getFileName().toString();
         if (!profile.id().toString().equalsIgnoreCase(directoryId)) {
             throw new IllegalArgumentException("Profile ID does not match its directory name");

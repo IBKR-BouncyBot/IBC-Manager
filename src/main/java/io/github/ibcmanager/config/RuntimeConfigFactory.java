@@ -5,12 +5,12 @@ import io.github.ibcmanager.model.CredentialMode;
 import io.github.ibcmanager.model.Profile;
 import io.github.ibcmanager.security.FilePermissionHardener;
 import io.github.ibcmanager.security.SecureChars;
+import io.github.ibcmanager.security.SecureFileOperations;
 import io.github.ibcmanager.security.TextSafety;
 import io.github.ibcmanager.storage.AtomicFileWriter;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
 
@@ -53,6 +53,6 @@ public final class RuntimeConfigFactory implements RuntimeConfigProvider {
 
     public void cleanStale(Profile profile) throws IOException {
         Path path = paths.runtimeDirectory(profile.id()).resolve("config.ini");
-        if (Files.exists(path)) new RuntimeConfigLease(path).close();
+        if (SecureFileOperations.exists(path)) new RuntimeConfigLease(path).close();
     }
 }

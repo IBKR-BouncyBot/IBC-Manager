@@ -70,7 +70,7 @@ public final class GuiSmokeRunner {
                         MainFrame frame = frameRef.get();
                         require(frame != null, "main frame was not created");
                         require(frame.isShowing(), "main frame is not visible");
-                        require(frame.getTitle().startsWith("IBC Manager 1.0.8"), "window title is incorrect");
+                        require(frame.getTitle().startsWith("IBC Manager 1.0.13"), "window title is incorrect");
                         require(frame.getJMenuBar() != null && frame.getJMenuBar().getMenuCount() == 3,
                                 "menu bar is incomplete");
                         JMenu tools = frame.getJMenuBar().getMenu(1);
@@ -93,6 +93,13 @@ public final class GuiSmokeRunner {
                         require("Overview".equals(tabs.getTitleAt(0)), "overview tab missing");
                         require("Logs".equals(tabs.getTitleAt(1)), "logs tab missing");
                         require("Commands".equals(tabs.getTitleAt(2)), "commands tab missing");
+                        Component statusIndicator = components.stream()
+                                .filter(component -> "profileStatusIndicator".equals(component.getName()))
+                                .findFirst().orElseThrow();
+                        require(statusIndicator.isVisible(), "profile status indicator is not visible");
+                        require(statusIndicator.getAccessibleContext().getAccessibleDescription() != null
+                                        && statusIndicator.getAccessibleContext().getAccessibleDescription().contains("Stopped"),
+                                "profile status indicator lacks explicit state text");
                         JButton enableApi = components.stream().filter(JButton.class::isInstance)
                                 .map(JButton.class::cast)
                                 .filter(button -> "Enable API".equals(button.getText()))

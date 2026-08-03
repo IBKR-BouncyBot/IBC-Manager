@@ -28,11 +28,13 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class RuntimeComponentTests implements TestSuite {
     @Override public String name() { return "Runtime launch, process, ports, commands, and logs"; }
@@ -46,8 +48,13 @@ public final class RuntimeComponentTests implements TestSuite {
                 new NamedTest("launch script rejects unsafe batch values", this::launchScriptUnsafe),
                 new NamedTest("launching IBC is rejected on non-Windows systems", this::launchScriptNonWindows),
                 new NamedTest("default process launcher captures combined output", this::defaultLauncher),
+                new NamedTest("process launcher locates packaged Java commands", this::packagedJavaLauncher),
+                new NamedTest("process relay descriptor round-trips and fails closed", this::processRelayDescriptor),
+                new NamedTest("process logs stay in memory until the scheduled disk commit", this::bufferedProcessLogCadence),
+                new NamedTest("buffered process relay survives the manager process exiting", this::bufferedRelaySurvivesParent),
                 new NamedTest("managed Java process reports lifecycle and exit code", this::managedProcess),
                 new NamedTest("process tree terminator kills the exact root and descendants", this::processTree),
+                new NamedTest("process tree terminator captures descendants spawned during cooperative shutdown", this::processTreeShutdownChild),
                 new NamedTest("process identity store round-trips identity", this::identityRoundTrip),
                 new NamedTest("process identity store reattaches only matching start time", this::identityReattach),
                 new NamedTest("process identity store rejects corrupt and stale identities", this::identityReject),
@@ -69,6 +76,8 @@ public final class RuntimeComponentTests implements TestSuite {
                 new NamedTest("runtime log buffer supports concurrent append", this::bufferConcurrent),
                 new NamedTest("IBC log parser recognizes normal states", this::stateParserNormal),
                 new NamedTest("IBC log parser recognizes failures and reset", this::stateParserError),
+                new NamedTest("IBC log parser tracks command-server lifecycle without socket probes",
+                        this::stateParserCommandServer),
                 new NamedTest("TCP probe distinguishes open closed and invalid ports", this::tcpProbe));
     }
 
@@ -160,12 +169,164 @@ public final class RuntimeComponentTests implements TestSuite {
             Path log = root.resolve("logs/output.log");
             LaunchSpec spec = new LaunchSpec(
                     TestSupport.javaCommand("stdout-stderr"), root, Map.of(), root.resolve("none"), "test");
-            ManagedProcess process = new DefaultProcessLauncher().launch(spec, log);
+            ManagedProcess process = new DefaultProcessLauncher(Duration.ofMillis(120))
+                    .launch(spec, log, "session header\n");
             Assertions.isTrue(process.waitFor(Duration.ofSeconds(5)), "test process must exit");
             String output = Files.readString(log);
             Assertions.contains(output, "stdout", "stdout must be captured");
             Assertions.contains(output, "stderr", "stderr must be merged and captured");
         } finally { TestSupport.deleteTree(root); }
+    }
+
+
+    private void packagedJavaLauncher() throws Exception {
+        Path root = TestSupport.tempDirectory("packaged-java-launcher");
+        try {
+            Path bin = root.resolve("runtime/bin");
+            Files.createDirectories(bin);
+            IOException missing = Assertions.throwsType(IOException.class,
+                    () -> DefaultProcessLauncher.locateJavaExecutable(root.resolve("runtime"), true),
+                    "a packaged runtime without a Java launcher must fail closed");
+            Assertions.contains(missing.getMessage(), "packaged runtime is incomplete",
+                    "missing packaged Java error must explain the incomplete runtime");
+
+            Path javaw = bin.resolve("javaw.exe");
+            Files.write(javaw, new byte[] {1});
+            Assertions.equals(javaw.toAbsolutePath().normalize(),
+                    DefaultProcessLauncher.locateJavaExecutable(root.resolve("runtime"), true),
+                    "javaw.exe must be accepted as a no-console Windows fallback");
+
+            Path java = bin.resolve("java.exe");
+            Files.write(java, new byte[] {2});
+            Assertions.equals(java.toAbsolutePath().normalize(),
+                    DefaultProcessLauncher.locateJavaExecutable(root.resolve("runtime"), true),
+                    "java.exe must be preferred for the detached relay when both launchers exist");
+
+            Files.write(java, new byte[0]);
+            Assertions.equals(javaw.toAbsolutePath().normalize(),
+                    DefaultProcessLauncher.locateJavaExecutable(root.resolve("runtime"), true),
+                    "an empty java.exe must not mask a usable javaw.exe fallback");
+        } finally {
+            TestSupport.deleteTree(root);
+        }
+    }
+
+    private void processRelayDescriptor() throws Exception {
+        Path root = TestSupport.tempDirectory("process-relay-descriptor");
+        try {
+            Path log = root.resolve("logs/output.log");
+            LaunchSpec spec = new LaunchSpec(
+                    List.of("java", "--example", "value"),
+                    root,
+                    Map.of("B", "two", "A", "one"),
+                    root.resolve("launch.bat"),
+                    "test");
+            Path descriptorPath = ProcessRelayDescriptor.write(
+                    spec, log, "session header \u20ac\n", Duration.ofMillis(250));
+            Assertions.fileExists(descriptorPath, "descriptor must be created");
+            ProcessRelayDescriptor descriptor = ProcessRelayDescriptor.read(descriptorPath);
+            Assertions.equals(spec.command(), descriptor.command(), "command must round-trip");
+            Assertions.equals(root.toAbsolutePath().normalize(), descriptor.workingDirectory(),
+                    "working directory must round-trip");
+            Assertions.equals(spec.environment(), descriptor.environment(), "environment must round-trip");
+            Assertions.equals(log.toAbsolutePath().normalize(), descriptor.logFile(),
+                    "log path must round-trip");
+            Assertions.equals("session header \u20ac\n", descriptor.initialLogText(),
+                    "UTF-8 initial text must round-trip");
+            Assertions.equals(Duration.ofMillis(250), descriptor.flushInterval(),
+                    "flush interval must round-trip");
+            Files.delete(descriptorPath);
+
+            Path truncated = root.resolve("truncated.bin");
+            Files.write(truncated, new byte[] {0x49, 0x42, 0x43});
+            IOException truncatedFailure = Assertions.throwsType(IOException.class,
+                    () -> ProcessRelayDescriptor.read(truncated),
+                    "truncated descriptors must fail closed");
+            Assertions.contains(truncatedFailure.getMessage(), "Truncated",
+                    "truncated descriptor error must be explicit");
+
+            String oversized = "x".repeat(4 * 1024 * 1024 + 1);
+            Assertions.throwsType(IOException.class,
+                    () -> ProcessRelayDescriptor.write(spec, log, oversized, Duration.ofSeconds(1)),
+                    "oversized descriptor values must be rejected");
+            try (var stream = Files.list(root)) {
+                Assertions.isTrue(stream.noneMatch(path -> path.getFileName().toString()
+                                .startsWith(".ibc-manager-process-relay-")),
+                        "failed descriptor writes must remove temporary files");
+            }
+
+            Map<String, String> oversizedEnvironment = new java.util.LinkedHashMap<>();
+            for (int index = 0; index < 2049; index++) {
+                oversizedEnvironment.put("K" + index, "V");
+            }
+            LaunchSpec invalidEnvironment = new LaunchSpec(
+                    List.of("java"), root, oversizedEnvironment, root.resolve("launch.bat"), "test");
+            Assertions.throwsType(IllegalArgumentException.class,
+                    () -> ProcessRelayDescriptor.write(
+                            invalidEnvironment, log, "", Duration.ofSeconds(1)),
+                    "oversized process environments must be rejected before writing");
+        } finally {
+            TestSupport.deleteTree(root);
+        }
+    }
+
+    private void bufferedProcessLogCadence() throws Exception {
+        Path root = TestSupport.tempDirectory("buffered-process-log");
+        try {
+            Path log = root.resolve("logs/output.log");
+            LaunchSpec spec = new LaunchSpec(
+                    TestSupport.javaCommand("line-then-sleep", "live-buffered-line", "850"),
+                    root, Map.of(), root.resolve("none"), "test");
+            ManagedProcess process = new DefaultProcessLauncher(Duration.ofMillis(320))
+                    .launch(spec, log, "buffered-session-header\n");
+            List<String> liveLines = new ArrayList<>();
+            Assertions.eventually(Duration.ofSeconds(2), () -> {
+                liveLines.addAll(process.drainOutputLines());
+                return liveLines.contains("live-buffered-line");
+            }, "live process output must remain available before the disk commit");
+            Thread.sleep(80);
+            Assertions.isFalse(Files.exists(log) && Files.size(log) > 0,
+                    "process output must not be written before the configured interval");
+            Assertions.eventually(Duration.ofSeconds(3), () -> {
+                if (!Files.exists(log)) return false;
+                String text = Files.readString(log);
+                return text.contains("buffered-session-header") && text.contains("live-buffered-line");
+            }, "process output must be committed after the configured interval");
+            Assertions.isTrue(process.waitFor(Duration.ofSeconds(5)), "buffered relay process must exit");
+            Assertions.equals(Duration.ofSeconds(60), DefaultProcessLauncher.DISK_FLUSH_INTERVAL,
+                    "production process-log disk cadence must remain 60 seconds");
+        } finally {
+            TestSupport.deleteTree(root);
+        }
+    }
+
+    private void bufferedRelaySurvivesParent() throws Exception {
+        Path root = TestSupport.tempDirectory("detached-process-log");
+        long relayPid = -1;
+        try {
+            Path log = root.resolve("logs/output.log");
+            Process launcher = new ProcessBuilder(TestSupport.javaCommand(
+                    "launch-buffered-and-exit", log.toString(), "140")).start();
+            Assertions.isTrue(launcher.waitFor(5, TimeUnit.SECONDS),
+                    "manager-fixture process must exit promptly");
+            Assertions.equals(0, launcher.exitValue(), "manager-fixture process must launch the relay");
+            String output = new String(launcher.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+            Assertions.isTrue(output.startsWith("RELAY:"), "manager fixture must report the relay PID");
+            relayPid = Long.parseLong(output.substring("RELAY:".length()));
+            Assertions.eventually(Duration.ofSeconds(4), () -> {
+                if (!Files.exists(log)) return false;
+                String text = Files.readString(log);
+                return text.contains("detached-session-header") && text.contains("detached-buffered-line");
+            }, "detached relay must continue and commit output after its parent manager exits");
+            final long observedPid = relayPid;
+            Assertions.eventually(Duration.ofSeconds(4),
+                    () -> ProcessHandle.of(observedPid).map(handle -> !handle.isAlive()).orElse(true),
+                    "detached relay must exit after the launched child exits");
+        } finally {
+            if (relayPid > 0) ProcessHandle.of(relayPid).filter(ProcessHandle::isAlive)
+                    .ifPresent(ProcessHandle::destroyForcibly);
+            TestSupport.deleteTree(root);
+        }
     }
 
     private void managedProcess() throws Exception {
@@ -189,10 +350,45 @@ public final class RuntimeComponentTests implements TestSuite {
             boolean stopped = new ProcessTreeTerminator().terminate(process, Duration.ofMillis(200), Duration.ofSeconds(3));
             Assertions.isTrue(stopped, "root and descendants must stop");
             Assertions.isFalse(process.isAlive(), "exact root must be dead");
-            Assertions.isTrue(descendants.stream().noneMatch(ProcessHandle::isAlive), "captured descendants must be dead");
+            Assertions.eventually(Duration.ofSeconds(3),
+                    () -> descendants.stream().noneMatch(ProcessHandle::isAlive),
+                    "captured descendants must be dead");
         } finally {
             raw.destroyForcibly();
             for (ProcessHandle child : process.descendants()) child.destroyForcibly();
+        }
+    }
+
+    private void processTreeShutdownChild() throws Exception {
+        Path root = TestSupport.tempDirectory("process-tree-shutdown-child");
+        Path childPidFile = root.resolve("child.pid");
+        Process raw = new ProcessBuilder(TestSupport.javaCommand(
+                "spawn-child-after-signal", childPidFile.toString(), "30000"))
+                .redirectErrorStream(true)
+                .start();
+        ManagedProcess process = new CooperativeShutdownManagedProcess(raw);
+        ProcessHandle child = null;
+        try (BufferedReader output = new BufferedReader(
+                new InputStreamReader(raw.getInputStream(), StandardCharsets.UTF_8))) {
+            Assertions.eventually(Duration.ofSeconds(3), output::ready,
+                    "cooperative shutdown fixture must become ready");
+            Assertions.equals("READY", output.readLine(),
+                    "cooperative shutdown fixture must publish its ready marker");
+            boolean stopped = new ProcessTreeTerminator().terminate(
+                    process, Duration.ofSeconds(3), Duration.ofSeconds(3));
+            Assertions.eventually(Duration.ofSeconds(2), () -> Files.isRegularFile(childPidFile),
+                    "cooperative shutdown must publish the descendant PID");
+            long childPid = Long.parseLong(Files.readString(childPidFile).trim());
+            child = ProcessHandle.of(childPid).orElse(null);
+            Assertions.isTrue(stopped, "root and shutdown-spawned descendant must stop");
+            Assertions.isFalse(process.isAlive(), "cooperatively stopped root must be dead");
+            Assertions.isTrue(child == null || !child.isAlive(),
+                    "descendant created during cooperative shutdown must be dead");
+        } finally {
+            raw.destroyForcibly();
+            if (child != null && child.isAlive()) child.destroyForcibly();
+            for (ProcessHandle descendant : process.descendants()) descendant.destroyForcibly();
+            TestSupport.deleteTree(root);
         }
     }
 
@@ -483,6 +679,40 @@ public final class RuntimeComponentTests implements TestSuite {
         Assertions.isTrue(parser.latest().isEmpty(), "reset must clear stale state");
     }
 
+    private void stateParserCommandServer() {
+        IbcLogStateParser parser = new IbcLogStateParser();
+        Assertions.equals(IbcLogStateParser.CommandServerState.UNKNOWN, parser.commandServerState(),
+                "new parser must not assume command readiness");
+
+        parser.accept("2026-08-03 IBC: CommandServer is starting with port 7462");
+        Assertions.equals(IbcLogStateParser.CommandServerState.STARTING, parser.commandServerState(),
+                "command-server startup must be represented explicitly");
+        parser.accept("2026-08-03 IBC: CommandServer listening on address: 127.0.0.1 port: 7462");
+        Assertions.equals(IbcLogStateParser.CommandServerState.OPEN, parser.commandServerState(),
+                "official IBC listening line must enable commands");
+        parser.accept("2026-08-03 IBC: CommandServer: ControlFrom setting =");
+        parser.accept("2026-08-03 IBC: CommandServer accepted connection from: /127.0.0.1");
+        parser.accept("2026-08-03 IBC: Closing command channel");
+        Assertions.equals(IbcLogStateParser.CommandServerState.OPEN, parser.commandServerState(),
+                "closing one client channel must not close the command server");
+
+        parser.accept("2026-08-03 IBC: CommandServer closing");
+        Assertions.equals(IbcLogStateParser.CommandServerState.CLOSED, parser.commandServerState(),
+                "command-server shutdown must clear readiness");
+        parser.markCommandServerOpen();
+        parser.accept("===== IBC Manager session 2026-08-03T19:00:00Z =====");
+        Assertions.equals(IbcLogStateParser.CommandServerState.UNKNOWN, parser.commandServerState(),
+                "a new managed session must clear stale readiness");
+        Assertions.isTrue(parser.latest().isEmpty(), "a new managed session must clear stale state hints");
+        parser.markCommandServerOpen();
+        parser.resetSessionState();
+        Assertions.equals(IbcLogStateParser.CommandServerState.OPEN, parser.commandServerState(),
+                "session-state reset must preserve the live command server");
+        parser.markCommandServerClosed();
+        Assertions.equals(IbcLogStateParser.CommandServerState.CLOSED, parser.commandServerState(),
+                "failed command transport must invalidate readiness");
+    }
+
     private void tcpProbe() throws Exception {
         TcpPortProbe probe = new TcpPortProbe();
         try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
@@ -509,6 +739,39 @@ public final class RuntimeComponentTests implements TestSuite {
 
     private static BufferedWriter writer(Socket socket) throws IOException {
         return new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
+    }
+
+    private static final class CooperativeShutdownManagedProcess implements ManagedProcess {
+        private final Process process;
+        private final ManagedProcess delegate;
+        private final AtomicBoolean shutdownRequested = new AtomicBoolean();
+
+        CooperativeShutdownManagedProcess(Process process) {
+            this.process = process;
+            this.delegate = new JavaManagedProcess(process);
+        }
+
+        @Override public long pid() { return delegate.pid(); }
+        @Override public boolean isAlive() { return delegate.isAlive(); }
+        @Override public Optional<Instant> startInstant() { return delegate.startInstant(); }
+        @Override public List<ProcessHandle> descendants() { return delegate.descendants(); }
+        @Override public CompletableFuture<ProcessHandle> onExit() { return delegate.onExit(); }
+        @Override public boolean waitFor(Duration timeout) throws InterruptedException {
+            return delegate.waitFor(timeout);
+        }
+        @Override public void destroy() {
+            if (!shutdownRequested.compareAndSet(false, true)) return;
+            try (var signal = process.getOutputStream()) {
+                signal.write(1);
+                signal.flush();
+            } catch (IOException failure) {
+                process.destroy();
+            }
+        }
+        @Override public void destroyForcibly() {
+            process.destroyForcibly();
+        }
+        @Override public OptionalInt exitCode() { return delegate.exitCode(); }
     }
 
     @FunctionalInterface

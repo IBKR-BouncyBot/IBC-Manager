@@ -8,6 +8,7 @@ import io.github.ibcmanager.tests.NamedTest;
 import io.github.ibcmanager.tests.TestSuite;
 import io.github.ibcmanager.tests.TestSupport;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -47,6 +48,7 @@ public final class SecurityTests implements TestSuite {
                 new NamedTest("default executor captures stdout stderr and stdin", this::commandExecutorCapture),
                 new NamedTest("default executor enforces timeout", this::commandExecutorTimeout),
                 new NamedTest("default executor caps captured output", this::commandExecutorOutputCap),
+                new NamedTest("default executor terminates a subprocess when interrupted", this::commandExecutorInterrupted),
                 new NamedTest("file permission hardener applies owner-only POSIX modes", this::permissions),
                 new NamedTest("Windows directory ACL grants the owner traverse permission", this::directoryAclTraverse),
                 new NamedTest("runtime config lease removes password file", this::runtimeLease),
@@ -287,10 +289,13 @@ public final class SecurityTests implements TestSuite {
 
     private void commandExecutorTimeout() throws Exception {
         DefaultCommandExecutor executor = new DefaultCommandExecutor();
-        CommandResult result = executor.execute(TestSupport.javaCommand("sleep", "3000"),
-                "", Duration.ofMillis(100));
+        CommandResult result = executor.execute(
+                TestSupport.javaCommand("line-then-sleep", "before-timeout", "5000"),
+                "", Duration.ofSeconds(1));
         Assertions.isTrue(result.timedOut(), "slow command must time out");
         Assertions.equals(-1, result.exitCode(), "timed-out command uses sentinel exit code");
+        Assertions.contains(result.stdout(), "before-timeout",
+                "output captured before timeout must survive process-stream closure");
     }
 
     private void commandExecutorOutputCap() throws Exception {
@@ -299,6 +304,51 @@ public final class SecurityTests implements TestSuite {
                 "", Duration.ofSeconds(10));
         Assertions.isTrue(result.stdout().length() <= 2 * 1024 * 1024, "captured output must be capped");
         Assertions.isTrue(result.stdout().length() > 1_000_000, "large output should be substantially captured");
+    }
+
+
+    private void commandExecutorInterrupted() throws Exception {
+        Path root = TestSupport.tempDirectory("executor-interrupted");
+        try {
+            Path pidFile = root.resolve("child.pid");
+            java.util.concurrent.atomic.AtomicReference<Throwable> failure =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            Thread worker = new Thread(() -> {
+                try {
+                    new DefaultCommandExecutor().execute(
+                            TestSupport.javaCommand("write-pid-and-sleep", pidFile.toString(), "30000"),
+                            "", Duration.ofSeconds(30));
+                } catch (Throwable ex) {
+                    failure.set(ex);
+                }
+            }, "ibc-manager-executor-interruption-test");
+            worker.start();
+            java.util.concurrent.atomic.AtomicLong publishedPid =
+                    new java.util.concurrent.atomic.AtomicLong(-1L);
+            Assertions.eventually(Duration.ofSeconds(5), () -> {
+                try {
+                    String value = Files.readString(pidFile).trim();
+                    if (value.isEmpty()) return false;
+                    long parsed = Long.parseLong(value);
+                    if (parsed <= 0) return false;
+                    publishedPid.set(parsed);
+                    return true;
+                } catch (IOException | NumberFormatException ignored) {
+                    return false;
+                }
+            }, "subprocess fixture must publish a complete PID");
+            long pid = publishedPid.get();
+            worker.interrupt();
+            worker.join(Duration.ofSeconds(5).toMillis());
+            Assertions.isFalse(worker.isAlive(), "interrupted executor call must return promptly");
+            Assertions.isTrue(failure.get() instanceof InterruptedException,
+                    "executor must propagate interruption");
+            Assertions.eventually(Duration.ofSeconds(5),
+                    () -> ProcessHandle.of(pid).map(handle -> !handle.isAlive()).orElse(true),
+                    "interrupted executor must not leave its subprocess running");
+        } finally {
+            TestSupport.deleteTree(root);
+        }
     }
 
     private void permissions() throws Exception {

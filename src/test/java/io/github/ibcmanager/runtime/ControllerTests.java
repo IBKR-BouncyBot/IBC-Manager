@@ -66,6 +66,8 @@ public final class ControllerTests implements TestSuite {
                 new NamedTest("API TCP readiness is reported with an explicit caveat", this::apiState),
                 new NamedTest("login-completed and error log states are reported", this::runningAndErrorStates),
                 new NamedTest("command-server readiness is reported while login is pending", this::commandReadyState),
+                new NamedTest("periodic refresh does not repeatedly connect to the IBC command server",
+                        this::commandServerProbeNoise),
                 new NamedTest("controller commands use loopback and update restart and pause states", this::commands),
                 new NamedTest("a successful PAUSE exit remains paused instead of becoming an error",
                         this::pauseExit),
@@ -183,8 +185,8 @@ public final class ControllerTests implements TestSuite {
             Assertions.equals(1, fixture.runtime.createCalls, "one runtime config must be created");
             Assertions.equals(1, fixture.launcher.calls, "one process must be launched");
             Assertions.fileExists(fixture.paths.runtimeState(fixture.profile.id()), "process identity must be persisted");
-            Assertions.contains(Files.readString(fixture.paths.profileLog(fixture.profile.id())), "IBC Manager session",
-                    "session header must be appended");
+            Assertions.contains(fixture.launcher.initialLogText, "IBC Manager session",
+                    "session header must be supplied to the buffered process logger");
             fixture.controller.start();
             Assertions.equals(1, fixture.launcher.calls, "starting an already running profile must be idempotent");
         }
@@ -287,7 +289,6 @@ public final class ControllerTests implements TestSuite {
 
     private void pausedAndExitedStates() throws Exception {
         try (Fixture fixture = startedFixture(CredentialMode.MANUAL)) {
-            fixture.ports.commandOpen = true;
             fixture.appendLog("Login has completed");
             fixture.controller.refresh();
             Assertions.equals(RuntimeState.RUNNING, fixture.controller.status().state(),
@@ -348,12 +349,30 @@ public final class ControllerTests implements TestSuite {
 
     private void commandReadyState() throws Exception {
         try (Fixture fixture = startedFixture(CredentialMode.MANUAL)) {
-            fixture.ports.commandOpen = true;
+            int commandProbeCalls = fixture.ports.commandCalls;
+            fixture.appendLog("CommandServer started and is ready to accept commands");
             fixture.controller.refresh();
             Assertions.equals(RuntimeState.STARTING, fixture.controller.status().state(),
                     "command server alone must not be mistaken for authenticated state");
             Assertions.isTrue(fixture.controller.status().commandPortOpen(), "command port flag must be true");
             Assertions.contains(fixture.controller.status().message(), "waiting for login", "message must explain state");
+            Assertions.equals(commandProbeCalls, fixture.ports.commandCalls,
+                    "IBC readiness output must not require an active TCP probe");
+        }
+    }
+
+    private void commandServerProbeNoise() throws Exception {
+        try (Fixture fixture = startedFixture(CredentialMode.MANUAL)) {
+            int commandCallsAfterPreflight = fixture.ports.commandCalls;
+            int apiCallsAfterPreflight = fixture.ports.apiCalls;
+            fixture.appendLog("CommandServer started and is ready to accept commands");
+            for (int attempt = 0; attempt < 12; attempt++) fixture.controller.refresh();
+            Assertions.isTrue(fixture.controller.status().commandPortOpen(),
+                    "IBC readiness output must keep command actions available");
+            Assertions.equals(commandCallsAfterPreflight, fixture.ports.commandCalls,
+                    "periodic status refresh must never connect to the IBC command server");
+            Assertions.equals(apiCallsAfterPreflight + 12, fixture.ports.apiCalls,
+                    "API socket monitoring must continue at the normal refresh cadence");
         }
     }
 
@@ -365,7 +384,7 @@ public final class ControllerTests implements TestSuite {
             fixture.process = new FakeProcess();
             fixture.launcher.process = fixture.process;
             fixture.controller.start();
-            fixture.ports.commandOpen = true;
+            int commandProbeCalls = fixture.ports.commandCalls;
             IbcCommandResult restart = fixture.controller.restartSession();
             Assertions.isTrue(restart.success(), "restart command must return success");
             Assertions.equals(RuntimeState.STARTING, fixture.controller.status().state(), "restart must return to starting state");
@@ -378,14 +397,15 @@ public final class ControllerTests implements TestSuite {
                     IbcCommand.RECONNECTACCOUNT, IbcCommand.ENABLEAPI), fixture.commands.commands,
                     "all requested commands must be sent in order");
             Assertions.isTrue(fixture.commands.hosts.stream().allMatch("127.0.0.1"::equals),
-                    "wildcard bind address must be probed through loopback");
+                    "wildcard bind address must be controlled through loopback");
+            Assertions.equals(commandProbeCalls, fixture.ports.commandCalls,
+                    "real commands must not be preceded by a redundant command-port probe");
         }
     }
 
     private void pauseExit() throws Exception {
         try (Fixture fixture = startedFixture(CredentialMode.ENCRYPTED)) {
             Path config = fixture.runtime.lastPath;
-            fixture.ports.commandOpen = true;
             fixture.controller.pause();
             Assertions.equals(RuntimeState.PAUSED, fixture.controller.status().state(),
                     "accepted PAUSE must be visible while shutdown is pending");
@@ -410,15 +430,18 @@ public final class ControllerTests implements TestSuite {
 
     private void commandClosed() throws Exception {
         try (Fixture fixture = startedFixture(CredentialMode.MANUAL)) {
+            fixture.commands.fail = true;
             Assertions.throwsType(RuntimeControllerException.class, fixture.controller::pause,
                     "closed command server must reject action");
-            Assertions.equals(0, fixture.commands.commands.size(), "no socket command may be attempted");
+            Assertions.equals(List.of(IbcCommand.PAUSE), fixture.commands.commands,
+                    "the requested command itself must be the only connection attempt");
+            Assertions.isFalse(fixture.controller.status().commandPortOpen(),
+                    "a failed command connection must invalidate cached readiness");
         }
     }
 
     private void commandRejected() throws Exception {
         try (Fixture fixture = startedFixture(CredentialMode.MANUAL)) {
-            fixture.ports.commandOpen = true;
             fixture.commands.result = new IbcCommandResult(false, "ERROR not permitted");
             RuntimeControllerException error = Assertions.throwsType(RuntimeControllerException.class,
                     fixture.controller::enableApi, "rejected command must propagate");
@@ -428,19 +451,20 @@ public final class ControllerTests implements TestSuite {
 
     private void gracefulStopRace() throws Exception {
         try (Fixture fixture = startedFixture(CredentialMode.MANUAL)) {
-            fixture.ports.commandOpen = true;
+            int commandProbeCalls = fixture.ports.commandCalls;
             fixture.process.exitOnWait = true;
             fixture.controller.stop();
             Assertions.equals(RuntimeState.STOPPED, fixture.controller.status().state(), "expected exit must end stopped");
             Assertions.isFalse(fixture.controller.status().processAlive(), "stopped process must not be alive");
             Assertions.equals(List.of(IbcCommand.STOP), fixture.commands.commands, "graceful STOP must be requested");
+            Assertions.equals(commandProbeCalls, fixture.ports.commandCalls,
+                    "graceful STOP must not open a preliminary health-check connection");
             Assertions.isFalse(Files.exists(fixture.paths.runtimeState(fixture.profile.id())), "identity must be removed");
         }
     }
 
     private void stopCommandFailure() throws Exception {
         try (Fixture fixture = startedFixture(CredentialMode.MANUAL)) {
-            fixture.ports.commandOpen = true;
             fixture.commands.fail = true;
             fixture.process.exitOnWait = false;
             fixture.controller.stop();
@@ -532,12 +556,23 @@ public final class ControllerTests implements TestSuite {
             Files.createDirectories(runtime.getParent());
             Files.writeString(runtime, "IbPassword=temporary\n");
             MemoryCredentialStore credentials = new MemoryCredentialStore();
+            FakePortProbe ports = new FakePortProbe();
+            ports.commandOpen = true;
             ProfileRuntimeController controller = new ProfileRuntimeController(profile, paths,
                     new ProfileValidator(credentials), new FakeRuntimeConfigProvider(root.resolve("provider")), credentials,
-                    new FakeLaunchFactory(root), new FakeProcessLauncher(new FakeProcess()), new FakePortProbe(),
+                    new FakeLaunchFactory(root), new FakeProcessLauncher(new FakeProcess()), ports,
                     new FakeCommandClient(), identities, new ProcessTreeTerminator(), fixedClock());
             Assertions.equals(RuntimeState.UNKNOWN, controller.status().state(), "constructor must reattach exact live identity");
             Assertions.equals(raw.pid(), controller.status().pid(), "reattached PID must match process");
+            Assertions.equals(0, ports.commandCalls,
+                    "controller construction must not open a command-channel connection");
+            controller.refresh();
+            Assertions.isTrue(controller.status().commandPortOpen(),
+                    "one fallback probe must restore command controls when historical readiness is unavailable");
+            Assertions.equals(1, ports.commandCalls, "reattachment fallback must probe the command port exactly once");
+            for (int attempt = 0; attempt < 8; attempt++) controller.refresh();
+            Assertions.equals(1, ports.commandCalls,
+                    "periodic refresh after reattachment must not repeat the command-port probe");
             controller.forceStop();
             Assertions.isFalse(raw.isAlive(), "force stop must terminate reattached process");
             Assertions.isFalse(Files.exists(runtime), "reattached runtime config must be scrubbed on stop");
@@ -766,9 +801,11 @@ public final class ControllerTests implements TestSuite {
         private FakeProcess process;
         private int calls;
         private boolean fail;
+        private String initialLogText = "";
         private FakeProcessLauncher(FakeProcess process) { this.process = process; }
-        @Override public ManagedProcess launch(LaunchSpec spec, Path logFile) throws IOException {
+        @Override public ManagedProcess launch(LaunchSpec spec, Path logFile, String initialLogText) throws IOException {
             calls++;
+            this.initialLogText = initialLogText;
             if (fail) throw new IOException("launch failed");
             return process;
         }
@@ -778,9 +815,13 @@ public final class ControllerTests implements TestSuite {
         private boolean commandOpen;
         private boolean apiOpen;
         private boolean block;
+        private int commandCalls;
+        private int apiCalls;
         private final CountDownLatch entered = new CountDownLatch(1);
         private final CountDownLatch release = new CountDownLatch(1);
         @Override public boolean isOpen(String host, int port, Duration timeout) {
+            if (port == 4002) apiCalls++;
+            else commandCalls++;
             if (block) {
                 entered.countDown();
                 try {

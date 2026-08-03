@@ -145,7 +145,11 @@ public final class IbcManagerApp {
                     case "--headless-smoke" -> smoke = true;
                     case "--data-dir" -> {
                         if (++index >= values.size()) throw new IllegalArgumentException("--data-dir requires a directory");
-                        dataDirectory = Path.of(values.get(index)).toAbsolutePath().normalize();
+                        try {
+                            dataDirectory = Path.of(values.get(index)).toAbsolutePath().normalize();
+                        } catch (java.nio.file.InvalidPathException ex) {
+                            throw new IllegalArgumentException("--data-dir contains a path that is invalid on this operating system", ex);
+                        }
                     }
                     default -> throw new IllegalArgumentException("Unknown argument: " + argument);
                 }

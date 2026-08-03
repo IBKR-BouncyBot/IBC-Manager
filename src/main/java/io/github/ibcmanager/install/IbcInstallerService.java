@@ -2,6 +2,9 @@ package io.github.ibcmanager.install;
 
 import io.github.ibcmanager.app.OperatingSystem;
 import io.github.ibcmanager.app.Version;
+import io.github.ibcmanager.security.BoundedFileReader;
+import io.github.ibcmanager.security.SecureFileOperations;
+import io.github.ibcmanager.storage.AtomicFileWriter;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -39,6 +42,9 @@ public final class IbcInstallerService {
     private static final long DEFAULT_MAX_EXTRACTED_BYTES = 256L * 1024L * 1024L;
     private static final long DEFAULT_MAX_ENTRY_BYTES = 128L * 1024L * 1024L;
     private static final String ASSET_PREFIX = "IBCWin-";
+    private static final int MAX_VERSION_BYTES = 4096;
+    private static final int MAX_LAUNCHER_BYTES = 1024 * 1024;
+    private static final String ACTIVATION_MARKER = ".ibc-manager-install-owner";
     private static final Set<String> WINDOWS_RESERVED_NAMES = Set.of(
             "CON", "PRN", "AUX", "NUL",
             "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
@@ -102,13 +108,15 @@ public final class IbcInstallerService {
                 return new IbcInstallResult(destination, readVersion(destination),
                         "existing installation", sha256(destination.resolve("IBC.jar")), false);
             }
-            rejectNonEmptyDestination(destination);
+            boolean restoreEmptyDestination = rejectNonEmptyDestination(destination);
             Path parent = destination.getParent();
             if (parent == null) throw new IbcInstallationException("IBC installation path has no parent directory.");
-            Files.createDirectories(parent);
+            SecureFileOperations.ensureDirectory(parent);
 
             Path archive = Files.createTempFile("ibc-manager-ibc-", ".zip");
             Path staging = parent.resolve("." + destination.getFileName() + ".install-" + UUID.randomUUID());
+            String activationToken = UUID.randomUUID().toString();
+            boolean activated = false;
             try {
                 listener.update("Downloading official IBC " + Version.IBC_BASELINE, 0, -1);
                 IbcReleaseDownloader.DownloadResult download =
@@ -122,19 +130,32 @@ public final class IbcInstallerService {
                 Path extractedRoot = locateInstallationRoot(staging);
                 validateInstallation(extractedRoot);
                 ensureOnlyInstallationTree(staging, extractedRoot);
+                Path marker = extractedRoot.resolve(ACTIVATION_MARKER);
+                AtomicFileWriter.write(marker, activationToken.getBytes(StandardCharsets.US_ASCII), false);
                 checkCancelled();
                 listener.update("Installing validated IBC files", download.bytes(), download.bytes());
                 activate(extractedRoot, staging, destination);
-                validateInstallation(destination);
+                activated = true;
+                try {
+                    validateActivationMarker(destination, activationToken);
+                    validateInstallation(destination);
+                    Files.delete(destination.resolve(ACTIVATION_MARKER));
+                } catch (IOException | IbcInstallationException | RuntimeException validationFailure) {
+                    rollbackActivatedDestination(destination, activationToken, restoreEmptyDestination, validationFailure);
+                    activated = false;
+                    throw validationFailure;
+                }
                 listener.update("IBC installation completed", download.bytes(), download.bytes());
                 return new IbcInstallResult(destination, readVersion(destination), releaseAssetName(),
                         download.sha256(), true);
             } finally {
                 cleanupQuietly(staging);
-                try {
-                    Files.deleteIfExists(archive);
-                } catch (IOException ignored) {
-                    // A stale temporary download is preferable to masking the installation result.
+                try { Files.deleteIfExists(archive); }
+                catch (IOException ignored) { }
+                if (!activated && restoreEmptyDestination
+                        && !Files.exists(destination, LinkOption.NOFOLLOW_LINKS)) {
+                    try { SecureFileOperations.ensureDirectory(destination); }
+                    catch (IOException ignored) { }
                 }
             }
         } catch (IbcInstallationException ex) {
@@ -191,7 +212,8 @@ public final class IbcInstallerService {
         long totalBytes = 0;
         int entries = 0;
         byte[] buffer = new byte[64 * 1024];
-        try (ZipInputStream input = new ZipInputStream(Files.newInputStream(archive), StandardCharsets.UTF_8)) {
+        try (ZipInputStream input = new ZipInputStream(
+                Files.newInputStream(archive, LinkOption.NOFOLLOW_LINKS), StandardCharsets.UTF_8)) {
             while (true) {
                 checkCancelled();
                 ZipEntry entry = input.getNextEntry();
@@ -211,7 +233,7 @@ public final class IbcInstallerService {
                     throw new IbcInstallationException("IBC archive contains a path outside the installation folder.");
                 }
                 if (entry.isDirectory() || normalizedName.endsWith("/")) {
-                    Files.createDirectories(output);
+                    SecureFileOperations.ensureDirectory(output);
                     input.closeEntry();
                     continue;
                 }
@@ -221,10 +243,10 @@ public final class IbcInstallerService {
                             + normalizedName);
                 }
                 Path parent = output.getParent();
-                if (parent != null) Files.createDirectories(parent);
+                if (parent != null) SecureFileOperations.ensureDirectory(parent);
                 long entryBytes = 0;
                 try (var stream = Files.newOutputStream(output, StandardOpenOption.CREATE_NEW,
-                        StandardOpenOption.WRITE)) {
+                        StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS)) {
                     while (true) {
                         checkCancelled();
                         int count = input.read(buffer);
@@ -314,12 +336,12 @@ public final class IbcInstallerService {
             throw new IbcInstallationException("IBC installation directory must not be a symbolic link.");
         }
         for (String required : List.of("IBC.jar", "version", "config.ini", "LICENSE.txt")) {
-            if (!Files.isRegularFile(root.resolve(required))) {
+            if (!SecureFileOperations.isRegularFile(root.resolve(required))) {
                 throw new IbcInstallationException("IBC installation is missing " + required + '.');
             }
         }
         Path startScript = root.resolve("scripts").resolve("StartIBC.bat");
-        if (!Files.isRegularFile(startScript)) {
+        if (!SecureFileOperations.isRegularFile(startScript)) {
             throw new IbcInstallationException("IBC installation is missing scripts\\StartIBC.bat.");
         }
         String version = readVersion(root);
@@ -334,14 +356,16 @@ public final class IbcInstallerService {
                         "IBC.jar does not contain the expected IbcTws and IbcGateway program classes.");
             }
         }
-        String launcher = Files.readString(startScript, StandardCharsets.UTF_8);
+        String launcher = BoundedFileReader.readString(startScript, StandardCharsets.UTF_8,
+                MAX_LAUNCHER_BYTES, "IBC StartIBC.bat");
         if (!launcher.toLowerCase(Locale.ROOT).contains("ibc.jar")) {
             throw new IbcInstallationException("scripts\\StartIBC.bat does not reference IBC.jar.");
         }
     }
 
     private static String readVersion(Path root) throws IOException, IbcInstallationException {
-        String value = Files.readString(root.resolve("version"), StandardCharsets.UTF_8).trim();
+        String value = BoundedFileReader.readString(root.resolve("version"), StandardCharsets.UTF_8,
+                MAX_VERSION_BYTES, "IBC version file").trim();
         if (value.startsWith("\uFEFF")) value = value.substring(1).trim();
         if (value.isEmpty() || value.length() > 32 || !value.matches("[0-9]+(?:\\.[0-9]+){2}")) {
             throw new IbcInstallationException("IBC version file is invalid.");
@@ -349,8 +373,8 @@ public final class IbcInstallerService {
         return value;
     }
 
-    private static void rejectNonEmptyDestination(Path destination) throws IOException, IbcInstallationException {
-        if (!Files.exists(destination, LinkOption.NOFOLLOW_LINKS)) return;
+    private static boolean rejectNonEmptyDestination(Path destination) throws IOException, IbcInstallationException {
+        if (!Files.exists(destination, LinkOption.NOFOLLOW_LINKS)) return false;
         if (Files.isSymbolicLink(destination)) {
             throw new IbcInstallationException("The IBC destination must not be a symbolic link: " + destination);
         }
@@ -363,6 +387,7 @@ public final class IbcInstallerService {
                         + destination);
             }
         }
+        return true;
     }
 
     private static void activate(Path extractedRoot, Path stagingRoot, Path destination) throws IOException {
@@ -386,7 +411,33 @@ public final class IbcInstallerService {
         } catch (DirectoryNotEmptyException | FileAlreadyExistsException ex) {
             throw new IOException("IBC destination changed while installation was in progress.", ex);
         }
-        if (!extractedRoot.equals(stagingRoot)) deleteTree(stagingRoot);
+        if (!extractedRoot.equals(stagingRoot)) SecureFileOperations.deleteTree(stagingRoot);
+    }
+
+    private static void validateActivationMarker(Path destination, String expected)
+            throws IOException, IbcInstallationException {
+        Path marker = destination.resolve(ACTIVATION_MARKER);
+        String actual = BoundedFileReader.readString(marker, StandardCharsets.US_ASCII, 128,
+                "IBC installation activation marker").trim();
+        if (!expected.equals(actual)) {
+            throw new IbcInstallationException("IBC installation activation marker is invalid.");
+        }
+    }
+
+    private static void rollbackActivatedDestination(Path destination, String token,
+            boolean restoreEmptyDestination, Throwable primary) {
+        try {
+            Path marker = destination.resolve(ACTIVATION_MARKER);
+            String actual = BoundedFileReader.readString(marker, StandardCharsets.US_ASCII, 128,
+                    "IBC installation activation marker").trim();
+            if (!token.equals(actual)) {
+                throw new IOException("Refusing to roll back an IBC destination not owned by this installation");
+            }
+            SecureFileOperations.deleteTree(destination);
+            if (restoreEmptyDestination) SecureFileOperations.ensureDirectory(destination);
+        } catch (IOException rollbackFailure) {
+            primary.addSuppressed(rollbackFailure);
+        }
     }
 
     private static String sha256(Path file) throws IOException {
@@ -396,8 +447,9 @@ public final class IbcInstallerService {
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("SHA-256 is unavailable", ex);
         }
+        SecureFileOperations.requireRegularFile(file, "File being hashed");
         byte[] buffer = new byte[64 * 1024];
-        try (InputStream input = Files.newInputStream(file)) {
+        try (InputStream input = Files.newInputStream(file, LinkOption.NOFOLLOW_LINKS)) {
             while (true) {
                 int count = input.read(buffer);
                 if (count < 0) break;
@@ -409,27 +461,12 @@ public final class IbcInstallerService {
 
     private static void cleanupQuietly(Path root) {
         try {
-            deleteTree(root);
+            SecureFileOperations.deleteTree(root);
         } catch (IOException ignored) {
             // Best effort for a staging directory that was never made active.
         }
     }
 
-    private static void deleteTree(Path root) throws IOException {
-        if (root == null || !Files.exists(root)) return;
-        IOException failure = null;
-        try (var walk = Files.walk(root)) {
-            for (Path path : walk.sorted(java.util.Comparator.reverseOrder()).toList()) {
-                try {
-                    Files.deleteIfExists(path);
-                } catch (IOException ex) {
-                    if (failure == null) failure = ex;
-                    else failure.addSuppressed(ex);
-                }
-            }
-        }
-        if (failure != null) throw failure;
-    }
 
     private static String safeMessage(Throwable error) {
         String value = error.getMessage();

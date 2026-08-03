@@ -36,11 +36,14 @@ public final class ArchitectureTests implements TestSuite {
                 new NamedTest("profile persistence model has no password or secret field", this::profileHasNoSecret),
                 new NamedTest("launcher and startup task never pass credentials in arguments", this::noCredentialArguments),
                 new NamedTest("runtime supervision avoids global desktop and process automation", this::noGlobalAutomation),
+                new NamedTest("command-server monitoring does not create periodic client connections",
+                        this::quietCommandServerMonitoring),
                 new NamedTest("manual start stop restart and pause actions require confirmation", this::sessionActionConfirmationWiring),
                 new NamedTest("test subprocesses are platform-neutral", this::portableTestSubprocesses),
                 new NamedTest("no TOTP generator or cryptographic OTP implementation is present", this::noTotpImplementation),
                 new NamedTest("IBC baseline resource and GPL notices are retained", this::ibcNotices),
                 new NamedTest("release documentation and build scripts are present", this::releaseFiles),
+                new NamedTest("application and process logs use 60-second disk batching", this::bufferedLogArchitecture),
                 new NamedTest("Windows packaging launchers enforce the complete release gates", this::windowsPackagingScripts),
                 new NamedTest("source directories contain no generated binary artifacts", this::noGeneratedArtifacts),
                 new NamedTest("compiled production classes target Java 17 bytecode", this::java17Bytecode),
@@ -143,6 +146,29 @@ public final class ArchitectureTests implements TestSuite {
         Assertions.contains(all, "StartIBC.bat", "official IBC launcher delegation must remain present");
     }
 
+    private void quietCommandServerMonitoring() throws Exception {
+        String controller = source("src/main/java/io/github/ibcmanager/runtime/ProfileRuntimeController.java");
+        String refresh = methodBody(controller, "public synchronized void refresh()",
+                "public synchronized IbcCommandResult restartSession()");
+        Assertions.notContains(refresh, "profile.commandServerPort()",
+                "periodic refresh must not connect to the IBC command server");
+        Assertions.contains(refresh, "commandServerOpenForRefresh()",
+                "refresh must derive command readiness through the quiet lifecycle tracker");
+
+        String sendCommand = methodBody(controller, "private IbcCommandResult sendCommand(",
+                "private synchronized void handleProcessExit()");
+        Assertions.notContains(sendCommand, "portProbe.isOpen",
+                "a real IBC command must not be preceded by a redundant TCP probe");
+        Assertions.contains(controller, "commandProbeFallbackPending",
+                "reattached processes must retain one bounded compatibility fallback");
+
+        String parser = source("src/main/java/io/github/ibcmanager/runtime/IbcLogStateParser.java");
+        Assertions.contains(parser, "commandserver started and is ready to accept commands",
+                "command readiness must be recognized from official IBC lifecycle output");
+        Assertions.contains(parser, "commandserver closing",
+                "command shutdown must invalidate cached readiness");
+    }
+
     private void sessionActionConfirmationWiring() throws Exception {
         String mainFrame = source("src/main/java/io/github/ibcmanager/ui/MainFrame.java");
         Assertions.contains(mainFrame, "startButton.addActionListener(event -> confirmStartSelected())",
@@ -203,6 +229,10 @@ public final class ArchitectureTests implements TestSuite {
                 "test subprocesses must retain the active compiled-test classpath");
         Assertions.contains(fixture, "TestSupport.javaCommand(\"sleep\"",
                 "process-tree fixture must create its child through the same portable Java path");
+        Assertions.contains(fixture, "spawn-child-after-signal",
+                "dynamic-descendant coverage must use a portable cooperative shutdown signal");
+        Assertions.notContains(fixture, "addShutdownHook",
+                "process termination tests must not assume external termination runs JVM shutdown hooks");
     }
 
     private void noTotpImplementation() throws Exception {
@@ -231,18 +261,47 @@ public final class ArchitectureTests implements TestSuite {
                 "not affiliated", "unofficial-project notice must be explicit");
     }
 
-    private void releaseFiles() {
+    private void releaseFiles() throws Exception {
         for (String file : List.of(
                 "README.md", "CHANGELOG.md", "LICENSE.txt", "NOTICE.txt", "TEST_REPORT.md", "CODE_REVIEW.md", "build.xml",
+                "SECURITY.md", "CONTRIBUTING.md", "RELEASE_CHECKLIST.md", ".gitignore", ".gitattributes",
+                ".github/workflows/build.yml", ".github/ISSUE_TEMPLATE/bug_report.yml",
                 "run.bat", "build.bat", "test.bat", "package-windows.bat", "validate-windows.bat",
                 "docs/ARCHITECTURE.md", "docs/SECURITY.md", "docs/TESTING.md",
                 "docs/USER_GUIDE.md", "docs/WINDOWS_VALIDATION_CHECKLIST.md",
                 "scripts/bootstrap.bat", "scripts/ensure-prerequisites.ps1",
                 "src/build/java/io/github/ibcmanager/build/BuildProject.java",
                 "scripts/build.bat", "scripts/test.bat", "scripts/run.bat",
-                "scripts/package-windows.bat", "scripts/validate-windows.bat")) {
+                "scripts/package-windows.bat", "scripts/validate-windows.bat",
+                "images/GUI.png")) {
             Assertions.fileExists(ROOT.resolve(file), "missing release file: " + file);
         }
+        String readme = Files.readString(ROOT.resolve("README.md"), StandardCharsets.UTF_8);
+        Assertions.contains(readme, "![IBC Manager main window](images/GUI.png)",
+                "README must display the packaged main-window image near its title");
+        Assertions.isTrue(Files.size(ROOT.resolve("images/GUI.png")) > 0,
+                "README image must not be empty");
+    }
+
+    private void bufferedLogArchitecture() throws Exception {
+        String appLog = Files.readString(
+                ROOT.resolve("src/main/java/io/github/ibcmanager/logging/AppLog.java"), StandardCharsets.UTF_8);
+        String launcher = Files.readString(
+                ROOT.resolve("src/main/java/io/github/ibcmanager/runtime/DefaultProcessLauncher.java"), StandardCharsets.UTF_8);
+        String relay = Files.readString(
+                ROOT.resolve("src/main/java/io/github/ibcmanager/runtime/BufferedProcessRelay.java"), StandardCharsets.UTF_8);
+        Assertions.contains(appLog, "DISK_FLUSH_INTERVAL = Duration.ofSeconds(60)",
+                "application logs must use a 60-second production disk interval");
+        Assertions.contains(appLog, "PeriodicFileHandler",
+                "application logs must use the periodic in-memory handler");
+        Assertions.contains(launcher, "DISK_FLUSH_INTERVAL = Duration.ofSeconds(60)",
+                "profile process logs must use a 60-second production disk interval");
+        Assertions.contains(launcher, "BufferedProcessRelay.class.getName()",
+                "profile process output must be handled by the detached buffered relay");
+        Assertions.notContains(launcher, "Redirect.appendTo",
+                "profile process output must not write directly to disk on every child write");
+        Assertions.contains(relay, "PeriodicByteLog",
+                "detached relay must use the periodic byte logger");
     }
 
     private void windowsPackagingScripts() throws Exception {
@@ -268,16 +327,25 @@ public final class ArchitectureTests implements TestSuite {
                 "packaging must run all automated build and smoke gates");
         Assertions.contains(canonical, "--type app-image",
                 "packaging must produce a self-contained application image");
+        Assertions.contains(canonical,
+                "set \"JLINK_OPTIONS=--strip-debug --no-man-pages --no-header-files\"",
+                "Windows packaging must override jpackage defaults without stripping native commands");
+        Assertions.equals(2, count(canonical, "--jlink-options \"%JLINK_OPTIONS%\""),
+                "both portable and installer runtimes must retain Java native commands");
+        Assertions.notContains(canonical, "--strip-native-commands",
+                "Windows packaging must retain runtime/bin/java.exe for the process relay");
+        Assertions.contains(canonical, "runtime\\bin\\java.exe",
+                "packaging must validate the portable Java process launcher before release assembly");
         Assertions.contains(canonical, "--type exe", "packaging must attempt an EXE installer");
         int exePackaging = canonical.indexOf("--type exe");
         int releaseArchive = canonical.indexOf("windows-release-zip");
         Assertions.isTrue(releaseArchive > exePackaging,
                 "the Windows release ZIP must be assembled only after EXE installer creation");
-        Assertions.contains(canonical, "IBC_Manager_1.0.8_Release_windows.zip",
+        Assertions.contains(canonical, "IBC_Manager_1.0.13_Release_windows.zip",
                 "Windows release ZIP must use the requested versioned filename");
         Assertions.contains(canonical, "--main-class io.github.ibcmanager.app.IbcManagerApp",
                 "packaging must use the production entry point");
-        Assertions.contains(canonical, "IBC-Manager-1.0.8.jar",
+        Assertions.contains(canonical, "IBC-Manager-1.0.13.jar",
                 "packaging must use the versioned release JAR");
         String driver = Files.readString(
                 ROOT.resolve("src/build/java/io/github/ibcmanager/build/BuildProject.java"),
@@ -286,10 +354,16 @@ public final class ArchitectureTests implements TestSuite {
                 "the build driver must create the Windows release archive name");
         Assertions.contains(driver, "findSingleWindowsInstaller",
                 "Windows release assembly must reject missing or ambiguous installers");
-        Assertions.contains(driver, "copyTree(normalReleaseRoot, stageRoot)",
-                "Windows release archive must retain the normal release files alongside the installer");
-        Assertions.contains(driver, "SHA256SUMS.txt",
-                "the Windows release archive must contain an installer checksum");
+        Assertions.contains(driver, "copyTree(appImageDirectory, stageBase.resolve(\"IBC Manager\"))",
+                "Windows release archive must contain the complete portable application folder");
+        Assertions.contains(driver, "runtime/bin/java.exe",
+                "Windows archive validation must require the Java launcher used by the detached relay");
+        Assertions.contains(driver, "Rebuild the app image without jlink --strip-native-commands",
+                "missing portable Java launcher errors must identify the jlink packaging cause");
+        Assertions.notContains(driver, "copyTree(normalReleaseRoot, stageRoot)",
+                "Windows release archive must not duplicate the normal release files");
+        Assertions.contains(driver, "zip.getEntry(\"SHA256SUMS.txt\") == null",
+                "Windows release archive must exclude extra checksum and documentation files");
         Assertions.contains(driver, "verifyWindowsReleaseArchiveAssembly",
                 "the executable build-driver self-test must assemble and inspect a synthetic Windows archive");
         Assertions.notContains(canonical, "/PW:", "packaging script must not accept an IBC password");
@@ -396,6 +470,25 @@ public final class ArchitectureTests implements TestSuite {
         StringBuilder result = new StringBuilder();
         for (Path file : mainSources()) result.append(Files.readString(file, StandardCharsets.UTF_8)).append('\n');
         return result.toString();
+    }
+
+    private static int count(String source, String token) {
+        int result = 0;
+        int from = 0;
+        while (true) {
+            int index = source.indexOf(token, from);
+            if (index < 0) return result;
+            result++;
+            from = index + token.length();
+        }
+    }
+
+    private static String methodBody(String source, String startToken, String endToken) {
+        int start = source.indexOf(startToken);
+        if (start < 0) throw new AssertionError("Missing source token: " + startToken);
+        int end = source.indexOf(endToken, start + startToken.length());
+        if (end < 0) throw new AssertionError("Missing source token: " + endToken);
+        return source.substring(start, end);
     }
 
     private static String source(String relative) throws Exception {

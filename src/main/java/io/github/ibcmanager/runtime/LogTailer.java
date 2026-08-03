@@ -1,10 +1,13 @@
 package io.github.ibcmanager.runtime;
 
+import io.github.ibcmanager.security.SecureFileOperations;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
@@ -22,7 +25,8 @@ public final class LogTailer {
     }
 
     public synchronized List<String> readNewLines() throws IOException {
-        if (!Files.isRegularFile(path)) return List.of();
+        if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) return List.of();
+        SecureFileOperations.requireRegularFile(path, "Runtime log");
         long size = Files.size(path);
         if (size < position) {
             position = 0;
@@ -37,7 +41,8 @@ public final class LogTailer {
         }
         int length = Math.toIntExact(size - start);
         ByteBuffer buffer = ByteBuffer.allocate(length);
-        try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
+        try (FileChannel channel = FileChannel.open(path,
+                java.util.Set.of(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS))) {
             channel.position(start);
             while (buffer.hasRemaining() && channel.read(buffer) >= 0) {
                 // Read until the captured file size has been consumed.
@@ -89,7 +94,11 @@ public final class LogTailer {
     }
 
     public synchronized void resetToEnd() throws IOException {
-        position = Files.isRegularFile(path) ? Files.size(path) : 0;
+        if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) position = 0;
+        else {
+            SecureFileOperations.requireRegularFile(path, "Runtime log");
+            position = Files.size(path);
+        }
         remainder = "";
     }
 

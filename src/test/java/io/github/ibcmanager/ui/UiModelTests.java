@@ -39,6 +39,7 @@ public final class UiModelTests implements TestSuite {
                 new NamedTest("installation action buttons retain preferred dimensions", this::installationButtons),
                 new NamedTest("session actions present explicit profile-specific confirmations", this::sessionActionPrompts),
                 new NamedTest("session action buttons are larger and visually distinct", this::sessionActionButtons),
+                new NamedTest("profile status indicator maps states to explicit traffic-light tones", this::statusIndicator),
                 new NamedTest("settings table uses enumerated editors and escaped tooltips", this::settingsTable),
                 new NamedTest("profile edit result copies and clears password material", this::profileEditResult),
                 new NamedTest("UI layout helpers create predictable grid constraints", this::layoutHelpers),
@@ -271,6 +272,43 @@ public final class UiModelTests implements TestSuite {
         }
     }
 
+
+    private void statusIndicator() {
+        Assertions.equals(StatusIndicator.Tone.GREEN,
+                StatusIndicator.presentationFor(io.github.ibcmanager.model.RuntimeState.API_SOCKET_OPEN).tone(),
+                "API-ready state must use the green indicator");
+        for (io.github.ibcmanager.model.RuntimeState state : List.of(
+                io.github.ibcmanager.model.RuntimeState.RUNNING,
+                io.github.ibcmanager.model.RuntimeState.VALIDATING,
+                io.github.ibcmanager.model.RuntimeState.STARTING,
+                io.github.ibcmanager.model.RuntimeState.WAITING_FOR_LOGIN,
+                io.github.ibcmanager.model.RuntimeState.WAITING_FOR_SECOND_FACTOR,
+                io.github.ibcmanager.model.RuntimeState.PAUSED,
+                io.github.ibcmanager.model.RuntimeState.STOPPING,
+                io.github.ibcmanager.model.RuntimeState.UNKNOWN)) {
+            Assertions.equals(StatusIndicator.Tone.YELLOW, StatusIndicator.presentationFor(state).tone(),
+                    state + " must use the yellow attention indicator");
+        }
+        Assertions.equals(StatusIndicator.Tone.RED,
+                StatusIndicator.presentationFor(io.github.ibcmanager.model.RuntimeState.STOPPED).tone(),
+                "stopped state must use the red indicator");
+        Assertions.equals(StatusIndicator.Tone.RED,
+                StatusIndicator.presentationFor(io.github.ibcmanager.model.RuntimeState.ERROR).tone(),
+                "error state must use the red indicator");
+        Assertions.equals("API TCP open",
+                StatusIndicator.presentationFor(io.github.ibcmanager.model.RuntimeState.API_SOCKET_OPEN).headline(),
+                "green state must state exactly what was verified");
+        Assertions.equals("Logged in; API closed",
+                StatusIndicator.presentationFor(io.github.ibcmanager.model.RuntimeState.RUNNING).headline(),
+                "login without an API socket must remain an attention state");
+        StatusIndicator indicator = new StatusIndicator();
+        indicator.updateStatus(io.github.ibcmanager.model.ProfileStatus.stopped(java.util.UUID.randomUUID()));
+        Assertions.equals("profileStatusIndicator", indicator.getName(), "status component name mismatch");
+        Assertions.equals(StatusIndicator.Tone.RED, indicator.presentation().tone(),
+                "component must update to the supplied state");
+        Assertions.isTrue(indicator.getAccessibleContext().getAccessibleDescription().contains("Stopped"),
+                "status indicator must expose non-color accessibility text");
+    }
 
     private void settingsTable() throws Exception {
         AtomicReference<Throwable> failure = new AtomicReference<>();

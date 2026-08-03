@@ -11,14 +11,13 @@ import io.github.ibcmanager.model.Severity;
 import io.github.ibcmanager.security.CredentialStore;
 import io.github.ibcmanager.security.CredentialStoreException;
 import io.github.ibcmanager.security.SecureChars;
+import io.github.ibcmanager.security.SecureFileOperations;
 import io.github.ibcmanager.validation.ProfileValidator;
 import io.github.ibcmanager.validation.ValidationResult;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -32,6 +31,7 @@ import java.util.function.Consumer;
 public final class ProfileRuntimeController {
     private static final Duration PORT_TIMEOUT = Duration.ofMillis(350);
     private static final Duration COMMAND_TIMEOUT = Duration.ofSeconds(8);
+    private static final Duration UNCONFIRMED_STOP_COMMAND_TIMEOUT = Duration.ofSeconds(1);
     private static final Duration FORCE_TIMEOUT = Duration.ofSeconds(5);
 
     private enum ExpectedTermination {
@@ -65,6 +65,7 @@ public final class ProfileRuntimeController {
     private LogTailer logTailer;
     private volatile ProfileStatus status;
     private ExpectedTermination expectedTermination = ExpectedTermination.NONE;
+    private boolean commandProbeFallbackPending;
 
     public ProfileRuntimeController(
             Profile profile,
@@ -158,12 +159,13 @@ public final class ProfileRuntimeController {
             newLease = runtimeConfigProvider.create(profile, secret);
             LaunchSpec launchSpec = launchSpecFactory.create(profile, newLease.path());
             Path logFile = paths.profileLog(profile.id());
-            appendSessionHeader(logFile, launchSpec.displayCommand());
-            launchedProcess = processLauncher.launch(launchSpec, logFile);
+            String sessionHeader = sessionHeader(launchSpec.displayCommand());
+            launchedProcess = processLauncher.launch(launchSpec, logFile, sessionHeader);
             identityStore.save(profile.id(), launchedProcess);
             configLease = newLease;
             process = launchedProcess;
             expectedTermination = ExpectedTermination.NONE;
+            commandProbeFallbackPending = false;
             stateParser.reset();
             logTailer = new LogTailer(logFile);
             Instant startedAt = launchedProcess.startInstant().orElseGet(clock::instant);
@@ -190,8 +192,7 @@ public final class ProfileRuntimeController {
             return;
         }
 
-        String host = probeHost(profile.bindAddress());
-        boolean commandOpen = portProbe.isOpen(host, profile.commandServerPort(), PORT_TIMEOUT);
+        boolean commandOpen = commandServerOpenForRefresh();
         boolean apiOpen = portProbe.isOpen("127.0.0.1", profile.apiPort(), PORT_TIMEOUT);
         Optional<IbcLogStateParser.StateHint> hint = stateParser.latest();
         if (apiOpen || hint.map(value -> value.state() == RuntimeState.WAITING_FOR_SECOND_FACTOR
@@ -242,7 +243,7 @@ public final class ProfileRuntimeController {
         if (result.success()) {
             // A restart invalidates every log hint from the previous session, including a
             // PAUSED hint that would otherwise be re-applied by the next refresh.
-            stateParser.reset();
+            stateParser.resetSessionState();
             expectedTermination = ExpectedTermination.NONE;
             setStatus(RuntimeState.STARTING, true, true, false, process.pid(), status.startedAt(), null, "IBC restart requested");
         }
@@ -284,13 +285,18 @@ public final class ProfileRuntimeController {
         ManagedProcess stoppingProcess = process;
         setStatus(RuntimeState.STOPPING, true, status.commandPortOpen(), status.apiPortOpen(), stoppingProcess.pid(), status.startedAt(), null, "Stopping through the IBC command server");
         try {
-            boolean commandOpen = portProbe.isOpen(probeHost(profile.bindAddress()), profile.commandServerPort(), PORT_TIMEOUT);
-            if (commandOpen) {
-                try {
-                    commandClient.send(probeHost(profile.bindAddress()), profile.commandServerPort(), IbcCommand.STOP, COMMAND_TIMEOUT);
-                } catch (IOException ex) {
-                    logBuffer.append("IBC Manager: graceful STOP command failed: " + ex.getMessage());
+            try {
+                Duration timeout = stateParser.commandServerState() == IbcLogStateParser.CommandServerState.OPEN
+                        ? COMMAND_TIMEOUT : UNCONFIRMED_STOP_COMMAND_TIMEOUT;
+                IbcCommandResult result = commandClient.send(probeHost(profile.bindAddress()),
+                        profile.commandServerPort(), IbcCommand.STOP, timeout);
+                markCommandServerAvailable(true);
+                if (!result.success()) {
+                    logBuffer.append("IBC Manager: graceful STOP command was rejected: " + result.response());
                 }
+            } catch (IOException ex) {
+                markCommandServerAvailable(false);
+                logBuffer.append("IBC Manager: graceful STOP command failed: " + safeMessage(ex));
             }
             boolean stopped = stoppingProcess.waitFor(Duration.ofSeconds(profile.gracefulStopTimeoutSeconds()));
             if (!stopped) {
@@ -334,20 +340,20 @@ public final class ProfileRuntimeController {
     private IbcCommandResult sendCommand(IbcCommand command) throws RuntimeControllerException {
         if (process == null || !process.isAlive()) throw new RuntimeControllerException("The profile is not running");
         String host = probeHost(profile.bindAddress());
-        if (!portProbe.isOpen(host, profile.commandServerPort(), PORT_TIMEOUT)) {
-            throw new RuntimeControllerException("IBC command server is not accepting connections");
-        }
         try {
             IbcCommandResult result = commandClient.send(host, profile.commandServerPort(), command, COMMAND_TIMEOUT);
+            markCommandServerAvailable(true);
             if (!result.success()) throw new RuntimeControllerException("IBC rejected " + command + ": " + result.response());
             return result;
         } catch (IOException ex) {
+            markCommandServerAvailable(false);
             throw new RuntimeControllerException("Could not send " + command + " to IBC", ex);
         }
     }
 
     private synchronized void handleProcessExit() {
         if (process == null || process.isAlive()) return;
+        readNewLogLines();
         OptionalInt exitCode = process.exitCode();
         Integer code = exitCode.isPresent() ? exitCode.getAsInt() : null;
         ExpectedTermination termination = expectedTermination;
@@ -383,6 +389,8 @@ public final class ProfileRuntimeController {
         identityStore.delete(profile.id());
         process = null;
         expectedTermination = ExpectedTermination.NONE;
+        commandProbeFallbackPending = false;
+        stateParser.reset();
         setStatus(finalState, false, false, false, -1,
                 oldProcess == null ? null : oldProcess.startInstant().orElse(status.startedAt()), code, message);
     }
@@ -392,11 +400,44 @@ public final class ProfileRuntimeController {
         if (attached.isEmpty()) return;
         process = attached.get();
         expectedTermination = ExpectedTermination.NONE;
+        stateParser.reset();
+        commandProbeFallbackPending = true;
         Path runtimeConfig = paths.runtimeDirectory(profile.id()).resolve("config.ini");
-        if (Files.isRegularFile(runtimeConfig)) configLease = new RuntimeConfigLease(runtimeConfig);
+        if (SecureFileOperations.isRegularFile(runtimeConfig)) configLease = new RuntimeConfigLease(runtimeConfig);
         setStatus(RuntimeState.UNKNOWN, true, false, false, process.pid(),
                 process.startInstant().orElseGet(clock::instant), null, "Reattached to an existing IBC process");
         process.onExit().thenRun(this::handleProcessExit);
+    }
+
+    private boolean commandServerOpenForRefresh() {
+        IbcLogStateParser.CommandServerState commandState = stateParser.commandServerState();
+        if (commandState == IbcLogStateParser.CommandServerState.OPEN) {
+            commandProbeFallbackPending = false;
+            return true;
+        }
+        if (commandState == IbcLogStateParser.CommandServerState.CLOSED) {
+            commandProbeFallbackPending = false;
+            return false;
+        }
+        if (!commandProbeFallbackPending) return false;
+
+        // A reattached process may have been running long enough that its command-server
+        // startup line is outside the bounded log tail. One single fallback probe restores
+        // command controls without reintroducing the two-second connection/logging loop.
+        commandProbeFallbackPending = false;
+        boolean open = portProbe.isOpen(probeHost(profile.bindAddress()),
+                profile.commandServerPort(), PORT_TIMEOUT);
+        if (open) stateParser.markCommandServerOpen();
+        else stateParser.markCommandServerClosed();
+        return open;
+    }
+
+    private void markCommandServerAvailable(boolean available) {
+        if (available) stateParser.markCommandServerOpen();
+        else stateParser.markCommandServerClosed();
+        ProfileStatus current = status;
+        setStatus(current.state(), current.processAlive(), available, current.apiPortOpen(), current.pid(),
+                current.startedAt(), current.exitCode(), current.message());
     }
 
 
@@ -430,7 +471,7 @@ public final class ProfileRuntimeController {
     }
 
     public synchronized boolean runtimeConfigurationPresent() {
-        return configLease != null && Files.exists(configLease.path());
+        return configLease != null && SecureFileOperations.exists(configLease.path());
     }
 
     private void scrubRuntimeConfigAfterAuthentication() {
@@ -447,7 +488,9 @@ public final class ProfileRuntimeController {
 
     private void readNewLogLines() {
         try {
-            List<String> newLines = logTailer.readNewLines();
+            List<String> newLines = process != null && process.hasLiveOutput()
+                    ? process.drainOutputLines()
+                    : logTailer.readNewLines();
             logBuffer.appendAll(newLines);
             for (String line : newLines) stateParser.accept(line);
         } catch (IOException ex) {
@@ -455,14 +498,11 @@ public final class ProfileRuntimeController {
         }
     }
 
-    private void appendSessionHeader(Path logFile, String displayCommand) throws IOException {
-        Files.createDirectories(logFile.toAbsolutePath().normalize().getParent());
-        String header = System.lineSeparator()
+    private String sessionHeader(String displayCommand) {
+        return System.lineSeparator()
                 + "===== IBC Manager session " + clock.instant() + " =====" + System.lineSeparator()
                 + "Profile: " + profile.name() + System.lineSeparator()
                 + "Launch: " + displayCommand + System.lineSeparator();
-        Files.writeString(logFile, header, StandardCharsets.UTF_8,
-                StandardOpenOption.CREATE, StandardOpenOption.APPEND);
     }
 
     private void setStatus(RuntimeState state, boolean processAlive, boolean commandOpen, boolean apiOpen,
@@ -502,6 +542,8 @@ public final class ProfileRuntimeController {
         process = null;
         configLease = null;
         expectedTermination = ExpectedTermination.NONE;
+        commandProbeFallbackPending = false;
+        stateParser.reset();
         try {
             identityStore.delete(profile.id());
         } catch (IOException ex) {

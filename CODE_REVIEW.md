@@ -1,142 +1,111 @@
-# IBC Manager 1.0.8 code review and implementation report
+# IBC Manager 1.0.13 code review and command-server log-noise correction
 
-## Review scope
+## Scope
 
-Version 1.0.8 extends the Windows packaging path so a successful
-`package-windows.bat` run creates a distributable ZIP containing the generated
-Windows installer. The requested filename is:
-
-```text
-dist\IBC_Manager_1.0.8_Release_windows.zip
-```
-
-This is the normal release filename, `IBC_Manager_1.0.8_Release.zip`, with the
-additional `_windows` suffix immediately before `.zip`.
-
-No application runtime, profile, credential, IBC-control, or trading behavior is
-changed by this release.
-
-## Implementation
-
-### Packaging order
-
-`scripts\package-windows.bat` continues to execute the full release gates before
-native packaging:
+Version 1.0.13 reviews the steady-state runtime monitor after a healthy IBC
+session repeatedly added these lines to the profile log approximately every two
+seconds:
 
 ```text
-self-test clean test jar smoke gui-smoke dist
+CommandServer: ControlFrom setting =
+CommandServer accepted connection from: /127.0.0.1
+Closing command channel
 ```
 
-It then creates, in order:
+The review followed the path from `RuntimeRegistry`'s two-second scheduler,
+through `ProfileRuntimeController.refresh()` and `TcpPortProbe`, to IBC's local
+command server. It also reviewed explicit command dispatch, process reattachment,
+startup preflight, status presentation, and failure recovery.
 
-1. the self-contained jpackage application image;
-2. the versioned Windows EXE installer;
-3. the Windows release ZIP through the build driver's
-   `windows-release-zip` target.
+## Root cause
 
-ZIP assembly therefore cannot run before the EXE installer has completed
-successfully. Failure of any step returns a nonzero exit code.
+The runtime registry refreshes profile state every two seconds. In 1.0.12,
+every refresh opened a real TCP connection to the configured IBC command port
+and immediately closed it. IBC treats that as a client command channel and logs
+its acceptance and closure. The connection was only a health probe, but it was
+indistinguishable from normal command traffic in IBC output.
 
-### Windows release contents
+The same pattern also occurred twice for explicit commands because the manager
+first probed the port and then opened a second connection to send the actual
+command.
 
-The ZIP is assembled from the exact normal release staging directory created by
-the `dist` target. It retains:
+## Correction
 
-- `IBC-Manager-1.0.8.jar`;
-- `run.bat` and the runtime prerequisite scripts;
-- README, changelog, licence, notices, code review, and test report;
-- the documentation and third-party notice trees.
+### Passive lifecycle tracking
 
-The Windows-specific stage then adds:
-
-- `IBC Manager-1.0.8.exe`;
-- `SHA256SUMS.txt`, containing the SHA-256 of that installer.
-
-The archive uses the same internal root as the normal release:
+`IbcLogStateParser` now has an independent command-server lifecycle state:
 
 ```text
-IBC_Manager_1.0.8/
+UNKNOWN -> STARTING -> OPEN -> CLOSED
 ```
 
-Only the archive filename receives the `_windows` suffix.
+It recognizes IBC's command-server startup, ready/listening, accepted-client,
+failed/disabled, and shutdown messages. Closing one client channel does not mark
+the server itself closed.
 
-ZIP output is first written to a temporary file in `dist`. The temporary
-archive is reopened and validated before it atomically replaces the final path
-where the file system supports atomic moves; a replace move is used as the
-portable fallback. Failed assembly therefore does not activate a partial final
-release ZIP.
+### Quiet periodic refresh
 
-## Fail-closed validation
+`ProfileRuntimeController.refresh()` no longer references or probes the IBC
+command port. It consumes the cached lifecycle state while continuing the
+separate configured IB API TCP check. This removes the recurring command-channel
+connections without changing the two-second GUI/status update cadence.
 
-The build driver refuses to create the Windows release archive unless all of the
-following are true:
+### Direct commands
 
-- the jpackage app-image launcher exists and is nonempty;
-- exactly one direct `.exe` installer exists under `dist\windows`;
-- the installer is nonempty;
-- the installer is named exactly `IBC Manager-1.0.8.exe`;
-- the normal release staging tree exists;
-- the normal release staging tree contains README, the versioned JAR, and
-  `run.bat`;
-- the completed ZIP can be reopened;
-- the completed ZIP contains the installer, README, launcher, and checksum file;
-- the checksum text read back from the ZIP exactly matches the generated value.
+Stop, Restart, Pause, reconnect-data, reconnect-account, and enable-API commands
+are sent directly through `IbcCommandClient`. A separate preliminary socket
+probe is no longer performed. A successful command confirms the cached server
+state; an I/O failure invalidates it. IBC command rejection still leaves the
+transport marked available because the server responded.
 
-The direct-file scan deliberately ignores the app-image executable nested under
-`dist\windows\IBC Manager`. A second installer-like EXE directly under
-`dist\windows` is treated as ambiguous output and blocks the release.
+### Reattachment compatibility
 
-## Test and self-test coverage
+A manager instance can reattach to an already-running IBC process after the
+original startup line has moved outside the bounded log tail. In that one case,
+the controller permits exactly one fallback TCP probe and caches the outcome.
+Subsequent two-second refreshes do not repeat it. Current lifecycle output can
+still override the cached result later.
 
-The executable build-driver self-test now creates a temporary synthetic normal
-release, a fake app-image launcher, and a fake versioned installer. It then:
+### Preserved launch safety
 
-1. builds the Windows release ZIP;
-2. verifies the exact `_Release_windows.zip` name;
-3. opens the ZIP and checks installer, normal JAR, and `run.bat` retention;
-4. verifies the generated installer checksum file;
-5. adds a second direct EXE and proves that ambiguous output is rejected.
+The one-time occupied-port preflight remains before credential retrieval and
+before creation of a password-bearing runtime configuration. This check is a
+launch conflict guard, not a steady-state monitor.
 
-Static release tests additionally verify:
+### Status and documentation
 
-- ZIP creation occurs after `--type exe` in `package-windows.bat`;
-- the script references the exact 1.0.8 Windows ZIP filename;
-- the current JAR and jpackage application versions agree;
-- the build driver contains installer selection, ZIP validation, checksum, and
-  executable self-test protections;
-- Windows scripts retain CRLF line endings and no UTF-8 BOM.
+The Overview tab now says that the command server is **Ready ... (reported by
+IBC)** rather than describing it as an actively probed open port. The Commands
+tab explains that status monitoring does not create recurring command
+connections. Documentation distinguishes normal one-connection-per-command
+output from the removed idle polling sequence.
 
-## Validation summary
+## Security and compatibility assessment
 
-- 91 production Java files;
-- 23 test Java files;
-- 425 automated test cases;
-- 5,113 assertions;
-- zero failed and zero skipped tests;
-- strict Java 17 bytecode target;
-- `-Xlint:all -Werror` compilation;
-- packaged-JAR version and headless smoke checks;
-- real Swing GUI smoke under Xvfb;
-- deterministic normal release/source builds;
-- synthetic Windows-release ZIP creation and failure-path validation;
-- extracted normal release execution and extracted source rebuild/retest;
-- release/source ZIP integrity and source-cleanliness checks.
+- No changes were made to official IBC, `IBC.jar`, IB Gateway, or TWS.
+- No credentials or account data are added to logs or command arguments.
+- The command server remains loopback-only by default.
+- Launch conflict detection still occurs before encrypted credentials are loaded.
+- Explicit commands retain total deadlines and bounded response handling.
+- API status remains a TCP-only observation and is not presented as an IB API
+  handshake or account validation.
+- A process reattachment can create at most one compatibility probe; normal
+  startup and steady-state monitoring create none.
+- Existing historical log lines are not deleted or rewritten by the upgrade.
 
-## Platform limitation
+## Review result
 
-The release environment is Linux. It cannot execute Windows PowerShell 5.1,
-WiX, or Windows `jpackage --type exe`, so it cannot produce or validate a real
-Windows installer. The ZIP assembly itself is exercised with synthetic EXE
-outputs, but the final Windows-native gate remains running:
+- **101** production Java files;
+- **24** test Java files;
+- **477** automated tests;
+- **5,484** assertions;
+- **0** failures;
+- **0** skipped tests;
+- **0** compiler warnings with warnings treated as errors;
+- Java 17 bytecode and no third-party Java runtime dependency.
 
-```bat
-package-windows.bat
-```
-
-on Windows. A successful Windows run should create:
-
-```text
-dist\windows\IBC Manager\IBC Manager.exe
-dist\windows\IBC Manager-1.0.8.exe
-dist\IBC_Manager_1.0.8_Release_windows.zip
-```
+The cross-platform source and normal release gates are complete when accompanied
+by the final validation record. Windows-native confirmation should leave a
+profile idle for at least 30 seconds and verify that the accepted/closed command
+sequence no longer repeats. One sequence per real command, and at most one after
+reattaching without historical startup output, is expected.

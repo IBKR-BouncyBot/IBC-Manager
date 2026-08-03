@@ -11,6 +11,7 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Arrays;
@@ -21,6 +22,7 @@ import java.util.UUID;
 
 public final class WindowsDpapiCredentialStore implements CredentialStore {
     private static final Duration COMMAND_TIMEOUT = Duration.ofSeconds(20);
+    private static final int MAX_CREDENTIAL_FILE_BYTES = 512 * 1024;
     private static final String UTF8_CONSOLE =
             "[Console]::InputEncoding=[Text.UTF8Encoding]::new($false);"
                     + "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);";
@@ -71,11 +73,17 @@ public final class WindowsDpapiCredentialStore implements CredentialStore {
         Objects.requireNonNull(profileId, "profileId");
         ensureAvailable();
         Path source = paths.credentialFile(profileId);
-        if (!Files.isRegularFile(source)) throw new CredentialStoreException("No stored password exists for this profile");
+        if (!SecureFileOperations.isRegularFile(source)) {
+            if (Files.exists(source, LinkOption.NOFOLLOW_LINKS)) {
+                throw new CredentialStoreException("Stored credential is not a regular file");
+            }
+            throw new CredentialStoreException("No stored password exists for this profile");
+        }
         byte[] plaintextBytes = null;
         char[] plaintextChars = null;
         try {
-            String ciphertext = Files.readString(source, StandardCharsets.US_ASCII).trim();
+            String ciphertext = BoundedFileReader.readString(source, StandardCharsets.US_ASCII,
+                    MAX_CREDENTIAL_FILE_BYTES, "Stored credential").trim();
             validateBase64(ciphertext, "encrypted data");
             CommandResult result = executor.execute(powerShellCommand(unprotectScript(profileId)), ciphertext, COMMAND_TIMEOUT);
             verify(result, "decrypt");
@@ -93,13 +101,21 @@ public final class WindowsDpapiCredentialStore implements CredentialStore {
 
     @Override
     public boolean exists(UUID profileId) {
-        return Files.isRegularFile(paths.credentialFile(profileId));
+        return SecureFileOperations.isRegularFile(paths.credentialFile(profileId));
     }
 
     @Override
     public void delete(UUID profileId) throws CredentialStoreException {
         try {
-            Files.deleteIfExists(paths.credentialFile(profileId));
+            Path credential = paths.credentialFile(profileId);
+            if (Files.isSymbolicLink(credential)) {
+                Files.deleteIfExists(credential);
+                throw new CredentialStoreException("Removed an unsafe symbolic credential link");
+            }
+            if (Files.exists(credential, LinkOption.NOFOLLOW_LINKS)) {
+                SecureFileOperations.requireRegularFile(credential, "Stored credential");
+            }
+            Files.deleteIfExists(credential);
         } catch (IOException ex) {
             throw new CredentialStoreException("Could not delete the stored password", ex);
         }

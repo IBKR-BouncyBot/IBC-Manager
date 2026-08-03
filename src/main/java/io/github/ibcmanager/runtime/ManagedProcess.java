@@ -17,4 +17,6 @@ public interface ManagedProcess {
     void destroy();
     void destroyForcibly();
     OptionalInt exitCode();
+    default boolean hasLiveOutput() { return false; }
+    default List<String> drainOutputLines() { return List.of(); }
 }

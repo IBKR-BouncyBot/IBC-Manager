@@ -336,8 +336,10 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
                 "Windows release archive must use the requested filename suffix");
         Assertions.contains(driver, "validateWindowsReleaseArchive",
                 "driver must inspect the completed Windows release ZIP");
-        Assertions.contains(driver, "sha256(installer)",
-                "Windows release archive must publish the installer checksum");
+        Assertions.contains(driver, "copyTree(appImageDirectory, stageBase.resolve(\"IBC Manager\"))",
+                "Windows release archive must include the complete portable application image");
+        Assertions.contains(driver, "name.equals(installerName) || name.startsWith(\"IBC Manager/\")",
+                "Windows release archive must reject payload outside the installer and portable folder");
         Assertions.contains(driver, "includeInSourceArchive",
                 "driver must filter generated files from the source archive");
         for (String excluded : List.of("build/", "dist/", ".git/", ".idea/", ".vscode/", ".log", ".tmp", ".class")) {
@@ -397,7 +399,7 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
         }
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         Assertions.equals(0, process.exitValue(), "build-driver self-test failed: " + output);
-        Assertions.contains(output, "Build-driver self-test passed for version 1.0.8",
+        Assertions.contains(output, "Build-driver self-test passed for version 1.0.13",
                 "build-driver self-test must report the current release version");
     }
 
@@ -581,13 +583,24 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
         Assertions.contains(pack, "windows-release-zip",
                 "package-windows.bat must invoke Windows release ZIP assembly");
         Assertions.contains(pack,
-                "set \"WINDOWS_RELEASE_ZIP=dist\\IBC_Manager_1.0.8_Release_windows.zip\"",
+                "set \"JLINK_OPTIONS=--strip-debug --no-man-pages --no-header-files\"",
+                "Windows packaging must retain Java native commands in the bundled runtime");
+        Assertions.equals(2, count(pack, "--jlink-options \"%JLINK_OPTIONS%\""),
+                "both jpackage invocations must use the native-command-preserving jlink options");
+        Assertions.notContains(pack, "--strip-native-commands",
+                "package-windows.bat must not remove runtime/bin/java.exe");
+        Assertions.contains(pack, "runtime\\bin\\java.exe",
+                "package-windows.bat must fail before release assembly when the Java launcher is absent");
+        Assertions.contains(pack,
+                "set \"WINDOWS_RELEASE_ZIP=dist\\IBC_Manager_1.0.13_Release_windows.zip\"",
                 "Windows release ZIP filename must equal the normal release name plus _windows");
         Assertions.contains(driver,
                 "IBC_Manager_\" + releaseVersion + \"_Release_windows.zip",
                 "build driver must derive the Windows release filename from the application version");
-        Assertions.contains(driver, "copyTree(normalReleaseRoot, stageRoot)",
-                "Windows release ZIP must retain the normal release payload");
+        Assertions.contains(driver, "copyTree(appImageDirectory, stageBase.resolve(\"IBC Manager\"))",
+                "Windows release ZIP must contain the portable application folder");
+        Assertions.notContains(driver, "copyTree(normalReleaseRoot, stageRoot)",
+                "Windows release ZIP must not duplicate the normal release payload");
         Assertions.contains(driver, "IBC Manager-\" + releaseVersion + \".exe",
                 "Windows release ZIP must require the matching versioned EXE installer");
         Assertions.contains(driver, "verifyWindowsReleaseArchiveAssembly",
@@ -599,14 +612,14 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
         String build = read("build.xml");
         String run = read("scripts/run.bat");
         String pack = read("scripts/package-windows.bat");
-        Assertions.contains(version, "VERSION = \"1.0.8\"", "application version must be 1.0.8");
-        Assertions.contains(build, "name=\"app.version\" value=\"1.0.8\"",
-                "optional Ant release version must be 1.0.8");
-        Assertions.contains(run, "IBC-Manager-1.0.8.jar", "run JAR must be version 1.0.8");
-        Assertions.contains(pack, "--app-version 1.0.8", "Windows package version must be 1.0.8");
-        Assertions.contains(pack, "IBC-Manager-1.0.8.jar", "packaged JAR must be version 1.0.8");
-        Assertions.contains(pack, "IBC_Manager_1.0.8_Release_windows.zip",
-                "Windows release ZIP must be version 1.0.8");
+        Assertions.contains(version, "VERSION = \"1.0.13\"", "application version must be 1.0.13");
+        Assertions.contains(build, "name=\"app.version\" value=\"1.0.13\"",
+                "optional Ant release version must be 1.0.13");
+        Assertions.contains(run, "IBC-Manager-1.0.13.jar", "run JAR must be version 1.0.13");
+        Assertions.contains(pack, "--app-version 1.0.13", "Windows package version must be 1.0.13");
+        Assertions.contains(pack, "IBC-Manager-1.0.13.jar", "packaged JAR must be version 1.0.13");
+        Assertions.contains(pack, "IBC_Manager_1.0.13_Release_windows.zip",
+                "Windows release ZIP must be version 1.0.13");
     }
 
     private static int count(String source, String token) {

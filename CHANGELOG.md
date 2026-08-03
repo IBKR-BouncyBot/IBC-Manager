@@ -1,5 +1,252 @@
 # Changelog
 
+## 1.0.13 - 2026-08-03
+
+### Quiet IBC command-server monitoring
+
+- Removed the two-second steady-state TCP probe of the IBC command port. IBC
+  logs every accepted and closed command channel, so that probe continuously
+  filled otherwise healthy profile logs with `ControlFrom`, accepted-connection,
+  and closing-channel messages.
+- Added explicit command-server lifecycle tracking from IBC output: starting,
+  ready/listening, accepted command, failed/disabled, and shutdown states.
+- Changed periodic profile refresh to consume the cached lifecycle state without
+  opening a command connection.
+- Changed Stop, Restart, Pause, reconnect, and enable-API operations to send the
+  real command directly rather than opening a preliminary health-check socket.
+- Added one reattachment-only fallback probe for an already-running process when
+  its command-server startup line is outside the bounded log tail. The result is
+  cached and never repeated by normal status refreshes.
+- Preserved the one-time occupied-port launch preflight before credentials are
+  loaded or a password-bearing runtime configuration is created.
+- Clarified the Overview and Commands tabs so command readiness is described as
+  reported by IBC rather than inferred from recurring TCP probes.
+- Kept the separate IB API TCP-readiness check unchanged. It remains explicitly
+  documented as a socket check, not an IB API handshake or account validation.
+
+### Validation
+
+- Increased the suite to **477 automated tests** and **5,484 assertions** across
+  **101 production** and **24 test** Java source files.
+- Added lifecycle-parser, controller, reattachment, direct-command, and source-
+  architecture regressions that fail if recurring command-port polling or
+  command pre-probing is reintroduced.
+- Retained Java 17 bytecode targeting, `-Xlint:all -Werror`, deterministic
+  archives, extracted-release execution, extracted-source rebuild/retest,
+  real-window GUI smoke, and SHA-256 publication checks.
+
+## 1.0.12 - 2026-08-03
+
+### Windows portable-runtime packaging correction
+
+- Fixed the `_Release_windows.zip` and installed EXE packages starting IBC
+  Manager successfully but failing when a profile was started with
+  `Could not locate Java runtime: ...\runtime\bin\java.exe`.
+- Overrode jpackage's default jlink options for both the portable app image and
+  EXE installer so native Java commands are retained. The package still strips
+  debug data, headers, and manual pages.
+- Added an immediate post-jpackage gate that requires a nonempty portable
+  `runtime\bin\java.exe` before the installer or Windows release ZIP is built.
+- Strengthened Windows release-ZIP assembly to require the exact nonempty
+  portable launcher, versioned application JAR, and Java process launcher rather
+  than accepting any file somewhere below `app` or `runtime`.
+- Reopen and validate the completed Windows ZIP before atomically activating it.
+- Added a negative build-driver self-test proving an app image with a runtime
+  directory but no `java.exe` is rejected.
+- Hardened detached-relay startup to prefer nonempty `java.exe` and accept
+  nonempty `javaw.exe` as a Windows fallback, with an explicit incomplete-runtime
+  error when neither exists.
+
+### Validation
+
+- Increased the suite to **474 automated tests** and **5,458 assertions** across
+  **101 production** and **24 test** Java source files.
+- Added runtime-launcher selection tests and source/package invariants for both
+  jpackage invocations, native-command retention, exact portable-runtime
+  contents, and missing-runtime rejection.
+- Stabilized the existing cross-platform process-tree test by allowing the
+  operating system a bounded post-termination reaping interval before asserting
+  that captured descendant handles are no longer alive; production termination
+  behavior is unchanged.
+- Retained Java 17 bytecode targeting, `-Xlint:all -Werror`, deterministic
+  archives, extracted-release execution, extracted-source rebuild/retest,
+  real-window GUI smoke, and SHA-256 publication checks.
+
+## 1.0.11 - 2026-08-03
+
+### Windows release-gate correction
+
+- Fixed the deterministic Windows failure in **process tree terminator captures
+  descendants spawned during shutdown** that stopped both
+  `validate-windows.bat` and `package-windows.bat` after 472 successful tests.
+- Removed the process-tree test fixture's dependency on a JVM shutdown hook
+  being executed after an external process termination request. That behavior is
+  not a portable cross-platform test contract.
+- Replaced it with a Java-only cooperative shutdown fixture. The root receives a
+  signal through its standard-input pipe, starts a child, publishes the child PID
+  through an atomic file move, and remains alive while the production terminator
+  discovers and stops the new descendant.
+- Added a test-only `ManagedProcess` adapter that maps `destroy()` to the
+  cooperative signal while retaining real process PID, start-time, descendant,
+  wait, exit, and force-termination behavior.
+- Added source-architecture checks requiring the cooperative fixture and
+  rejecting shutdown-hook-dependent process-termination tests.
+- Normalized the tracked default IBC template and retained GPL licence files to
+  the LF policy declared by `.gitattributes`, while keeping `.bat` and `.ps1`
+  files CRLF. Fresh Git checkouts and source-ZIP builds now reproduce the same
+  JAR and release archives byte-for-byte.
+- Kept production process termination unchanged: captured processes are still
+  verified by PID, start time, and available command fingerprint before graceful
+  or forced termination.
+
+### Validation
+
+- Retained **473 automated tests** and increased the logical assertion count to
+  **5,431** across **101 production** and **24 test** Java source files.
+- Added 30 consecutive targeted stress runs of the corrected dynamic-descendant
+  test before the final release gate.
+- Retained Java 17 bytecode targeting, `-Xlint:all -Werror`, deterministic
+  archives, extracted-release execution, extracted-source rebuild/retest,
+  real-window GUI smoke, and SHA-256 publication checks.
+
+## 1.0.10 - 2026-08-03
+
+### Release and repository readiness
+
+- Added GitHub Actions build/test coverage for Ubuntu and Windows plus a real
+  Swing-window smoke job under Xvfb.
+- Added `SECURITY.md`, `CONTRIBUTING.md`, `RELEASE_CHECKLIST.md`, issue-template,
+  `.gitignore`, and `.gitattributes` files for a public GitHub repository.
+- Kept the production runtime dependency-free beyond the Java 17 standard
+  modules and retained official IBC as a separate, unmodified installation.
+
+### Filesystem and persistence hardening
+
+- Added bounded, strict-encoding reads for profiles, managed/existing IBC
+  configurations, runtime configurations, credentials, process identities,
+  relay descriptors, diagnostic log tails, installer metadata, and transaction
+  metadata.
+- Added no-follow filesystem operations for application-owned directories and
+  control files, rejecting symbolic-link substitution instead of following it.
+- Hardened atomic writes, backups, runtime cleanup, profile discovery, IBC
+  validation, installation activation, log handling, and single-instance locks.
+- Added transactional profile deletion with durable PREPARED/COMMITTED
+  tombstones, credential rollback, startup recovery, and transaction-name/profile
+  identity validation. An incomplete rollback now retains its PREPARED tombstone
+  and staged data so startup recovery can finish safely instead of deleting the
+  only recoverable copy.
+- Extended profile-save rollback so profile, managed configuration, and
+  credential state are restored together after late failures.
+
+### Process, command, and runtime safety
+
+- Added process fingerprints to persisted PID/start-time identities and remove
+  stale or malformed identities before reattachment. Fingerprints use stable
+  executable-command metadata; if the operating system temporarily stops exposing
+  command metadata during process exit, matching falls back to PID and start time,
+  while an explicit non-empty mismatch still fails closed.
+- Hardened exact process-tree termination against PID reuse and descendants
+  created while the root process is shutting down.
+- Added one total IBC command deadline, bounded line/response sizes and counts,
+  strict host/port validation, preserved partial-response semantics, and
+  line-boundary command-result parsing that avoids quadratic response scanning.
+- Added cross-profile collision detection across both API and IBC command-port
+  roles.
+- Restricted process-relay descriptor deletion to the exact private descriptor
+  filename format and rejected symbolic or oversized descriptors.
+
+### Logging, diagnostics, and input handling
+
+- Bounded application-log, process-log, live-output, and dashboard-log memory
+  use while preserving the requested 60-second routine disk-write cadence. A
+  failed final process-log write remains retryable instead of permanently closing
+  the buffer with unwritten data.
+- Expanded redaction for commented IBC assignments, command-line forms,
+  structured values, URL query values, overlapping exact secrets, and bounded
+  exception stack traces.
+- Prevented invalid command-line and profile paths from reflecting control
+  characters back into console or GUI diagnostics.
+- Added bounded and no-follow diagnostic reads and retained deterministic,
+  redacted diagnostic bundle behavior.
+- Hardened command execution so interruption or stream/setup failure terminates
+  the spawned subprocess and does not leave an unmanaged child running.
+
+### Validation
+
+- Expanded the suite to **473 automated tests with 5,428 assertions** across
+  **101 production** and **24 test** Java source files.
+- Added release-audit regression coverage for file bounds, malformed UTF-8,
+  symbolic links, rollback, stale transactions, process identity, process-tree
+  races, command-server limits, port collisions, redaction, relay safety, and
+  invalid-path handling.
+- Retained Java 17 bytecode targeting, `-Xlint:all -Werror`, packaged-JAR smoke,
+  real-window GUI smoke, deterministic release/source archives, extracted-source
+  rebuild/retest, archive integrity checks, and SHA-256 publication gates.
+
+## 1.0.9 - 2026-08-02
+
+### Windows release archive
+
+- Changed `IBC_Manager_1.0.9_Release_windows.zip` to contain only the two
+  requested Windows payloads: `IBC Manager-1.0.9.exe` at the archive root and
+  the complete portable `IBC Manager` application-image folder.
+- Removed the normal JAR release, batch launchers, documentation, notices,
+  licences, and checksum file from the Windows-only archive. Those remain in
+  `IBC_Manager_1.0.9_Release.zip` and the source package.
+- Added fail-closed validation for the app-image launcher, `app` payload,
+  bundled `runtime`, exact installer name, duplicate installer output, completed
+  ZIP readability, and any file outside the installer/portable-folder layout.
+- Retained temporary ZIP creation and activation only after successful
+  validation, preventing a partial final archive from being published.
+
+### Documentation image
+
+- Added the supplied main-window screenshot as `images/GUI.png` and displayed it
+  directly below the README title.
+- Included the `images` directory in the normal release ZIP and source ZIP, with
+  build and architecture checks that reject a missing, empty, or unreferenced
+  screenshot.
+
+### Runtime status presentation
+
+- Added a prominent text-backed traffic-light panel for the selected profile and
+  matching colored state icons in the profile list.
+- Green is reserved for the directly observed **API TCP open** condition. Yellow
+  covers startup, authentication, logged-in-with-API-closed, paused, stopping,
+  and unknown states. Red covers stopped and error states.
+- Kept explicit state text and accessible descriptions so status does not depend
+  on color alone. The API-TCP caveat remains visible: an open socket is not proof
+  of an IB API handshake, account match, permissions, or trading readiness.
+
+### Buffered log writes
+
+- Changed manager-owned application logs and IBC/TWS console logs to batch
+  routine disk writes at a 60-second cadence.
+- Added a detached Java process relay that forwards IBC/TWS output live to the
+  GUI while buffering disk output. It continues draining and writing logs if the
+  GUI exits while the managed process remains active.
+- Added final partial-batch commits when the manager logger closes or the managed
+  process exits. A hard crash or power loss can still lose up to approximately
+  60 seconds of manager-owned buffered log data.
+- Added bounded relay descriptors, owner-only permission hardening, malformed and
+  truncated descriptor rejection, failed-write cleanup, live-output queue caps,
+  UTF-8 handling, and scheduled-write retry behavior.
+
+### Validation
+
+- Hardened timeout handling in the platform-neutral command executor so a
+  process stream closed during forced timeout termination preserves any
+  already captured output instead of surfacing a spurious `Stream closed`
+  failure.
+- Expanded the suite to **430 automated tests with 5,222 assertions**.
+- Added executable tests for 60-second production cadence constants, no early
+  disk write, live pre-flush output, scheduled and final commits, detached relay
+  survival, relay descriptor round trips and cleanup, traffic-light mappings,
+  accessibility text, README image packaging, and the exact Windows ZIP layout.
+- Retained strict Java 17 bytecode targeting, warning-free compilation,
+  deterministic release/source artifacts, JAR smoke tests, real Swing GUI smoke,
+  extracted-source rebuild/retest, and archive-integrity checks.
+
 ## 1.0.8 - 2026-08-02
 
 ### Windows packaging

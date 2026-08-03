@@ -361,8 +361,13 @@ public final class ProfileEditorDialog extends JDialog {
         return result;
     }
 
-    private static Path toPath(String value) {
-        return value == null || value.isBlank() ? Path.of("") : Path.of(value.trim()).toAbsolutePath().normalize();
+    static Path toPath(String value) {
+        if (value == null || value.isBlank()) return Path.of("");
+        try {
+            return Path.of(value.trim()).toAbsolutePath().normalize();
+        } catch (java.nio.file.InvalidPathException ex) {
+            throw new IllegalArgumentException("The selected path is invalid on this operating system", ex);
+        }
     }
 
     private static String pathText(Path path) {

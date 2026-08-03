@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -45,8 +46,9 @@ public final class RuntimeRegistry implements AutoCloseable {
 
     public void setProfiles(Collection<Profile> profiles) {
         for (Profile profile : profiles) upsert(profile);
-        List<UUID> retained = profiles.stream().map(Profile::id).toList();
-        controllers.keySet().removeIf(id -> !retained.contains(id) && !controllers.get(id).status().processAlive());
+        Set<UUID> retained = profiles.stream().map(Profile::id).collect(java.util.stream.Collectors.toUnmodifiableSet());
+        controllers.entrySet().removeIf(entry -> !retained.contains(entry.getKey())
+                && !entry.getValue().status().processAlive());
     }
 
     public ProfileRuntimeController upsert(Profile profile) {
@@ -114,5 +116,7 @@ public final class RuntimeRegistry implements AutoCloseable {
     @Override
     public void close() {
         scheduler.shutdownNow();
+        try { scheduler.awaitTermination(5, TimeUnit.SECONDS); }
+        catch (InterruptedException ex) { Thread.currentThread().interrupt(); }
     }
 }

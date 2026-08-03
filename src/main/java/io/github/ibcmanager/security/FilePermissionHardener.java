@@ -18,11 +18,14 @@ public final class FilePermissionHardener {
     private FilePermissionHardener() { }
 
     public static void hardenFile(Path file) throws IOException {
-        if (Files.getFileAttributeView(file, java.nio.file.attribute.PosixFileAttributeView.class) != null) {
+        SecureFileOperations.requireRegularFile(file, "File to harden");
+        if (Files.getFileAttributeView(file, java.nio.file.attribute.PosixFileAttributeView.class,
+                java.nio.file.LinkOption.NOFOLLOW_LINKS) != null) {
             Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-------"));
             return;
         }
-        AclFileAttributeView view = Files.getFileAttributeView(file, AclFileAttributeView.class);
+        AclFileAttributeView view = Files.getFileAttributeView(file, AclFileAttributeView.class,
+                java.nio.file.LinkOption.NOFOLLOW_LINKS);
         if (view != null) {
             UserPrincipal owner = Files.getOwner(file);
             Set<AclEntryPermission> permissions = EnumSet.of(
@@ -37,12 +40,14 @@ public final class FilePermissionHardener {
     }
 
     public static void hardenDirectory(Path directory) throws IOException {
-        Files.createDirectories(directory);
-        if (Files.getFileAttributeView(directory, java.nio.file.attribute.PosixFileAttributeView.class) != null) {
+        SecureFileOperations.ensureDirectory(directory);
+        if (Files.getFileAttributeView(directory, java.nio.file.attribute.PosixFileAttributeView.class,
+                java.nio.file.LinkOption.NOFOLLOW_LINKS) != null) {
             Files.setPosixFilePermissions(directory, PosixFilePermissions.fromString("rwx------"));
             return;
         }
-        AclFileAttributeView view = Files.getFileAttributeView(directory, AclFileAttributeView.class);
+        AclFileAttributeView view = Files.getFileAttributeView(directory, AclFileAttributeView.class,
+                java.nio.file.LinkOption.NOFOLLOW_LINKS);
         if (view != null) {
             UserPrincipal owner = Files.getOwner(directory);
             Set<AclEntryPermission> permissions = ownerDirectoryPermissions();
