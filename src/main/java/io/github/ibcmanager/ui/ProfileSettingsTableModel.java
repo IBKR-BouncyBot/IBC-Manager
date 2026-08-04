@@ -1,29 +1,40 @@
 package io.github.ibcmanager.ui;
 
+import io.github.ibcmanager.config.IbcCompatibilityPolicy;
 import io.github.ibcmanager.config.IbcConfigSchema;
+import io.github.ibcmanager.config.ManagedConfigService;
 import io.github.ibcmanager.config.SettingDefinition;
 
 import javax.swing.table.AbstractTableModel;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 @SuppressWarnings("serial")
 public final class ProfileSettingsTableModel extends AbstractTableModel {
-    private static final Set<String> PROFILE_CONTROLLED = Set.of(
-            "IbLoginId", "IbPassword", "TradingMode", "MinimizeMainWindow",
-            "OverrideTwsApiPort", "CommandServerPort", "BindAddress", "IbDir",
-            "SecondFactorDevice");
     private final List<SettingDefinition> definitions;
     private final Map<String, String> values = new LinkedHashMap<>();
+    private final Map<String, String> passthrough = new LinkedHashMap<>();
 
     public ProfileSettingsTableModel(Map<String, String> initial) {
         definitions = IbcConfigSchema.definitions().stream()
                 .filter(definition -> !definition.sensitive())
-                .filter(definition -> !PROFILE_CONTROLLED.contains(definition.key()))
+                .filter(definition -> !ManagedConfigService.isProfileControlled(definition.key()))
+                .filter(definition -> !IbcCompatibilityPolicy.isUnsupportedStructuredSetting(definition.key()))
                 .toList();
-        if (initial != null) values.putAll(initial);
+        if (initial == null) return;
+        for (Map.Entry<String, String> entry : initial.entrySet()) {
+            String key = entry.getKey();
+            if (key == null || IbcConfigSchema.isSensitive(key)
+                    || ManagedConfigService.isProfileControlled(key)
+                    || IbcCompatibilityPolicy.isUnsupportedStructuredSetting(key)) continue;
+            var definition = IbcConfigSchema.findIgnoreCase(key);
+            if (definition.isPresent()) {
+                values.put(definition.get().key(), entry.getValue() == null ? "" : entry.getValue());
+            } else {
+                passthrough.put(key, entry.getValue() == null ? "" : entry.getValue());
+            }
+        }
     }
 
     @Override
@@ -86,6 +97,7 @@ public final class ProfileSettingsTableModel extends AbstractTableModel {
         for (SettingDefinition definition : definitions) {
             if (values.containsKey(definition.key())) result.put(definition.key(), values.get(definition.key()));
         }
+        result.putAll(passthrough);
         return result;
     }
 

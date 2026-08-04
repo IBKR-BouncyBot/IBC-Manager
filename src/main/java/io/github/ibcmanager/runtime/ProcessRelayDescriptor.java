@@ -26,7 +26,7 @@ import java.util.UUID;
 
 final class ProcessRelayDescriptor {
     private static final int MAGIC = 0x49424352; // IBCR
-    private static final int FORMAT_VERSION = 1;
+    private static final int FORMAT_VERSION = 2;
     private static final int MAX_ITEMS = 2048;
     private static final int MAX_STRING_BYTES = 4 * 1024 * 1024;
     static final int MAX_DESCRIPTOR_BYTES = 32 * 1024 * 1024;
@@ -39,15 +39,18 @@ final class ProcessRelayDescriptor {
     private final Path logFile;
     private final String initialLogText;
     private final Duration flushInterval;
+    private final Path cleanupPath;
 
     private ProcessRelayDescriptor(List<String> command, Path workingDirectory,
-            Map<String, String> environment, Path logFile, String initialLogText, Duration flushInterval) {
+            Map<String, String> environment, Path logFile, String initialLogText, Duration flushInterval,
+            Path cleanupPath) {
         this.command = List.copyOf(command);
         this.workingDirectory = workingDirectory.toAbsolutePath().normalize();
         this.environment = Map.copyOf(environment);
         this.logFile = logFile.toAbsolutePath().normalize();
         this.initialLogText = Objects.requireNonNullElse(initialLogText, "");
         this.flushInterval = flushInterval;
+        this.cleanupPath = cleanupPath == null ? null : cleanupPath.toAbsolutePath().normalize();
     }
 
     static Path write(LaunchSpec spec, Path logFile, String initialLogText, Duration flushInterval)
@@ -79,6 +82,10 @@ final class ProcessRelayDescriptor {
             output.writeInt(MAGIC);
             output.writeInt(FORMAT_VERSION);
             output.writeLong(flushInterval.toMillis());
+            output.writeBoolean(spec.cleanupPath() != null);
+            if (spec.cleanupPath() != null) {
+                writeString(output, spec.cleanupPath().toAbsolutePath().normalize().toString());
+            }
             writeString(output, spec.workingDirectory().toAbsolutePath().normalize().toString());
             writeString(output, logFile.toAbsolutePath().normalize().toString());
             writeString(output, Objects.requireNonNullElse(initialLogText, ""));
@@ -106,10 +113,17 @@ final class ProcessRelayDescriptor {
         try (DataInputStream input = new DataInputStream(
                 new BufferedInputStream(new ByteArrayInputStream(payload)))) {
             if (input.readInt() != MAGIC) throw new IOException("Invalid process-relay descriptor signature");
-            if (input.readInt() != FORMAT_VERSION) throw new IOException("Unsupported process-relay descriptor version");
+            int formatVersion = input.readInt();
+            if (formatVersion < 1 || formatVersion > FORMAT_VERSION) {
+                throw new IOException("Unsupported process-relay descriptor version");
+            }
             long flushMillis = input.readLong();
             if (flushMillis <= 0 || flushMillis > Duration.ofHours(1).toMillis()) {
                 throw new IOException("Invalid process-relay flush interval");
+            }
+            Path cleanupPath = null;
+            if (formatVersion >= 2 && input.readBoolean()) {
+                cleanupPath = parsePath(readString(input), "cleanup file");
             }
             Path workingDirectory = parsePath(readString(input), "working directory");
             Path logFile = parsePath(readString(input), "log file");
@@ -129,7 +143,7 @@ final class ProcessRelayDescriptor {
             if (input.read() != -1) throw new IOException("Trailing data in process-relay descriptor");
             validate(command, environment, Duration.ofMillis(flushMillis));
             return new ProcessRelayDescriptor(command, workingDirectory, environment, logFile,
-                    initialText, Duration.ofMillis(flushMillis));
+                    initialText, Duration.ofMillis(flushMillis), cleanupPath);
         } catch (EOFException ex) {
             throw new IOException("Truncated process-relay descriptor", ex);
         } finally {
@@ -222,4 +236,5 @@ final class ProcessRelayDescriptor {
     Path logFile() { return logFile; }
     String initialLogText() { return initialLogText; }
     Duration flushInterval() { return flushInterval; }
+    Path cleanupPath() { return cleanupPath; }
 }

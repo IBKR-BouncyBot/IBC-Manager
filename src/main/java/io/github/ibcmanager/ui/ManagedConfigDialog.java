@@ -23,17 +23,15 @@ import java.awt.Font;
 import java.awt.Frame;
 import java.io.IOException;
 import java.util.List;
+import java.util.Optional;
 
 @SuppressWarnings("serial")
 public final class ManagedConfigDialog extends JDialog {
-    private final Profile profile;
-    private final ManagedConfigService service;
     private final JTextArea editor = new JTextArea();
+    private IbcConfigDocument result;
 
     private ManagedConfigDialog(Frame owner, Profile profile, ManagedConfigService service) throws IOException {
         super(owner, "Managed config.ini - " + profile.name(), true);
-        this.profile = profile;
-        this.service = service;
         setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
         buildUi();
         IbcConfigDocument document = service.loadManagedConfig(profile);
@@ -44,23 +42,28 @@ public final class ManagedConfigDialog extends JDialog {
         setLocationRelativeTo(owner);
     }
 
-    public static void show(Frame owner, Profile profile, ManagedConfigService service) {
+    public static Optional<IbcConfigDocument> show(Frame owner, Profile profile, ManagedConfigService service) {
         if (profile.credentialMode() == CredentialMode.EXISTING_CONFIG) {
             JOptionPane.showMessageDialog(owner,
                     "This profile uses an external config.ini. IBC Manager will not modify that file.",
                     "External configuration", JOptionPane.INFORMATION_MESSAGE);
-            return;
+            return Optional.empty();
         }
         try {
-            new ManagedConfigDialog(owner, profile, service).setVisible(true);
+            ManagedConfigDialog dialog = new ManagedConfigDialog(owner, profile, service);
+            dialog.setVisible(true);
+            return Optional.ofNullable(dialog.result);
         } catch (IOException ex) {
             UiUtil.showError(owner, "Could not open managed configuration", ex);
+            return Optional.empty();
         }
     }
 
     private void buildUi() {
-        JLabel notice = new JLabel("<html>Comments, ordering, unknown keys, and line endings are preserved. "
-                + "Persistent passwords are rejected. Profile-controlled values are re-applied on save.</html>");
+        JLabel notice = new JLabel("<html>Comments, ordering, unknown keys, and line endings are preserved when "
+                + "their formatting has the same meaning as IBC's full-file Java Properties parser. Ambiguous "
+                + "syntax must be corrected or explicitly canonicalized. Persistent passwords are rejected. "
+                + "Saved Profile-tab values and advanced settings are synchronized back to the Profile editor.</html>");
         notice.setBorder(javax.swing.BorderFactory.createEmptyBorder(8, 8, 4, 8));
         add(notice, BorderLayout.NORTH);
         editor.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 13));
@@ -70,21 +73,33 @@ public final class ManagedConfigDialog extends JDialog {
         JButton cancel = new JButton("Cancel");
         cancel.addActionListener(event -> dispose());
         JButton save = new JButton("Validate and save");
-        save.addActionListener(event -> save());
+        save.addActionListener(event -> accept());
         buttons.add(cancel);
         buttons.add(save);
         add(buttons, BorderLayout.SOUTH);
         getRootPane().setDefaultButton(save);
     }
 
-    private void save() {
+    private void accept() {
         try {
             IbcConfigDocument document = IbcConfigDocument.parse(editor.getText());
+            if (!document.formattingMatchesIbcSemantics()) {
+                int choice = JOptionPane.showConfirmDialog(this,
+                        "IBC's full-file Java Properties parser and the formatting-preservation scanner "
+                                + "interpret this text differently. Saving it unchanged could alter IBC behavior.\n\n"
+                                + "Canonicalize the authoritative IBC settings now? All comments, ordering, "
+                                + "and custom formatting will be removed; only the authoritative settings remain.",
+                        "Ambiguous Java Properties syntax", JOptionPane.YES_NO_OPTION,
+                        JOptionPane.WARNING_MESSAGE);
+                if (choice != JOptionPane.YES_OPTION) return;
+                document = document.canonicalizedCopy();
+                editor.setText(document.render());
+            }
             if (!confirmIssues(new ConfigValueValidator().validateManagedConfig(document))) return;
-            service.saveManagedConfig(profile, document);
+            result = document;
             dispose();
-        } catch (IOException | RuntimeException ex) {
-            UiUtil.showError(this, "Configuration was not saved", ex);
+        } catch (RuntimeException ex) {
+            UiUtil.showError(this, "Configuration was not accepted", ex);
         }
     }
 

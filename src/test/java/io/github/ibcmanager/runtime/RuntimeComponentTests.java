@@ -3,7 +3,9 @@ package io.github.ibcmanager.runtime;
 import io.github.ibcmanager.app.AppPaths;
 import io.github.ibcmanager.app.OperatingSystem;
 import io.github.ibcmanager.model.Profile;
+import io.github.ibcmanager.model.PortListenerState;
 import io.github.ibcmanager.model.RuntimeState;
+import io.github.ibcmanager.security.CommandResult;
 import io.github.ibcmanager.tests.Assertions;
 import io.github.ibcmanager.tests.NamedTest;
 import io.github.ibcmanager.tests.TestSuite;
@@ -29,12 +31,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 public final class RuntimeComponentTests implements TestSuite {
     @Override public String name() { return "Runtime launch, process, ports, commands, and logs"; }
@@ -50,7 +55,8 @@ public final class RuntimeComponentTests implements TestSuite {
                 new NamedTest("default process launcher captures combined output", this::defaultLauncher),
                 new NamedTest("process launcher locates packaged Java commands", this::packagedJavaLauncher),
                 new NamedTest("process relay descriptor round-trips and fails closed", this::processRelayDescriptor),
-                new NamedTest("process logs stay in memory until the scheduled disk commit", this::bufferedProcessLogCadence),
+                new NamedTest("process-log bytes stay in memory until an explicit commit",
+                        this::bufferedProcessLogCadence),
                 new NamedTest("buffered process relay survives the manager process exiting", this::bufferedRelaySurvivesParent),
                 new NamedTest("managed Java process reports lifecycle and exit code", this::managedProcess),
                 new NamedTest("process tree terminator kills the exact root and descendants", this::processTree),
@@ -60,7 +66,11 @@ public final class RuntimeComponentTests implements TestSuite {
                 new NamedTest("process identity store rejects corrupt and stale identities", this::identityReject),
                 new NamedTest("process identity store deletes only selected identity", this::identityDelete),
                 new NamedTest("IBC command client sends command and EXIT and accepts OK", this::commandSuccess),
+                new NamedTest("IBC command client accepts an exact bare OK acknowledgement", this::commandBareOk),
                 new NamedTest("IBC command client reports command rejection", this::commandError),
+                new NamedTest("IBC command client rejects an exact bare ERROR response", this::commandBareError),
+                new NamedTest("later IBC command error overrides a preliminary acknowledgement",
+                        this::commandLateError),
                 new NamedTest("IBC command client does not treat Goodbye as command success", this::commandGoodbyeOnly),
                 new NamedTest("IBC command client returns partial success after response timeout", this::commandPartialTimeout),
                 new NamedTest("IBC command client propagates an empty response timeout", this::commandEmptyTimeout),
@@ -76,9 +86,32 @@ public final class RuntimeComponentTests implements TestSuite {
                 new NamedTest("runtime log buffer supports concurrent append", this::bufferConcurrent),
                 new NamedTest("IBC log parser recognizes normal states", this::stateParserNormal),
                 new NamedTest("IBC log parser recognizes failures and reset", this::stateParserError),
+                new NamedTest("IBC log parser models wrapper restart and normal-exit decisions",
+                        this::stateParserWrapperLifecycle),
                 new NamedTest("IBC log parser tracks command-server lifecycle without socket probes",
                         this::stateParserCommandServer),
-                new NamedTest("TCP probe distinguishes open closed and invalid ports", this::tcpProbe));
+                new NamedTest("StartIBC launch marker clears stale command and login readiness",
+                        this::stateParserStartMarker),
+                new NamedTest("Windows listener-table parser ignores established connections",
+                        this::windowsListenerParser),
+                new NamedTest("Windows listener-table parser retains address and owning PID",
+                        this::windowsListenerDetails),
+                new NamedTest("Linux listener-table parser accepts only LISTEN rows",
+                        this::linuxListenerParser),
+                new NamedTest("macOS listener-table parser accepts dotted endpoints",
+                        this::unixListenerParser),
+                new NamedTest("passive listener probe detects a server without connecting",
+                        this::passiveProbeNoConnection),
+                new NamedTest("listener snapshots are cached and can be invalidated",
+                        this::listenerProbeCache),
+                new NamedTest("listener probe retains only a bounded stale snapshot",
+                        this::listenerProbeFailure),
+                new NamedTest("StartIBC-compatible Java resolver follows explicit and install4j precedence",
+                        this::javaRuntimeResolution),
+                new NamedTest("offline-installation startup coordinator serializes only matching program trees",
+                        this::startCoordinatorSerialization),
+                new NamedTest("startup milestone waiter requires the StartIBC launch marker",
+                        this::startMilestone));
     }
 
     private void launchSpecImmutable() {
@@ -97,11 +130,11 @@ public final class RuntimeComponentTests implements TestSuite {
         Path root = TestSupport.tempDirectory("launch-script");
         try {
             AppPaths paths = new AppPaths(root.resolve("data"));
-            Profile profile = TestSupport.validProfile(root.resolve("install"));
+            Profile profile = withFakeJava(TestSupport.validProfile(root.resolve("install")), root);
             Path runtimeConfig = paths.runtimeDirectory(profile.id()).resolve("config.ini");
             Files.createDirectories(runtimeConfig.getParent());
             Files.writeString(runtimeConfig, "TradingMode=paper\n");
-            LaunchSpec spec = new LaunchScriptFactory(paths, OperatingSystem.WINDOWS).create(profile, runtimeConfig);
+            LaunchSpec spec = windowsLaunchFactory(paths).create(profile, runtimeConfig);
             String script = Files.readString(spec.launchScript());
             Assertions.contains(script, "chcp 65001 >nul", "batch file must select UTF-8 before reading paths");
             Assertions.contains(script, "setlocal DisableDelayedExpansion", "delayed expansion must be disabled");
@@ -121,11 +154,11 @@ public final class RuntimeComponentTests implements TestSuite {
         Path root = TestSupport.tempDirectory("launch-no-secret");
         try {
             AppPaths paths = new AppPaths(root.resolve("data"));
-            Profile profile = TestSupport.validProfile(root.resolve("install"));
+            Profile profile = withFakeJava(TestSupport.validProfile(root.resolve("install")), root);
             Path runtime = paths.runtimeDirectory(profile.id()).resolve("config.ini");
             Files.createDirectories(runtime.getParent());
             Files.writeString(runtime, "IbPassword=top-secret\n");
-            LaunchSpec spec = new LaunchScriptFactory(paths, OperatingSystem.WINDOWS).create(profile, runtime);
+            LaunchSpec spec = windowsLaunchFactory(paths).create(profile, runtime);
             String script = Files.readString(spec.launchScript());
             Assertions.notContains(script, "top-secret", "runtime password must not enter launch script");
             Assertions.notContains(script.toLowerCase(java.util.Locale.ROOT), "/pw", "password argument must not be used");
@@ -138,10 +171,10 @@ public final class RuntimeComponentTests implements TestSuite {
         Path root = TestSupport.tempDirectory("launch-unsafe");
         try {
             AppPaths paths = new AppPaths(root.resolve("data"));
-            Profile profile = TestSupport.validProfile(root.resolve("install"));
+            Profile profile = withFakeJava(TestSupport.validProfile(root.resolve("install")), root);
             Path unsafe = root.resolve("runtime%TEMP%/config.ini");
             Assertions.throwsType(IllegalArgumentException.class,
-                    () -> new LaunchScriptFactory(paths, OperatingSystem.WINDOWS).create(profile, unsafe),
+                    () -> windowsLaunchFactory(paths).create(profile, unsafe),
                     "percent expansion in a batch argument must be rejected");
             for (String value : List.of("bad!value", "bad%value", "bad\"value", "bad\nvalue",
                     "bad\rvalue", "bad\0value", "bad\u2028value", "bad\u2029value")) {
@@ -274,25 +307,21 @@ public final class RuntimeComponentTests implements TestSuite {
         Path root = TestSupport.tempDirectory("buffered-process-log");
         try {
             Path log = root.resolve("logs/output.log");
-            LaunchSpec spec = new LaunchSpec(
-                    TestSupport.javaCommand("line-then-sleep", "live-buffered-line", "850"),
-                    root, Map.of(), root.resolve("none"), "test");
-            ManagedProcess process = new DefaultProcessLauncher(Duration.ofMillis(320))
-                    .launch(spec, log, "buffered-session-header\n");
-            List<String> liveLines = new ArrayList<>();
-            Assertions.eventually(Duration.ofSeconds(2), () -> {
-                liveLines.addAll(process.drainOutputLines());
-                return liveLines.contains("live-buffered-line");
-            }, "live process output must remain available before the disk commit");
-            Thread.sleep(80);
-            Assertions.isFalse(Files.exists(log) && Files.size(log) > 0,
-                    "process output must not be written before the configured interval");
-            Assertions.eventually(Duration.ofSeconds(3), () -> {
-                if (!Files.exists(log)) return false;
+            byte[] header = "buffered-session-header\n".getBytes(StandardCharsets.UTF_8);
+            byte[] line = "live-buffered-line\n".getBytes(StandardCharsets.UTF_8);
+            try (PeriodicByteLog buffered = new PeriodicByteLog(log, Duration.ofHours(1), header)) {
+                buffered.append(line, 0, line.length);
+                Assertions.isFalse(Files.exists(log) && Files.size(log) > 0,
+                        "process-log bytes must remain in memory before a commit");
+                buffered.flush();
+                Assertions.isTrue(Files.isRegularFile(log) && Files.size(log) > 0,
+                        "an explicit commit must create the process log");
                 String text = Files.readString(log);
-                return text.contains("buffered-session-header") && text.contains("live-buffered-line");
-            }, "process output must be committed after the configured interval");
-            Assertions.isTrue(process.waitFor(Duration.ofSeconds(5)), "buffered relay process must exit");
+                Assertions.contains(text, "buffered-session-header",
+                        "the initial session header must be committed");
+                Assertions.contains(text, "live-buffered-line",
+                        "buffered process output must be committed");
+            }
             Assertions.equals(Duration.ofSeconds(60), DefaultProcessLauncher.DISK_FLUSH_INTERVAL,
                     "production process-log disk cadence must remain 60 seconds");
         } finally {
@@ -346,13 +375,18 @@ public final class RuntimeComponentTests implements TestSuite {
         try {
             Assertions.eventually(Duration.ofSeconds(3), () -> !process.descendants().isEmpty(),
                     "test process must create a descendant");
-            List<ProcessHandle> descendants = process.descendants();
-            boolean stopped = new ProcessTreeTerminator().terminate(process, Duration.ofMillis(200), Duration.ofSeconds(3));
+            List<ProcessHandleIdentity> descendants = process.descendants().stream()
+                    .map(ProcessHandleIdentity::capture)
+                    .flatMap(Optional::stream)
+                    .toList();
+            boolean stopped = new ProcessTreeTerminator().terminate(
+                    process, Duration.ofMillis(200), Duration.ofSeconds(3));
             Assertions.isTrue(stopped, "root and descendants must stop");
             Assertions.isFalse(process.isAlive(), "exact root must be dead");
             Assertions.eventually(Duration.ofSeconds(3),
-                    () -> descendants.stream().noneMatch(ProcessHandle::isAlive),
-                    "captured descendants must be dead");
+                    () -> descendants.stream().allMatch(identity ->
+                            identity.resolve(Duration.ofSeconds(2)).isEmpty()),
+                    "captured descendant identities must be dead");
         } finally {
             raw.destroyForcibly();
             for (ProcessHandle child : process.descendants()) child.destroyForcibly();
@@ -366,7 +400,7 @@ public final class RuntimeComponentTests implements TestSuite {
                 "spawn-child-after-signal", childPidFile.toString(), "30000"))
                 .redirectErrorStream(true)
                 .start();
-        ManagedProcess process = new CooperativeShutdownManagedProcess(raw);
+        ManagedProcess process = new CooperativeShutdownManagedProcess(raw, childPidFile);
         ProcessHandle child = null;
         try (BufferedReader output = new BufferedReader(
                 new InputStreamReader(raw.getInputStream(), StandardCharsets.UTF_8))) {
@@ -487,6 +521,55 @@ public final class RuntimeComponentTests implements TestSuite {
                     Duration.ofSeconds(2));
             Assertions.isFalse(result.success(), "ERROR response must fail");
             Assertions.contains(result.response(), "Command rejected", "error detail must be retained");
+        }
+    }
+
+    private void commandBareOk() throws Exception {
+        try (TestServer server = TestServer.start(socket -> {
+            try (BufferedReader reader = reader(socket); BufferedWriter writer = writer(socket)) {
+                reader.readLine(); reader.readLine();
+                writer.write("OK\nOK Goodbye\n"); writer.flush();
+            }
+        })) {
+            IbcCommandResult result = new IbcCommandClient().send("127.0.0.1", server.port(),
+                    IbcCommand.RECONNECTDATA, Duration.ofSeconds(2));
+            Assertions.equals(CommandDisposition.COMPLETED, result.disposition(),
+                    "a future or third-party IBC build may use an exact bare OK line");
+            Assertions.isTrue(result.success(), "bare OK must acknowledge the requested command");
+        }
+    }
+
+    private void commandBareError() throws Exception {
+        try (TestServer server = TestServer.start(socket -> {
+            try (BufferedReader reader = reader(socket); BufferedWriter writer = writer(socket)) {
+                reader.readLine(); reader.readLine();
+                writer.write("ERROR\nOK Goodbye\n"); writer.flush();
+            }
+        })) {
+            IbcCommandResult result = new IbcCommandClient().send("127.0.0.1", server.port(),
+                    IbcCommand.RECONNECTDATA, Duration.ofSeconds(2));
+            Assertions.equals(CommandDisposition.REJECTED, result.disposition(),
+                    "an exact bare ERROR line must remain a command rejection");
+            Assertions.isFalse(result.success(), "bare ERROR must fail the command");
+        }
+    }
+
+    private void commandLateError() throws Exception {
+        try (TestServer server = TestServer.start(socket -> {
+            try (BufferedReader reader = reader(socket); BufferedWriter writer = writer(socket)) {
+                reader.readLine(); reader.readLine();
+                writer.write("OK PAUSE in progress\n");
+                writer.write("ERROR Unable to pause application\n");
+                writer.write("OK Goodbye\n");
+                writer.flush();
+            }
+        })) {
+            IbcCommandResult result = new IbcCommandClient().send("127.0.0.1", server.port(),
+                    IbcCommand.PAUSE, Duration.ofSeconds(2));
+            Assertions.equals(CommandDisposition.REJECTED, result.disposition(),
+                    "the complete command response must be authoritative");
+            Assertions.isFalse(result.success(), "a later ERROR must override an earlier in-progress ACK");
+            Assertions.contains(result.response(), "Unable to pause", "late failure detail must be retained");
         }
     }
 
@@ -671,12 +754,56 @@ public final class RuntimeComponentTests implements TestSuite {
 
     private void stateParserError() {
         IbcLogStateParser parser = new IbcLogStateParser();
-        for (String line : List.of("Login failed", "Too many failed login attempts", "Exiting with exit code=1",
-                "Can't find suitable Java installation")) {
-            assertHint(parser, line, RuntimeState.ERROR);
+        for (String line : List.of("Login failed", "Too many failed login attempts")) {
+            assertHint(parser, line, RuntimeState.UNKNOWN);
+            Assertions.isTrue(parser.errorExitConfirmed(),
+                    "child failure must be retained for final wrapper-exit classification");
+            parser.reset();
         }
+        assertHint(parser, "Can't find suitable Java installation", RuntimeState.ERROR);
+        assertHint(parser, "Exiting with exit code=1", RuntimeState.UNKNOWN);
+        Assertions.isTrue(parser.errorExitConfirmed(),
+                "legacy error-exit wording must be retained for final wrapper-exit classification");
+        parser.reset();
+        assertHint(parser, "Exiting after error with exit code=4", RuntimeState.UNKNOWN);
+        Assertions.isTrue(parser.errorExitConfirmed(),
+                "the exact IBC 3.24.1 error-exit wording must be recognized");
         parser.reset();
         Assertions.isTrue(parser.latest().isEmpty(), "reset must clear stale state");
+    }
+
+    private void stateParserWrapperLifecycle() {
+        IbcLogStateParser parser = new IbcLogStateParser();
+        assertHint(parser, "Program has exited", RuntimeState.UNKNOWN);
+        Assertions.isTrue(parser.childExitObserved(), "child exit must be tracked independently of wrapper exit");
+        assertHint(parser, "IBC will autorestart shortly", RuntimeState.RESTARTING);
+        Assertions.isTrue(parser.restartPending(), "automatic restart must become an explicit pending state");
+        parser.accept("Starting IBC with this command: java -cp IBC.jar ibcalpha.ibc.IbcGateway");
+        Assertions.isFalse(parser.restartPending(), "replacement launch must clear the previous restart decision");
+        Assertions.isFalse(parser.errorExitConfirmed(), "replacement launch must clear old child errors");
+
+        assertHint(parser, "Program has exited", RuntimeState.UNKNOWN);
+        assertHint(parser, "IBC will cold-restart shortly", RuntimeState.RESTARTING);
+        parser.accept("Starting IBC with this command: replacement");
+        assertHint(parser, "Program has exited", RuntimeState.UNKNOWN);
+        assertHint(parser, "IBC will restart shortly due to 2FA completion timeout", RuntimeState.RESTARTING);
+        parser.accept("Starting IBC with this command: replacement");
+        assertHint(parser, "Program has exited", RuntimeState.UNKNOWN);
+        assertHint(parser, "IBC will restart shortly due to login dialog display timeout",
+                RuntimeState.RESTARTING);
+
+        parser.reset();
+        assertHint(parser, "Program has exited", RuntimeState.UNKNOWN);
+        assertHint(parser, "Normal exit", RuntimeState.STOPPED);
+        Assertions.isTrue(parser.normalExitConfirmed(),
+                "normal or ClosedownAt-driven wrapper termination must be distinguished from a crash");
+        Assertions.isFalse(parser.errorExitConfirmed(), "normal exit must not carry an error marker");
+
+        parser.reset();
+        Assertions.isTrue(parser.accept("Abnormal exit").isEmpty(),
+                "normal-exit recognition must require the exact StartIBC wrapper marker");
+        Assertions.isFalse(parser.normalExitConfirmed(),
+                "an unrelated line containing the words normal exit must not mask a crash");
     }
 
     private void stateParserCommandServer() {
@@ -713,20 +840,306 @@ public final class RuntimeComponentTests implements TestSuite {
                 "failed command transport must invalidate readiness");
     }
 
-    private void tcpProbe() throws Exception {
-        TcpPortProbe probe = new TcpPortProbe();
+    private void stateParserStartMarker() {
+        IbcLogStateParser parser = new IbcLogStateParser();
+        parser.accept("CommandServer listening on address: 127.0.0.1 port: 7462");
+        parser.accept("Login has completed");
+        Assertions.isTrue(parser.mainWindowReady(), "fixture must begin in a command-capable state");
+        long generation = parser.sessionGeneration();
+
+        parser.accept("Starting IBC with this command: java -cp IBC.jar ibcalpha.ibc.IbcGateway");
+        Assertions.isFalse(parser.mainWindowReady(), "a replacement IBC JVM must clear login readiness");
+        Assertions.equals(IbcLogStateParser.CommandServerState.UNKNOWN, parser.commandServerState(),
+                "a replacement IBC JVM must clear command-server readiness");
+        Assertions.isTrue(parser.latest().isEmpty(), "stale state hints must not cross an IBC JVM boundary");
+        Assertions.isTrue(parser.launchCommandObserved(), "the serialized startup milestone must be recorded");
+        Assertions.equals(generation + 1, parser.sessionGeneration(),
+                "each StartIBC launch marker must advance the session generation");
+    }
+
+    private void windowsListenerParser() {
+        String output = """
+                Active Connections
+
+                  Proto  Local Address          Foreign Address        State           PID
+                  TCP    127.0.0.1:4001         0.0.0.0:0              LISTENING       100
+                  TCP    [::1]:4002             [::]:0                 ABHOEREN        101
+                  TCP    127.0.0.1:4003         127.0.0.1:55000        ESTABLISHED     102
+                  UDP    0.0.0.0:4004           *:*                                    103
+                """;
+        Assertions.equals(Set.of(4001, 4002), ListeningPortProbe.parseWindowsNetstat(output),
+                "only listening TCP rows must be retained, including localized state labels");
+    }
+
+    private void windowsListenerDetails() {
+        String output = """
+                  TCP    127.0.0.1:4001         0.0.0.0:0              LISTENING       8123
+                  TCP    0.0.0.0:4002           0.0.0.0:0              LISTENING       9456
+                """;
+        Set<ListeningPortProbe.ListenerEndpoint> endpoints =
+                ListeningPortProbe.parseWindowsNetstatEndpoints(output);
+        Assertions.isTrue(endpoints.contains(new ListeningPortProbe.ListenerEndpoint(
+                        "127.0.0.1", 4001, 8123)),
+                "loopback address and owning PID must be retained");
+        Assertions.isTrue(endpoints.contains(new ListeningPortProbe.ListenerEndpoint(
+                        "0.0.0.0", 4002, 9456)),
+                "wildcard address and owning PID must be retained");
+    }
+
+    private void linuxListenerParser() {
+        String output = """
+                  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+                   0: 0100007F:0FA1 00000000:0000 0A 00000000:00000000 00:00000000 00000000 1000 0 1
+                   1: 0100007F:0FA2 0100007F:D6D8 01 00000000:00000000 00:00000000 00000000 1000 0 2
+                   2: 00000000:0FA3 00000000:0000 0A 00000000:00000000 00:00000000 00000000 1000 0 3
+                """;
+        Assertions.equals(Set.of(4001, 4003), ListeningPortProbe.parseLinuxProcNet(output),
+                "only Linux LISTEN state 0A rows must be retained");
+    }
+
+    private void unixListenerParser() {
+        String output = """
+                Active Internet connections (including servers)
+                Proto Recv-Q Send-Q  Local Address          Foreign Address        (state)
+                tcp4       0      0  127.0.0.1.4001         *.*                    LISTEN
+                tcp6       0      0  *.4002                  *.*                    LISTEN
+                tcp4       0      0  127.0.0.1.4003         127.0.0.1.50100        ESTABLISHED
+                """;
+        Assertions.equals(Set.of(4001, 4002), ListeningPortProbe.parseUnixNetstat(output),
+                "only dotted macOS listener endpoints must be retained");
+    }
+
+    private void passiveProbeNoConnection() throws Exception {
+        ListeningPortProbe probe = new ListeningPortProbe();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
         try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
-            Assertions.isTrue(probe.isOpen("127.0.0.1", server.getLocalPort(), Duration.ofSeconds(1)),
-                    "listening socket must be detected");
+            server.setSoTimeout(1500);
+            var accepted = executor.submit(() -> {
+                try (Socket acceptedSocket = server.accept()) {
+                    return acceptedSocket.isConnected();
+                } catch (SocketTimeoutException expected) {
+                    return false;
+                }
+            });
+            probe.invalidate();
+            Assertions.equals(PortListenerState.LISTENING,
+                    probe.inspect("127.0.0.1", server.getLocalPort(), Duration.ofSeconds(2)),
+                    "operating-system listener inspection must detect the bound socket");
+            Assertions.isFalse(accepted.get(3, TimeUnit.SECONDS),
+                    "passive listener inspection must not create a client connection");
+        } finally {
+            executor.shutdownNow();
+            executor.awaitTermination(3, TimeUnit.SECONDS);
         }
-        int closedPort;
-        try (ServerSocket reservation = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
-            closedPort = reservation.getLocalPort();
+        Assertions.equals(PortListenerState.UNKNOWN,
+                probe.inspect("127.0.0.1", 0, Duration.ofSeconds(1)),
+                "port zero must be rejected as uninspectable");
+        Assertions.equals(PortListenerState.UNKNOWN,
+                probe.inspect("127.0.0.1", 65536, Duration.ofSeconds(1)),
+                "out-of-range ports must be rejected as uninspectable");
+    }
+
+    private void listenerProbeCache() {
+        AtomicInteger reads = new AtomicInteger();
+        AtomicLong time = new AtomicLong();
+        ListeningPortProbe probe = new ListeningPortProbe(timeout -> {
+            reads.incrementAndGet();
+            return Set.of(4001);
+        }, Duration.ofSeconds(5), Duration.ofSeconds(15), Duration.ofMinutes(1), time::get);
+
+        Assertions.equals(PortListenerState.LISTENING,
+                probe.inspect("127.0.0.1", 4001, Duration.ofSeconds(1)),
+                "first lookup must use the source");
+        Assertions.equals(PortListenerState.NOT_LISTENING,
+                probe.inspect("127.0.0.1", 4002, Duration.ofSeconds(1)),
+                "same snapshot must answer other ports");
+        Assertions.equals(1, reads.get(), "multiple profiles must share one cached listener snapshot");
+        time.set(Duration.ofSeconds(4).toNanos());
+        probe.inspect("127.0.0.1", 4001, Duration.ofSeconds(1));
+        Assertions.equals(1, reads.get(), "snapshot must remain cached within its lifetime");
+        time.set(Duration.ofSeconds(6).toNanos());
+        probe.inspect("127.0.0.1", 4001, Duration.ofSeconds(1));
+        Assertions.equals(2, reads.get(), "expired snapshot must be refreshed");
+        probe.invalidate();
+        probe.inspect("127.0.0.1", 4001, Duration.ofSeconds(1));
+        Assertions.equals(3, reads.get(), "launch preflight invalidation must force one fresh snapshot");
+    }
+
+    private void listenerProbeFailure() {
+        AtomicInteger reads = new AtomicInteger();
+        AtomicLong time = new AtomicLong();
+        ListeningPortProbe probe = new ListeningPortProbe(timeout -> {
+            if (reads.getAndIncrement() == 0) return Set.of(4001);
+            throw new IOException("simulated listener-table failure");
+        }, Duration.ofSeconds(5), Duration.ofSeconds(15), Duration.ofHours(1), time::get);
+
+        Assertions.equals(PortListenerState.LISTENING,
+                probe.inspect("127.0.0.1", 4001, Duration.ofSeconds(1)),
+                "successful snapshot must be used");
+        time.set(Duration.ofSeconds(6).toNanos());
+        Assertions.equals(PortListenerState.LISTENING,
+                probe.inspect("127.0.0.1", 4001, Duration.ofSeconds(1)),
+                "a recent snapshot may bridge a temporary inspection failure");
+        time.set(Duration.ofSeconds(16).toNanos());
+        Assertions.equals(PortListenerState.UNKNOWN,
+                probe.inspect("127.0.0.1", 4001, Duration.ofSeconds(1)),
+                "stale listener data must eventually become unknown");
+
+        AtomicInteger freshReads = new AtomicInteger();
+        ListeningPortProbe forceFresh = new ListeningPortProbe(timeout -> {
+            if (freshReads.getAndIncrement() == 0) return Set.of(4001);
+            throw new IOException("forced refresh failed");
+        }, Duration.ofSeconds(5), Duration.ofSeconds(15), Duration.ofHours(1), time::get);
+        Assertions.equals(PortListenerState.LISTENING,
+                forceFresh.inspect("127.0.0.1", 4001, Duration.ofSeconds(1)),
+                "initial force-fresh fixture snapshot must succeed");
+        forceFresh.invalidate();
+        Assertions.equals(PortListenerState.UNKNOWN,
+                forceFresh.inspect("127.0.0.1", 4001, Duration.ofSeconds(1)),
+                "launch preflight must not trust stale data after a forced refresh fails");
+    }
+
+    private void javaRuntimeResolution() throws Exception {
+        Path root = TestSupport.tempDirectory("ibc-java-resolution");
+        try {
+            Profile base = TestSupport.validProfile(root.resolve("install"));
+            Path program = base.twsPath().resolve("ibgateway").resolve(base.twsMajorVersion());
+            Path install4j = program.resolve(".install4j");
+            Path explicitBin = createFakeJava(root.resolve("explicit"), "java.exe");
+            Path preferredRoot = root.resolve("preferred");
+            Path preferredBin = createFakeJava(preferredRoot, "bin/java.exe");
+            Path installedRoot = root.resolve("installed");
+            Path installedBin = createFakeJava(installedRoot, "bin/java.exe");
+            Path programData = root.resolve("ProgramData");
+            Path oracleBin = createFakeJava(programData.resolve("Oracle/Java/javapath"), "java.exe");
+            Files.writeString(install4j.resolve("pref_jre.cfg"), preferredRoot + System.lineSeparator());
+            Files.writeString(install4j.resolve("inst_jre.cfg"), installedRoot + System.lineSeparator());
+
+            List<Path> executed = new ArrayList<>();
+            IbcJavaRuntimeResolver resolver = new IbcJavaRuntimeResolver(
+                    OperatingSystem.WINDOWS, Map.of("PROGRAMDATA", programData.toString()),
+                    (command, input, timeout) -> {
+                        executed.add(Path.of(command.get(0)).toAbsolutePath().normalize());
+                        return new CommandResult(0, "", "openjdk version \"17.0.12\"", false);
+                    }, new OfflineApplicationLayoutResolver());
+
+            Profile explicit = base.toBuilder().ibcJavaPath(explicitBin).build();
+            Assertions.equals(explicitBin.toAbsolutePath().normalize(), resolver.resolve(explicit).directory(),
+                    "explicit /JavaPath directory must take precedence over install4j files");
+            Assertions.equals(explicitBin.resolve("java.exe").toAbsolutePath().normalize(), executed.get(0),
+                    "the exact explicit runtime must be version checked");
+
+            Profile automatic = base.toBuilder().ibcJavaPath(Path.of("")).build();
+            Assertions.equals(preferredBin.toAbsolutePath().normalize(), resolver.resolve(automatic).directory(),
+                    "pref_jre.cfg must precede inst_jre.cfg and ProgramData fallback");
+            Files.delete(install4j.resolve("pref_jre.cfg"));
+            Assertions.equals(installedBin.toAbsolutePath().normalize(), resolver.resolve(automatic).directory(),
+                    "inst_jre.cfg must be used when no preferred runtime is configured");
+            Files.delete(install4j.resolve("inst_jre.cfg"));
+            Assertions.equals(oracleBin.toAbsolutePath().normalize(), resolver.resolve(automatic).directory(),
+                    "ProgramData Oracle javapath must be the final StartIBC-compatible fallback");
+
+            IbcJavaRuntimeResolver java8 = new IbcJavaRuntimeResolver(
+                    OperatingSystem.WINDOWS, Map.of("PROGRAMDATA", programData.toString()),
+                    (command, input, timeout) -> new CommandResult(
+                            0, "", "java version \"1.8.0_401\"", false),
+                    new OfflineApplicationLayoutResolver());
+            IOException incompatible = Assertions.throwsType(IOException.class,
+                    () -> java8.resolve(automatic), "Java 8 must be rejected before StartIBC is launched");
+            Assertions.contains(incompatible.getMessage(), "requires Java 17",
+                    "the rejected runtime must explain the IBC baseline requirement");
+        } finally {
+            TestSupport.deleteTree(root);
         }
-        Assertions.isFalse(probe.isOpen("127.0.0.1", closedPort, Duration.ofMillis(100)),
-                "closed socket must be rejected");
-        Assertions.isFalse(probe.isOpen("127.0.0.1", 0, Duration.ofMillis(100)), "port zero must be rejected");
-        Assertions.isFalse(probe.isOpen("127.0.0.1", 65536, Duration.ofMillis(100)), "out-of-range port must be rejected");
+    }
+
+    private void startCoordinatorSerialization() throws Exception {
+        Path root = TestSupport.tempDirectory("start-coordinator");
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Profile first = TestSupport.validProfile(root.resolve("shared"));
+            Profile second = first.toBuilder().id(UUID.randomUUID())
+                    .twsSettingsPath(root.resolve("settings-2")).build();
+            Files.createDirectories(second.twsSettingsPath());
+            ApplicationStartCoordinator coordinator = new ApplicationStartCoordinator(
+                    root.resolve("locks"), new OfflineApplicationLayoutResolver());
+            StartCoordinator.Lease firstLease = coordinator.acquire(first, Duration.ofSeconds(2));
+            CompletableFuture<Boolean> secondAcquired = CompletableFuture.supplyAsync(() -> {
+                try (StartCoordinator.Lease acquired = coordinator.acquire(second, Duration.ofSeconds(3))) {
+                    return acquired.coordinated();
+                } catch (IOException | InterruptedException ex) {
+                    throw new RuntimeException(ex);
+                }
+            }, executor);
+            Thread.sleep(150);
+            Assertions.isFalse(secondAcquired.isDone(),
+                    "profiles sharing one offline program tree must serialize the mutation-prone start phase");
+            firstLease.close();
+            Assertions.isTrue(secondAcquired.get(2, TimeUnit.SECONDS),
+                    "the second profile must proceed immediately after the shared start milestone is released");
+
+            Profile independent = TestSupport.validProfile(root.resolve("independent"));
+            try (StartCoordinator.Lease shared = coordinator.acquire(first, Duration.ofSeconds(2));
+                    StartCoordinator.Lease other = coordinator.acquire(independent, Duration.ofSeconds(2))) {
+                Assertions.isTrue(shared.coordinated() && other.coordinated(),
+                        "different offline installations must remain independently startable");
+            }
+        } finally {
+            executor.shutdownNow();
+            executor.awaitTermination(2, TimeUnit.SECONDS);
+            TestSupport.deleteTree(root);
+        }
+    }
+
+    private void startMilestone() throws Exception {
+        IbcLogStateParser parser = new IbcLogStateParser();
+        MilestoneProcess alive = new MilestoneProcess(true, OptionalInt.empty());
+        AtomicInteger reads = new AtomicInteger();
+        StartMilestoneAwaiter.await(alive, parser, () -> {
+            if (reads.incrementAndGet() == 2) {
+                parser.accept("Starting IBC with this command: java -cp IBC.jar ibcalpha.ibc.IbcGateway");
+            }
+        }, Duration.ofSeconds(1));
+        Assertions.equals(2, reads.get(), "the waiter must retain the shared start lock until the marker appears");
+
+        MilestoneProcess exited = new MilestoneProcess(false, OptionalInt.of(27));
+        IOException earlyExit = Assertions.throwsType(IOException.class,
+                () -> StartMilestoneAwaiter.await(exited, new IbcLogStateParser(), () -> { },
+                        Duration.ofSeconds(1)),
+                "a wrapper that exits before the marker must fail the coordinated start");
+        Assertions.contains(earlyExit.getMessage(), "exit code 27", "early exit code must be preserved");
+
+        IOException timeout = Assertions.throwsType(IOException.class,
+                () -> StartMilestoneAwaiter.await(alive, new IbcLogStateParser(), () -> { },
+                        Duration.ofMillis(60)),
+                "a wrapper that never reaches the marker must time out rather than releasing the lock early");
+        Assertions.contains(timeout.getMessage(), "serialized launch milestone",
+                "timeout must identify the guarded StartIBC phase");
+    }
+
+    private static Path createFakeJava(Path root, String relativeExecutable) throws IOException {
+        Path executable = root.resolve(relativeExecutable);
+        Files.createDirectories(executable.getParent());
+        Files.writeString(executable, "test fixture");
+        return executable.getParent();
+    }
+
+
+    private static Profile withFakeJava(Profile profile, Path root) throws IOException {
+        Path bin = root.resolve("fake-java").resolve("bin");
+        Files.createDirectories(bin);
+        Files.writeString(bin.resolve("java.exe"), "test fixture");
+        return profile.toBuilder().ibcJavaPath(bin).build();
+    }
+
+    private static LaunchScriptFactory windowsLaunchFactory(AppPaths paths) {
+        IbcJavaRuntimeResolver resolver = new IbcJavaRuntimeResolver(
+                OperatingSystem.WINDOWS,
+                Map.of(),
+                (command, input, timeout) -> new CommandResult(
+                        0, "", "openjdk version \"17.0.12\"", false),
+                new OfflineApplicationLayoutResolver());
+        return new LaunchScriptFactory(paths, OperatingSystem.WINDOWS, resolver);
     }
 
     private static void assertHint(IbcLogStateParser parser, String line, RuntimeState expected) {
@@ -742,12 +1155,16 @@ public final class RuntimeComponentTests implements TestSuite {
     }
 
     private static final class CooperativeShutdownManagedProcess implements ManagedProcess {
+        private static final Duration CHILD_PUBLICATION_TIMEOUT = Duration.ofSeconds(10);
+
         private final Process process;
+        private final Path childPidFile;
         private final ManagedProcess delegate;
         private final AtomicBoolean shutdownRequested = new AtomicBoolean();
 
-        CooperativeShutdownManagedProcess(Process process) {
+        CooperativeShutdownManagedProcess(Process process, Path childPidFile) {
             this.process = process;
+            this.childPidFile = childPidFile.toAbsolutePath().normalize();
             this.delegate = new JavaManagedProcess(process);
         }
 
@@ -766,12 +1183,49 @@ public final class RuntimeComponentTests implements TestSuite {
                 signal.flush();
             } catch (IOException failure) {
                 process.destroy();
+                return;
+            }
+
+            // The production terminator captures descendants before destroy() and then repeatedly
+            // while waiting for the root. Wait here only until the cooperative fixture has
+            // atomically published the child it creates after the shutdown signal. This keeps the
+            // intended race boundary while removing scheduler-dependent test flakiness under heavy
+            // concurrent CI load.
+            long deadline = System.nanoTime() + CHILD_PUBLICATION_TIMEOUT.toNanos();
+            while (process.isAlive() && !Files.isRegularFile(childPidFile)) {
+                if (System.nanoTime() >= deadline) return;
+                try {
+                    Thread.sleep(10);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
             }
         }
         @Override public void destroyForcibly() {
             process.destroyForcibly();
         }
         @Override public OptionalInt exitCode() { return delegate.exitCode(); }
+    }
+
+    private static final class MilestoneProcess implements ManagedProcess {
+        private final boolean alive;
+        private final OptionalInt exitCode;
+
+        private MilestoneProcess(boolean alive, OptionalInt exitCode) {
+            this.alive = alive;
+            this.exitCode = exitCode;
+        }
+
+        @Override public long pid() { return 1L; }
+        @Override public boolean isAlive() { return alive; }
+        @Override public Optional<Instant> startInstant() { return Optional.empty(); }
+        @Override public List<ProcessHandle> descendants() { return List.of(); }
+        @Override public CompletableFuture<ProcessHandle> onExit() { return new CompletableFuture<>(); }
+        @Override public boolean waitFor(Duration timeout) { return !alive; }
+        @Override public void destroy() { }
+        @Override public void destroyForcibly() { }
+        @Override public OptionalInt exitCode() { return exitCode; }
     }
 
     @FunctionalInterface

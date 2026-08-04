@@ -5,6 +5,7 @@ import io.github.ibcmanager.config.RuntimeConfigLease;
 import io.github.ibcmanager.config.RuntimeConfigProvider;
 import io.github.ibcmanager.model.CredentialMode;
 import io.github.ibcmanager.model.Profile;
+import io.github.ibcmanager.model.PortListenerState;
 import io.github.ibcmanager.model.RuntimeState;
 import io.github.ibcmanager.security.CredentialStore;
 import io.github.ibcmanager.security.CredentialStoreException;
@@ -50,6 +51,7 @@ public final class ControllerTests implements TestSuite {
                 new NamedTest("validation failure prevents all launch work", this::validationFailure),
                 new NamedTest("occupied command port prevents launch", this::occupiedCommandPort),
                 new NamedTest("occupied API port prevents launch", this::occupiedApiPort),
+                new NamedTest("unavailable listener inspection prevents launch", this::unavailablePortInspection),
                 new NamedTest("profile and status snapshots remain readable during a blocking start",
                         this::nonBlockingSnapshots),
                 new NamedTest("manual profile starts once and records identity", this::startManual),
@@ -58,33 +60,51 @@ public final class ControllerTests implements TestSuite {
                 new NamedTest("credential load failure stops before runtime config creation", this::credentialFailure),
                 new NamedTest("runtime config creation failure prevents process launch", this::runtimeConfigFailure),
                 new NamedTest("process launch failure removes temporary runtime config", this::processLaunchFailure),
+                new NamedTest("launch is rejected unless the detached relay owns exact runtime-config cleanup",
+                        this::relayCleanupOwnership),
                 new NamedTest("identity persistence failure terminates the partially started process", this::identityFailureCleanup),
                 new NamedTest("failing status listeners cannot break controller operation", this::listenerIsolation),
                 new NamedTest("refresh recognizes login and second-factor states", this::loginStates),
                 new NamedTest("refresh retains paused and reports an exited application", this::pausedAndExitedStates),
-                new NamedTest("second-factor state removes temporary credential config", this::secondFactorScrub),
-                new NamedTest("API TCP readiness is reported with an explicit caveat", this::apiState),
+                new NamedTest("automatic and timeout restarts stay yellow until replacement launch",
+                        this::automaticRestartStates),
+                new NamedTest("runtime configuration remains available across authentication and wrapper restarts", this::secondFactorScrub),
+                new NamedTest("API listener detection is reported with an explicit caveat", this::apiState),
+                new NamedTest("API listener must belong to the managed process tree before status becomes green",
+                        this::apiOwnership),
+                new NamedTest("unavailable API listener inspection is reported as uncertain",
+                        this::unknownApiListenerState),
                 new NamedTest("login-completed and error log states are reported", this::runningAndErrorStates),
                 new NamedTest("command-server readiness is reported while login is pending", this::commandReadyState),
-                new NamedTest("periodic refresh does not repeatedly connect to the IBC command server",
+                new NamedTest("periodic refresh uses passive listener inspection without command connections",
                         this::commandServerProbeNoise),
                 new NamedTest("controller commands use loopback and update restart and pause states", this::commands),
                 new NamedTest("a successful PAUSE exit remains paused instead of becoming an error",
                         this::pauseExit),
+                new NamedTest("PAUSE exit without wrapper confirmation becomes an error",
+                        this::pauseExitWithoutConfirmation),
                 new NamedTest("controller rejects commands while command server is closed", this::commandClosed),
+                new NamedTest("replacement IBC launch marker revokes stale command capabilities",
+                        this::replacementLaunchRevokesCommands),
                 new NamedTest("controller propagates IBC command rejection", this::commandRejected),
                 new NamedTest("graceful stop survives an onExit callback race", this::gracefulStopRace),
-                new NamedTest("failed STOP command still falls back to process termination", this::stopCommandFailure),
+                new NamedTest("failed STOP command never escalates to an implicit force stop", this::stopCommandFailure),
                 new NamedTest("force stop terminates only the managed process", this::forceStop),
                 new NamedTest("unexpected process exit cleans state and reports an error", this::unexpectedExit),
+                new NamedTest("normal and scheduled wrapper exits finish stopped rather than error",
+                        this::normalScheduledExit),
+                new NamedTest("exact IBC 3.24.1 error-exit marker survives to final failure state",
+                        this::reportedErrorExit),
+                new NamedTest("IBC error marker outranks StartIBC's generic normal-exit footer",
+                        this::reportedErrorWithNormalFooter),
                 new NamedTest("profile updates are blocked while running and accepted when stopped", this::updateProfile),
-                new NamedTest("manager exit blocks only credential-bearing startup configs", this::prepareExit),
-                new NamedTest("failed runtime-config scrubbing remains visible and blocks exit", this::scrubFailure),
+                new NamedTest("manager exit leaves active wrapper configuration to the detached relay", this::prepareExit),
+                new NamedTest("failed final runtime-config cleanup remains visible and blocks exit", this::scrubFailure),
                 new NamedTest("controller reattaches to an exact live process identity", this::reattach),
                 new NamedTest("runtime registry sorts updates and removes stopped controllers", this::registryProfiles),
                 new NamedTest("runtime registry retains omitted running controllers", this::registryRetainsRunning),
                 new NamedTest("runtime registry auto-starts only enabled auto-start profiles", this::registryAutoStart),
-                new NamedTest("runtime registry exposes profiles that block secure manager exit", this::registryExitBlock));
+                new NamedTest("runtime registry permits exit while detached relays own active cleanup", this::registryExitBlock));
     }
 
     private void initialState() throws Exception {
@@ -135,8 +155,24 @@ public final class ControllerTests implements TestSuite {
             Assertions.equals(0, fixture.launcher.calls, "preflight conflict must precede process launch");
             Assertions.equals(RuntimeState.ERROR, fixture.controller.status().state(),
                     "port conflict must be visible as an error state");
-            Assertions.isTrue(fixture.controller.status().apiPortOpen(),
+            Assertions.isTrue(fixture.controller.status().apiListenerDetected(),
                     "status must identify the occupied API port");
+        }
+    }
+
+    private void unavailablePortInspection() throws Exception {
+        try (Fixture fixture = new Fixture(CredentialMode.MANUAL)) {
+            fixture.ports.unknown = true;
+            RuntimeControllerException error = Assertions.throwsType(RuntimeControllerException.class,
+                    fixture.controller::start, "unknown listener state must stop before launch");
+            Assertions.contains(error.getMessage(), "inspect local TCP listeners",
+                    "the preflight error must explain that listener inspection failed");
+            Assertions.equals(0, fixture.runtime.cleanCalls,
+                    "unknown listener state must precede runtime configuration work");
+            Assertions.equals(0, fixture.launcher.calls,
+                    "unknown listener state must precede process launch");
+            Assertions.equals(RuntimeState.ERROR, fixture.controller.status().state(),
+                    "inspection failure must be visible as an error state");
         }
     }
 
@@ -184,6 +220,8 @@ public final class ControllerTests implements TestSuite {
             Assertions.equals(1, fixture.runtime.cleanCalls, "stale runtime config must be cleaned first");
             Assertions.equals(1, fixture.runtime.createCalls, "one runtime config must be created");
             Assertions.equals(1, fixture.launcher.calls, "one process must be launched");
+            Assertions.equals(1, fixture.ports.invalidations,
+                    "launch preflight must force one fresh passive listener snapshot");
             Assertions.fileExists(fixture.paths.runtimeState(fixture.profile.id()), "process identity must be persisted");
             Assertions.contains(fixture.launcher.initialLogText, "IBC Manager session",
                     "session header must be supplied to the buffered process logger");
@@ -249,6 +287,22 @@ public final class ControllerTests implements TestSuite {
         }
     }
 
+    private void relayCleanupOwnership() throws Exception {
+        try (Fixture fixture = new Fixture(CredentialMode.ENCRYPTED)) {
+            fixture.credentials.save(fixture.profile.id(), "secret".toCharArray());
+            fixture.launchFactory.cleanupOverride = fixture.root.resolve("wrong-config.ini");
+            RuntimeControllerException failure = Assertions.throwsType(RuntimeControllerException.class,
+                    fixture.controller::start,
+                    "a long-lived StartIBC wrapper must not start unless its detached relay owns exact cleanup");
+            Assertions.contains(failure.getMessage(), "Could not start profile",
+                    "cleanup-ownership failure must be reported as a start failure");
+            Assertions.equals(0, fixture.launcher.calls,
+                    "ownership mismatch must be rejected before the process is launched");
+            Assertions.isFalse(Files.exists(fixture.runtime.lastPath),
+                    "failed ownership validation must remove the credential-bearing runtime file");
+        }
+    }
+
     private void identityFailureCleanup() throws Exception {
         try (Fixture fixture = new Fixture(CredentialMode.MANUAL)) {
             Path blocking = fixture.paths.runtimeDirectory(fixture.profile.id());
@@ -298,14 +352,47 @@ public final class ControllerTests implements TestSuite {
             Assertions.equals(RuntimeState.PAUSED, fixture.controller.status().state(),
                     "a pause must not be downgraded to starting on the next poll");
             fixture.ports.apiOpen = true;
+            fixture.ports.apiOwnerPid = fixture.process.pid();
             fixture.controller.refresh();
             Assertions.equals(RuntimeState.PAUSED, fixture.controller.status().state(),
                     "an open API socket must not mask an explicit pause");
-            fixture.ports.apiOpen = false;
             fixture.appendLog("Gateway finished at 22:00");
             fixture.controller.refresh();
+            Assertions.equals(RuntimeState.STOPPING, fixture.controller.status().state(),
+                    "a confirmed normal exit must outrank a briefly lingering API listener");
+            Assertions.contains(fixture.controller.status().message(), "scheduled shutdown",
+                    "the transition must explain that the exit was normal or scheduled");
+        }
+    }
+
+    private void automaticRestartStates() throws Exception {
+        try (Fixture fixture = startedFixture(CredentialMode.MANUAL)) {
+            fixture.ports.apiOpen = true;
+            fixture.ports.apiOwnerPid = fixture.process.pid();
+            fixture.appendLog("Exiting after error with exit code=4");
+            fixture.controller.refresh();
             Assertions.equals(RuntimeState.UNKNOWN, fixture.controller.status().state(),
-                    "an exit report from a still-alive handle must not be reported as starting");
+                    "a child error must remain yellow and outrank a listener from the exiting child");
+            fixture.ports.apiOpen = false;
+
+            fixture.appendLog("Program has exited");
+            fixture.appendLog("IBC will autorestart shortly");
+            fixture.controller.refresh();
+            Assertions.equals(RuntimeState.RESTARTING, fixture.controller.status().state(),
+                    "automatic restart must be represented explicitly in yellow");
+            Assertions.contains(fixture.controller.status().message(), "automatic restart",
+                    "the reason for the restart must remain visible");
+
+            fixture.appendLog("Starting IBC with this command: replacement");
+            fixture.controller.refresh();
+            Assertions.equals(RuntimeState.STARTING, fixture.controller.status().state(),
+                    "the replacement launch marker must begin a fresh child session");
+
+            fixture.appendLog("Program has exited");
+            fixture.appendLog("IBC will restart shortly due to 2FA completion timeout");
+            fixture.controller.refresh();
+            Assertions.equals(RuntimeState.RESTARTING, fixture.controller.status().state(),
+                    "2FA timeout recovery must also remain a yellow restart state");
         }
     }
 
@@ -315,10 +402,14 @@ public final class ControllerTests implements TestSuite {
             Assertions.fileExists(temporary, "runtime credential file must initially exist");
             fixture.appendLog("Second factor authentication initiated");
             fixture.controller.refresh();
-            Assertions.isFalse(Files.exists(temporary), "2FA progress must remove runtime credential file");
-            Assertions.isFalse(fixture.controller.runtimeConfigurationPresent(), "lease must be released after scrub");
-            Assertions.isTrue(fixture.controller.logs().snapshot().stream().anyMatch(line -> line.contains("removed temporary")),
-                    "scrub action must be visible in logs");
+            Assertions.fileExists(temporary,
+                    "StartIBC may launch another IBC JVM after a 2FA timeout, so the config path must remain valid");
+            fixture.appendLog("Login has completed");
+            fixture.controller.refresh();
+            Assertions.fileExists(temporary,
+                    "login completion must not invalidate the config path reused by StartIBC restarts");
+            Assertions.isTrue(fixture.controller.runtimeConfigurationPresent(),
+                    "the runtime lease must remain owned for the complete wrapper lifetime");
         }
     }
 
@@ -326,12 +417,54 @@ public final class ControllerTests implements TestSuite {
         try (Fixture fixture = startedFixture(CredentialMode.ENCRYPTED)) {
             fixture.ports.apiOpen = true;
             fixture.controller.refresh();
-            Assertions.equals(RuntimeState.API_SOCKET_OPEN, fixture.controller.status().state(),
+            Assertions.equals(RuntimeState.API_LISTENER_DETECTED, fixture.controller.status().state(),
                     "open API socket must be reported");
-            Assertions.isTrue(fixture.controller.status().apiPortOpen(), "API flag must be true");
+            Assertions.isTrue(fixture.controller.status().apiListenerDetected(), "API flag must be true");
             Assertions.contains(fixture.controller.status().message(), "handshake is not verified",
                     "status must not overclaim API readiness");
-            Assertions.isFalse(Files.exists(fixture.runtime.lastPath), "API readiness must scrub runtime credential config");
+            Assertions.fileExists(fixture.runtime.lastPath,
+                    "API listener detection must not invalidate the config reused by the StartIBC wrapper");
+        }
+    }
+
+    private void apiOwnership() throws Exception {
+        try (Fixture fixture = startedFixture(CredentialMode.MANUAL)) {
+            fixture.ports.apiOpen = true;
+            fixture.ports.apiOwnerPid = fixture.process.pid() + 999;
+            fixture.controller.refresh();
+            Assertions.equals(RuntimeState.UNKNOWN, fixture.controller.status().state(),
+                    "a listener owned by an unrelated process must never produce green status");
+            Assertions.isFalse(fixture.controller.status().apiListenerDetected(),
+                    "wrong-PID listener must not be reported as the managed API listener");
+            Assertions.contains(fixture.controller.status().message(), "does not belong",
+                    "uncertain status must explain the ownership mismatch");
+
+            fixture.ports.apiOwnerPid = -1;
+            fixture.controller.refresh();
+            Assertions.equals(RuntimeState.UNKNOWN, fixture.controller.status().state(),
+                    "listener without ownership metadata must remain yellow/uncertain");
+            Assertions.contains(fixture.controller.status().message(), "did not expose enough ownership data",
+                    "missing ownership must be explicit rather than silently accepted");
+        }
+    }
+
+    private void unknownApiListenerState() throws Exception {
+        try (Fixture fixture = startedFixture(CredentialMode.MANUAL)) {
+            fixture.ports.unknown = true;
+            fixture.controller.refresh();
+            Assertions.equals(RuntimeState.UNKNOWN, fixture.controller.status().state(),
+                    "unavailable listener inspection without a login hint must remain uncertain");
+            Assertions.isFalse(fixture.controller.status().apiListenerDetected(),
+                    "an unavailable listener inspection must never produce a green API flag");
+            Assertions.contains(fixture.controller.status().message(), "Could not inspect",
+                    "uncertain status must explain the listener inspection failure");
+
+            fixture.appendLog("Login has completed");
+            fixture.controller.refresh();
+            Assertions.equals(RuntimeState.RUNNING, fixture.controller.status().state(),
+                    "a confirmed login hint must remain visible when listener inspection is unavailable");
+            Assertions.contains(fixture.controller.status().message(), "temporarily unavailable",
+                    "logged-in status must state that listener inspection is unavailable");
         }
     }
 
@@ -342,8 +475,10 @@ public final class ControllerTests implements TestSuite {
             Assertions.equals(RuntimeState.RUNNING, fixture.controller.status().state(), "login completion must report running");
             fixture.appendLog("Login failed: bad credentials");
             fixture.controller.refresh();
-            Assertions.equals(RuntimeState.ERROR, fixture.controller.status().state(), "later error must override running hint");
-            Assertions.contains(fixture.controller.status().message(), "Login failed", "error line must be retained");
+            Assertions.equals(RuntimeState.UNKNOWN, fixture.controller.status().state(),
+                    "a child login error must remain nonterminal until StartIBC decides whether to restart");
+            Assertions.contains(fixture.controller.status().message(), "wrapper decision",
+                    "pending child failure must explain why it is not yet terminal");
         }
     }
 
@@ -372,7 +507,7 @@ public final class ControllerTests implements TestSuite {
             Assertions.equals(commandCallsAfterPreflight, fixture.ports.commandCalls,
                     "periodic status refresh must never connect to the IBC command server");
             Assertions.equals(apiCallsAfterPreflight + 12, fixture.ports.apiCalls,
-                    "API socket monitoring must continue at the normal refresh cadence");
+                    "API listener monitoring must continue at the normal refresh cadence");
         }
     }
 
@@ -380,38 +515,58 @@ public final class ControllerTests implements TestSuite {
         try (Fixture fixture = startedFixture(CredentialMode.MANUAL)) {
             fixture.profile = fixture.profile.toBuilder().bindAddress("0.0.0.0").build();
             fixture.controller.forceStop();
-            fixture.rebuildController();
             fixture.process = new FakeProcess();
             fixture.launcher.process = fixture.process;
+            fixture.rebuildController();
             fixture.controller.start();
-            int commandProbeCalls = fixture.ports.commandCalls;
-            IbcCommandResult restart = fixture.controller.restartSession();
-            Assertions.isTrue(restart.success(), "restart command must return success");
-            Assertions.equals(RuntimeState.STARTING, fixture.controller.status().state(), "restart must return to starting state");
-            fixture.controller.pause();
-            Assertions.equals(RuntimeState.PAUSED, fixture.controller.status().state(), "pause must update status");
+            authenticate(fixture);
+
             fixture.controller.reconnectData();
             fixture.controller.reconnectAccount();
-            fixture.controller.enableApi();
-            Assertions.equals(List.of(IbcCommand.RESTART, IbcCommand.PAUSE, IbcCommand.RECONNECTDATA,
-                    IbcCommand.RECONNECTACCOUNT, IbcCommand.ENABLEAPI), fixture.commands.commands,
-                    "all requested commands must be sent in order");
+            Assertions.isFalse(fixture.controller.canExecute(IbcCommand.ENABLEAPI),
+                    "ENABLEAPI must remain unavailable for IB Gateway profiles");
+
+            FakeProcess original = fixture.process;
+            original.exitOnWait = true;
+            FakeProcess replacement = new FakeProcess();
+            fixture.launcher.nextProcess = replacement;
+            int commandProbeCalls = fixture.ports.commandCalls;
+            IbcCommandResult restart = fixture.controller.restartSession();
+            fixture.process = replacement;
+            fixture.ports.apiOwnerPid = replacement.pid();
+            Assertions.isTrue(restart.accepted(), "controlled restart must report an initiated replacement session");
+            Assertions.equals(RuntimeState.STARTING, fixture.controller.status().state(),
+                    "controlled restart must launch a fresh wrapper");
+            Assertions.isFalse(fixture.commands.commands.contains(IbcCommand.RESTART),
+                    "IBC's native RESTART command must not be used because its fallback mutates restart scheduling");
+
+            authenticate(fixture);
+            IbcCommandResult pause = fixture.controller.pause();
+            Assertions.isTrue(pause.success(), "PAUSE acknowledgement must be accepted");
+            Assertions.equals(RuntimeState.PAUSING, fixture.controller.status().state(),
+                    "preliminary PAUSE acknowledgement must remain pending until wrapper confirmation");
+            Assertions.equals(List.of(IbcCommand.RECONNECTDATA, IbcCommand.RECONNECTACCOUNT,
+                            IbcCommand.STOP, IbcCommand.PAUSE), fixture.commands.commands,
+                    "only safe, requested commands must be sent in order");
             Assertions.isTrue(fixture.commands.hosts.stream().allMatch("127.0.0.1"::equals),
                     "wildcard bind address must be controlled through loopback");
-            Assertions.equals(commandProbeCalls, fixture.ports.commandCalls,
-                    "real commands must not be preceded by a redundant command-port probe");
+            Assertions.equals(commandProbeCalls + 1, fixture.ports.commandCalls,
+                    "the controlled restart may perform exactly one fresh-start occupancy check, but commands must not add probes");
         }
     }
 
     private void pauseExit() throws Exception {
         try (Fixture fixture = startedFixture(CredentialMode.ENCRYPTED)) {
             Path config = fixture.runtime.lastPath;
+            authenticate(fixture);
             fixture.controller.pause();
-            Assertions.equals(RuntimeState.PAUSED, fixture.controller.status().state(),
-                    "accepted PAUSE must be visible while shutdown is pending");
+            Assertions.equals(RuntimeState.PAUSING, fixture.controller.status().state(),
+                    "accepted PAUSE must remain pending until the wrapper confirms completion");
             Assertions.isTrue(fixture.controller.status().processAlive(),
                     "the process can remain alive briefly after PAUSE is accepted");
 
+            fixture.appendLog("IBC is paused");
+            fixture.controller.refresh();
             fixture.process.completeExit(0);
 
             Assertions.equals(RuntimeState.PAUSED, fixture.controller.status().state(),
@@ -428,23 +583,56 @@ public final class ControllerTests implements TestSuite {
         }
     }
 
+    private void pauseExitWithoutConfirmation() throws Exception {
+        try (Fixture fixture = startedFixture(CredentialMode.MANUAL)) {
+            authenticate(fixture);
+            fixture.commands.result = new IbcCommandResult(CommandDisposition.ACCEPTED,
+                    "OK PAUSE in progress");
+            fixture.controller.pause();
+            fixture.process.completeExit(1);
+            Assertions.equals(RuntimeState.ERROR, fixture.controller.status().state(),
+                    "preliminary PAUSE acceptance is not proof of a resumable paused session");
+            Assertions.contains(fixture.controller.status().message(), "never confirmed",
+                    "the error must identify missing StartIBC pause confirmation");
+        }
+    }
+
     private void commandClosed() throws Exception {
         try (Fixture fixture = startedFixture(CredentialMode.MANUAL)) {
-            fixture.commands.fail = true;
             Assertions.throwsType(RuntimeControllerException.class, fixture.controller::pause,
-                    "closed command server must reject action");
-            Assertions.equals(List.of(IbcCommand.PAUSE), fixture.commands.commands,
-                    "the requested command itself must be the only connection attempt");
+                    "commands must be blocked until login and command-server readiness are confirmed");
+            Assertions.equals(List.of(), fixture.commands.commands,
+                    "capability gating must prevent an unsafe early command from reaching IBC");
             Assertions.isFalse(fixture.controller.status().commandPortOpen(),
-                    "a failed command connection must invalidate cached readiness");
+                    "the command server must still be reported closed");
+        }
+    }
+
+    private void replacementLaunchRevokesCommands() throws Exception {
+        try (Fixture fixture = startedFixture(CredentialMode.MANUAL)) {
+            authenticate(fixture);
+            Assertions.isTrue(fixture.controller.canExecute(IbcCommand.RECONNECTDATA),
+                    "fixture must begin in a command-capable state");
+            Assertions.isFalse(fixture.controller.canExecute(IbcCommand.RESTART),
+                    "native IBC RESTART must never be exposed by the controller");
+
+            fixture.appendLog("Starting IBC with this command: java -cp IBC.jar ibcalpha.ibc.IbcGateway");
+            fixture.controller.refresh();
+            Assertions.equals(RuntimeState.STARTING, fixture.controller.status().state(),
+                    "replacement IBC JVM must return the profile to a startup state");
+            Assertions.isFalse(fixture.controller.canExecute(IbcCommand.RECONNECTDATA),
+                    "stale main-window readiness must not survive an internal IBC restart");
+            Assertions.throwsType(RuntimeControllerException.class, fixture.controller::reconnectData,
+                    "controller enforcement must block unsafe pre-main-window commands even if UI is bypassed");
         }
     }
 
     private void commandRejected() throws Exception {
         try (Fixture fixture = startedFixture(CredentialMode.MANUAL)) {
+            authenticate(fixture);
             fixture.commands.result = new IbcCommandResult(false, "ERROR not permitted");
             RuntimeControllerException error = Assertions.throwsType(RuntimeControllerException.class,
-                    fixture.controller::enableApi, "rejected command must propagate");
+                    fixture.controller::reconnectData, "rejected command must propagate");
             Assertions.contains(error.getMessage(), "not permitted", "IBC response must be included");
         }
     }
@@ -467,10 +655,16 @@ public final class ControllerTests implements TestSuite {
         try (Fixture fixture = startedFixture(CredentialMode.MANUAL)) {
             fixture.commands.fail = true;
             fixture.process.exitOnWait = false;
-            fixture.controller.stop();
-            Assertions.equals(RuntimeState.STOPPED, fixture.controller.status().state(), "forced fallback must stop profile");
-            Assertions.isTrue(fixture.process.destroyCalls + fixture.process.forceCalls > 0,
-                    "managed process must be terminated after graceful failure");
+            RuntimeControllerException error = Assertions.throwsType(RuntimeControllerException.class,
+                    fixture.controller::stop,
+                    "a failed graceful stop must require an explicit Force Stop instead of killing the process");
+            Assertions.contains(error.getMessage(), "not killed",
+                    "timeout must explain that no implicit force termination occurred");
+            Assertions.equals(RuntimeState.STOPPING, fixture.controller.status().state(),
+                    "the still-running process must remain visibly in a stop-pending state");
+            Assertions.isTrue(fixture.process.isAlive(), "the managed process must remain alive");
+            Assertions.equals(0, fixture.process.destroyCalls + fixture.process.forceCalls,
+                    "normal Stop must never escalate to forced termination");
             Assertions.isTrue(fixture.controller.logs().snapshot().stream().anyMatch(line -> line.contains("STOP command failed")),
                     "STOP communication failure must be logged");
         }
@@ -497,6 +691,63 @@ public final class ControllerTests implements TestSuite {
         }
     }
 
+    private void normalScheduledExit() throws Exception {
+        try (Fixture fixture = startedFixture(CredentialMode.ENCRYPTED)) {
+            Path config = fixture.runtime.lastPath;
+            fixture.appendLog("Program has exited");
+            fixture.appendLog("Normal exit");
+            fixture.appendLog("Gateway finished at 23:45");
+            fixture.controller.refresh();
+            Assertions.equals(RuntimeState.STOPPING, fixture.controller.status().state(),
+                    "normal wrapper shutdown must remain transitional until process exit");
+
+            fixture.process.completeExit(0);
+            Assertions.equals(RuntimeState.STOPPED, fixture.controller.status().state(),
+                    "ClosedownAt and other normal wrapper exits must not become ERROR");
+            Assertions.contains(fixture.controller.status().message(), "normal or scheduled shutdown",
+                    "final stopped state must describe the expected lifecycle outcome");
+            Assertions.equals(Integer.valueOf(0), fixture.controller.status().exitCode(),
+                    "normal wrapper exit code must be retained");
+            Assertions.isFalse(Files.exists(config), "runtime config must still be cleaned after scheduled shutdown");
+        }
+    }
+
+    private void reportedErrorExit() throws Exception {
+        try (Fixture fixture = startedFixture(CredentialMode.ENCRYPTED)) {
+            fixture.appendLog("Exiting after error with exit code=4");
+            fixture.controller.refresh();
+            Assertions.equals(RuntimeState.UNKNOWN, fixture.controller.status().state(),
+                    "the controller must wait for the wrapper decision while it remains alive");
+            fixture.process.completeExit(4);
+            Assertions.equals(RuntimeState.ERROR, fixture.controller.status().state(),
+                    "wrapper exit without a restart after IBC's exact error marker must be fatal");
+            Assertions.contains(fixture.controller.status().message(), "after reporting an error",
+                    "the final message must distinguish an IBC-reported failure from an unexplained exit");
+            Assertions.equals(Integer.valueOf(4), fixture.controller.status().exitCode(),
+                    "the reported error exit code must be retained");
+        }
+    }
+
+    private void reportedErrorWithNormalFooter() throws Exception {
+        try (Fixture fixture = startedFixture(CredentialMode.ENCRYPTED)) {
+            fixture.appendLog("Exiting after error with exit code=4");
+            fixture.appendLog("Program has exited");
+            fixture.appendLog("Normal exit");
+            fixture.appendLog("Gateway finished at 23:45");
+            fixture.controller.refresh();
+            Assertions.equals(RuntimeState.UNKNOWN, fixture.controller.status().state(),
+                    "StartIBC's generic normal-exit footer must not hide an earlier IBC error");
+            Assertions.contains(fixture.controller.status().message(), "IBC-reported error",
+                    "the transitional status must retain the actual failure reason");
+
+            fixture.process.completeExit(0);
+            Assertions.equals(RuntimeState.ERROR, fixture.controller.status().state(),
+                    "an IBC-reported error must outrank StartIBC's generic footer even when the wrapper exits zero");
+            Assertions.contains(fixture.controller.status().message(), "after reporting an error",
+                    "the final state must preserve the IBC error classification");
+        }
+    }
+
     private void updateProfile() throws Exception {
         try (Fixture fixture = startedFixture(CredentialMode.MANUAL)) {
             Profile renamed = fixture.profile.toBuilder().name("Renamed").build();
@@ -513,12 +764,10 @@ public final class ControllerTests implements TestSuite {
 
     private void prepareExit() throws Exception {
         try (Fixture encrypted = startedFixture(CredentialMode.ENCRYPTED)) {
-            Assertions.isFalse(encrypted.controller.prepareForManagerExit(),
-                    "manager must not exit while encrypted config may still be read");
-            Assertions.fileExists(encrypted.runtime.lastPath, "credential config must remain for active startup");
-            encrypted.appendLog("Second factor authentication initiated");
-            encrypted.controller.refresh();
-            Assertions.isTrue(encrypted.controller.prepareForManagerExit(), "after scrub manager exit must be safe");
+            Assertions.isTrue(encrypted.controller.prepareForManagerExit(),
+                    "the detached process relay owns cleanup while the StartIBC wrapper remains alive");
+            Assertions.fileExists(encrypted.runtime.lastPath,
+                    "the config path must remain available for automatic wrapper restarts after Manager exits");
         }
         try (Fixture manual = startedFixture(CredentialMode.MANUAL)) {
             Path config = manual.runtime.lastPath;
@@ -533,14 +782,13 @@ public final class ControllerTests implements TestSuite {
             fixture.credentials.save(fixture.profile.id(), "secret".toCharArray());
             fixture.runtime.directoryLease = true;
             fixture.controller.start();
-            fixture.appendLog("Second factor authentication initiated");
-            fixture.controller.refresh();
+            fixture.process.completeExit(9);
+            Assertions.equals(RuntimeState.ERROR, fixture.controller.status().state(),
+                    "a final cleanup failure must be visible as an error");
             Assertions.isTrue(fixture.controller.runtimeConfigurationPresent(),
-                    "failed scrub must retain lease for retry and visibility");
+                    "failed final cleanup must retain the lease for a later retry");
             Assertions.isFalse(fixture.controller.prepareForManagerExit(),
-                    "manager exit must stay blocked when credential cleanup fails");
-            Assertions.isTrue(fixture.controller.logs().snapshot().stream().anyMatch(line -> line.contains("could not remove")),
-                    "cleanup failure must be logged");
+                    "manager exit must remain blocked once the wrapper is gone and secure cleanup still fails");
         }
     }
 
@@ -656,8 +904,8 @@ public final class ControllerTests implements TestSuite {
             Fixture fixture = fixtures.get(0);
             fixture.credentials.save(encrypted.id(), "secret".toCharArray());
             registry.controller(encrypted.id()).orElseThrow().start();
-            Assertions.equals(1, registry.controllersBlockingManagerExit().size(),
-                    "encrypted startup config must be reported as a blocker");
+            Assertions.equals(0, registry.controllersBlockingManagerExit().size(),
+                    "active wrappers must delegate runtime-config cleanup to their detached relays");
         } finally {
             for (Fixture fixture : fixtures) fixture.close();
             TestSupport.deleteTree(root);
@@ -674,6 +922,14 @@ public final class ControllerTests implements TestSuite {
                 throw new IllegalStateException(ex);
             }
         });
+    }
+
+
+    private static void authenticate(Fixture fixture) throws IOException {
+        fixture.appendLog("Starting IBC with this command: java ...");
+        fixture.appendLog("CommandServer started and is ready to accept commands");
+        fixture.appendLog("Login has completed");
+        fixture.controller.refresh();
     }
 
     private static Fixture startedFixture(CredentialMode mode) throws Exception {
@@ -720,6 +976,7 @@ public final class ControllerTests implements TestSuite {
         }
 
         private void rebuildController() {
+            ports.apiOwnerPid = process.pid();
             controller = new ProfileRuntimeController(profile, paths, new ProfileValidator(credentials), runtime,
                     credentials, launchFactory, launcher, ports, commands, new ProcessIdentityStore(paths),
                     new ProcessTreeTerminator(), fixedClock());
@@ -791,9 +1048,11 @@ public final class ControllerTests implements TestSuite {
 
     private static final class FakeLaunchFactory implements LaunchSpecFactory {
         private final Path root;
+        private Path cleanupOverride;
         private FakeLaunchFactory(Path root) { this.root = root; }
         @Override public LaunchSpec create(Profile profile, Path runtimeConfig) {
-            return new LaunchSpec(List.of("fake"), root, Map.of(), root.resolve("launch.cmd"), "fake launch");
+            return new LaunchSpec(List.of("fake"), root, Map.of(), root.resolve("launch.cmd"),
+                    "fake launch", cleanupOverride == null ? runtimeConfig : cleanupOverride);
         }
     }
 
@@ -801,12 +1060,17 @@ public final class ControllerTests implements TestSuite {
         private FakeProcess process;
         private int calls;
         private boolean fail;
+        private FakeProcess nextProcess;
         private String initialLogText = "";
         private FakeProcessLauncher(FakeProcess process) { this.process = process; }
         @Override public ManagedProcess launch(LaunchSpec spec, Path logFile, String initialLogText) throws IOException {
             calls++;
             this.initialLogText = initialLogText;
             if (fail) throw new IOException("launch failed");
+            if (calls > 1 && nextProcess != null) {
+                process = nextProcess;
+                nextProcess = null;
+            }
             return process;
         }
     }
@@ -815,11 +1079,18 @@ public final class ControllerTests implements TestSuite {
         private boolean commandOpen;
         private boolean apiOpen;
         private boolean block;
+        private boolean unknown;
         private int commandCalls;
         private int apiCalls;
+        private int invalidations;
+        private long apiOwnerPid = -1;
         private final CountDownLatch entered = new CountDownLatch(1);
         private final CountDownLatch release = new CountDownLatch(1);
-        @Override public boolean isOpen(String host, int port, Duration timeout) {
+        @Override public void invalidate() { invalidations++; }
+        @Override public PortListenerState inspect(String host, int port, Duration timeout) {
+            return observe(host, port, timeout).state();
+        }
+        @Override public ListenerObservation observe(String host, int port, Duration timeout) {
             if (port == 4002) apiCalls++;
             else commandCalls++;
             if (block) {
@@ -831,7 +1102,11 @@ public final class ControllerTests implements TestSuite {
                     throw new IllegalStateException("interrupted test probe", ex);
                 }
             }
-            return port == 4002 ? apiOpen : commandOpen;
+            if (unknown) return ListenerObservation.unknown(port);
+            boolean open = port == 4002 ? apiOpen : commandOpen;
+            if (!open) return ListenerObservation.notListening(host, port);
+            long owner = port == 4002 ? apiOwnerPid : -1;
+            return ListenerObservation.listening(host, port, owner);
         }
     }
 

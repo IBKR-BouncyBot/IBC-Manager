@@ -73,7 +73,7 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
   the GUI.
 - [ ] From a freshly extracted source ZIP with no `dist` directory or JAR,
   `run.bat` explains the on-demand build, requests JDK permission when necessary,
-  creates `dist\IBC-Manager-1.0.13.jar`, smoke-tests it, and opens the GUI without
+  creates `dist\IBC-Manager-1.0.19.jar`, smoke-tests it, and opens the GUI without
   requiring `build.bat` first.
 - [ ] Corrupt a copy of the release JAR and confirm `run.bat` reports the Java/JAR
   failure in the console and does not attempt the detached `javaw` launch.
@@ -86,9 +86,9 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
   gives a manual WiX instruction.
 - [ ] A successful `package-windows.bat` run creates the app image under
   `dist\windows\IBC Manager`, the versioned installer
-  `dist\windows\IBC Manager-1.0.13.exe`, and
-  `dist\IBC_Manager_1.0.13_Release_windows.zip`.
-- [ ] The Windows release ZIP contains `IBC Manager-1.0.13.exe` at its root and
+  `dist\windows\IBC Manager-1.0.19.exe`, and
+  `dist\IBC_Manager_1.0.19_Release_windows.zip`.
+- [ ] The Windows release ZIP contains `IBC Manager-1.0.19.exe` at its root and
   one complete portable `IBC Manager` folder at its root.
 - [ ] The portable folder contains nonempty `IBC Manager.exe`, the versioned
   application JAR, and `runtime\bin\java.exe`.
@@ -101,12 +101,12 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
 
 ## Portable-runtime regression introduced in 1.0.12
 
-- [ ] Run `package-windows.bat` from a freshly extracted 1.0.13 source ZIP.
+- [ ] Run `package-windows.bat` from a freshly extracted 1.0.19 source ZIP.
 - [ ] Confirm both jpackage commands show the explicit jlink option list without
   `--strip-native-commands`.
 - [ ] Confirm `dist\windows\IBC Manager\runtime\bin\java.exe` exists and is
   nonempty before the EXE installer stage begins.
-- [ ] Confirm `dist\IBC_Manager_1.0.13_Release_windows.zip` contains the exact
+- [ ] Confirm `dist\IBC_Manager_1.0.19_Release_windows.zip` contains the exact
   nonempty entry `IBC Manager/runtime/bin/java.exe`.
 - [ ] Extract only the portable `IBC Manager` folder to a new directory, start
   `IBC Manager.exe`, and start a paper profile. The profile must not report
@@ -114,7 +114,7 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
 - [ ] Confirm the detached process relay remains alive while IBC/Gateway runs,
   live output appears in the Logs tab, and the manager-owned process log receives
   its final batch when the managed process exits.
-- [ ] Install with `IBC Manager-1.0.13.exe`, start the installed application, and
+- [ ] Install with `IBC Manager-1.0.19.exe`, start the installed application, and
   repeat the paper-profile launch test. The installed runtime must also contain
   `runtime\bin\java.exe`.
 - [ ] Remove or rename `runtime\bin\java.exe` in a copy of the app image and
@@ -123,7 +123,7 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
 
 ## Windows process-tree regression introduced in 1.0.11
 
-- [ ] From a freshly extracted 1.0.13 source ZIP, both `validate-windows.bat`
+- [ ] From a freshly extracted 1.0.19 source ZIP, both `validate-windows.bat`
   and `package-windows.bat` pass the test named **process tree terminator captures
   descendants spawned during cooperative shutdown**.
 - [ ] Repeat the complete Windows test gate at least three times; the dynamic
@@ -135,7 +135,7 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
 - [ ] After the complete tests pass, `package-windows.bat` proceeds to the real
   `jpackage` application-image and WiX EXE stages.
 
-## 1.0.13 quiet command-server regression
+## 1.0.13+ quiet command-server regression
 
 - [ ] Start a paper profile and leave it idle for at least 30 seconds.
 - [ ] Confirm IBC output does not repeatedly add `CommandServer: ControlFrom
@@ -145,12 +145,133 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
   after IBC reports that the server is ready, without a monitoring connection.
 - [ ] Invoke one real command and confirm one normal accepted/closed command
   channel sequence may appear for that command, but does not continue while idle.
-- [ ] Close and reopen IBC Manager while the profile remains running. At most one
-  fallback command-port connection is allowed during reattachment when the
-  command-server startup line is no longer available; subsequent refreshes must
-  remain quiet.
+- [ ] Close and reopen IBC Manager while the profile remains running. One passive
+  listener-table observation is allowed during reattachment when the
+  command-server startup line is no longer available; no command-port client
+  connection should be created and subsequent refreshes must remain quiet.
 - [ ] Confirm an occupied command port is still detected once during launch
   preflight before credentials or a password-bearing runtime config are loaded.
+
+## 1.0.14 passive API-listener regression
+
+- [ ] Upgrade from 1.0.13 or earlier, start a paper profile, and leave it idle for
+  at least 60 seconds.
+- [ ] Confirm the IB Gateway log does not add `Client disconnected before version
+  was sent` and `API client version is missing` every two seconds.
+- [ ] Confirm no new incoming API connection appears solely because the IBC
+  Manager Overview tab is open or refreshed.
+- [ ] Confirm the green headline is **API listener detected** and the State field
+  is **API LISTENER DETECTED** when Windows reports the API port as listening.
+- [ ] Confirm the detail explicitly states that the IB API handshake is not
+  verified.
+- [ ] Stop Gateway/TWS and confirm the passive listener status changes within the
+  five-second snapshot interval without a raw API connection.
+- [ ] Temporarily make the trusted Windows `netstat.exe` unavailable in an
+  isolated test VM. A new profile launch must fail before credentials are loaded,
+  while an already-running profile must become yellow/uncertain instead of green.
+- [ ] Restore `netstat.exe` and confirm passive listener status recovers without
+  restarting IBC Manager.
+- [ ] Run two profiles and confirm one shared listener-table snapshot services
+  both profiles; no per-profile API connection attempts are logged.
+- [ ] If the repeated version-missing pair remains, close every older IBC Manager
+  instance and identify any other program performing a raw TCP health check.
+
+## 1.0.19 Properties, lifecycle, command, and path compatibility
+
+- [ ] Import an external config containing `IbDir=C:\Jts`; validation warns that
+  IBC interprets it as `C:Jts`, does not echo any credential value, and recommends
+  `IbDir=C:\\Jts`.
+- [ ] Enter malformed Properties text whose final line is a lone continuation
+  backslash. Managed Config reports that the full-file JDK parser and formatting
+  scanner disagree and does not rewrite the file without explicit confirmation.
+- [ ] Confirm explicit canonicalization shows the JDK-authoritative settings,
+  discards only the ambiguous raw formatting, and remains stable after reopen.
+- [ ] Exercise normal `ClosedownAt`; the profile transitions through yellow
+  shutdown state and ends **Stopped**, not **Error**.
+- [ ] Exercise automatic restart, cold restart, login-dialog timeout recovery, and
+  second-factor timeout recovery. Each shows yellow **Restarting** until the next
+  `Starting IBC with this command:` generation marker.
+- [ ] Cause a paper-session IBC child error that logs
+  `Exiting after error with exit code=`. The status waits for the wrapper decision;
+  it recovers to startup when the wrapper restarts and becomes red only if the
+  wrapper exits without recovery.
+- [ ] Using an isolated command-server fixture, confirm exact replies `OK` and
+  `ERROR` are classified as completed and rejected respectively, while a later
+  error overrides `OK ... in progress`.
+- [ ] Select or type a path under `C:\Program Files (x86)`. Validation names the
+  offending `(` character, lists `" % ! & | < > ^ ( )`, recommends `C:\IBC` or
+  `C:\Jts`, and prevents `StartIBC.bat` launch.
+- [ ] Confirm simple paths containing spaces but none of the rejected characters
+  remain usable.
+
+## 1.0.18 detached-relay Windows cleanup regression
+
+- [ ] Run `package-windows.bat` from a freshly extracted 1.0.19 source ZIP.
+- [ ] Confirm all 538 Java tests pass, including **buffered process relay
+  survives the manager process exiting**.
+- [ ] Confirm the test no longer fails while deleting a temporary `logs`
+  directory with `The process cannot access the file because it is being used
+  by another process`.
+- [ ] Repeat `package-windows.bat` at least three times. No temporary
+  `ibc-manager-detached-process-log-*` directory should remain after a
+  successful run.
+- [ ] Confirm a deliberately persistent Windows file lock still causes bounded
+  cleanup failure rather than being ignored indefinitely.
+
+## 1.0.17 locale-stable time-validation regression
+
+- [ ] Run `package-windows.bat` under a Dutch or other non-English Windows
+  display/format locale. The complete Java test gate must pass.
+- [ ] In Managed config, set `AutoRestartTime=11:45 PM`, save, reopen Profile
+  Edit, and confirm the value remains synchronized.
+- [ ] Confirm `11:45 pm`, `23:45`, a single-digit hour, and invalid minutes are
+  rejected for `AutoRestartTime`.
+- [ ] Confirm `ColdRestartTime=23:45` remains valid.
+- [ ] Confirm packaging proceeds beyond all 524 Java tests to `jpackage` and the
+  Windows ZIP assembly.
+
+## 1.0.16 managed-config synchronization regression
+
+- [ ] Change an advanced setting in **Managed config**, save it, then open
+  **Edit**. The structured value must match the raw file.
+- [ ] Change `IbLoginId`, `TradingMode`, `MinimizeMainWindow`,
+  `OverrideTwsApiPort`, `CommandServerPort`, `BindAddress`,
+  `ReloginAfterSecondFactorAuthenticationTimeout`, and `SecondFactorDevice` in
+  Managed config. After save, the corresponding Profile controls must match.
+- [ ] Change the same values in Profile Edit and confirm Managed config contains
+  the canonical values while comments and an unknown test property survive.
+- [ ] Attempt to make the API and command ports identical in Managed config.
+  Saving must fail and both the profile and managed file must remain unchanged.
+- [ ] Enter a Windows batch metacharacter in a path through any available input
+  path. Validation must fail cleanly; no launcher command may be generated.
+
+## 1.0.16 IBC compatibility regression
+
+- [ ] A manually selected IBC folder is rejected when the `version` file is not
+  3.24.1, when `IBC.jar` embeds another version, or when the tested launcher
+  capabilities are missing.
+- [ ] The resolved Java directory shown in validation is the same directory
+  passed to `StartIBC.bat /JavaPath:` and reports Java 17 or newer.
+- [ ] A username, password, or `SecondFactorDevice` containing non-ASCII text and
+  literal backslashes is received unchanged by IBC in a paper-account test.
+- [ ] After authentication, the runtime config remains present while
+  `StartIBC.bat` is alive and is removed after the wrapper exits.
+- [ ] Exercise an IBC auto-restart or cold restart and confirm the replacement
+  IBC JVM can reload the same configuration path.
+- [ ] Before `Login has completed`, reconnect, pause, and enable-API controls are
+  disabled. They become available only after the main-window readiness boundary.
+- [ ] PAUSE first displays **Pausing** and becomes **Paused** only after the log
+  contains `IBC is paused` and the wrapper exits.
+- [ ] Graceful Stop timeout does not kill the process. Force Stop requires its
+  separate confirmation.
+- [ ] Restart performs Stop plus fresh Start and does not invoke native IBC
+  `RESTART` or alter the configured auto-restart time.
+- [ ] With API-port forcing disabled, IBC Manager leaves `OverrideTwsApiPort`
+  blank and does not open the Gateway/TWS configuration UI solely to rewrite it.
+- [ ] A listener on the configured API port owned by an unrelated process is
+  shown yellow, not green. The real managed Gateway listener becomes green.
+- [ ] Two profiles started simultaneously from the same offline installation do
+  not race while `tws.exe`/`ibgateway.exe` is renamed.
 
 ## Status and buffered logging
 
@@ -158,10 +279,12 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
   the profile list and selected-profile status panel.
 - [ ] Startup, login waiting, second-factor waiting, pause, and stopping show a
   yellow indicator with explicit state text.
-- [ ] Opening the configured API TCP socket changes the indicator to green and
-  the headline to **API TCP open**, while the detail still states that the IB
-  API handshake is not verified.
-- [ ] A profile that is logged in but whose API socket is closed remains yellow.
+- [ ] When the operating system reports a listener on the configured API port,
+  the indicator changes to green and the headline becomes **API listener
+  detected**, while the detail still states that the IB API handshake is not
+  verified.
+- [ ] A profile that is logged in but whose API listener is absent or cannot be
+  inspected remains yellow.
 - [ ] Produce application and profile-process output and confirm manager-owned
   log files do not change before the 60-second interval during normal running.
 - [ ] Confirm the live Logs tab updates before the 60-second disk commit.
@@ -178,7 +301,7 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
 
 - [ ] `IBC Manager.exe` starts without a separately installed Java runtime.
 - [ ] The app image and installer are signed or Windows warning behavior is documented.
-- [ ] `--version` reports 1.0.13 and IBC baseline 3.24.1.
+- [ ] `--version` reports 1.0.19 and IBC baseline 3.24.1.
 - [ ] `--headless-smoke` succeeds in a clean data directory.
 - [ ] A second manager instance is rejected without corrupting the first.
 - [ ] Uninstall leaves user data untouched unless explicitly selected.
@@ -274,9 +397,13 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
 - [ ] Another Windows user cannot decrypt the credential file.
 - [ ] Password does not appear in profile/config/log/diagnostic files or process command lines.
 - [ ] Runtime config and every parent private directory have owner-restricted ACLs with usable traverse permission.
-- [ ] Runtime config is removed after the second-factor/running state.
-- [ ] Failed launch, normal stop, forced stop, and app restart clean stale runtime config.
-- [ ] Manager exit is blocked while a password-bearing runtime config cannot be removed.
+- [ ] Runtime config remains present after authentication while `StartIBC.bat` is
+  alive and is scrubbed/removed only after the wrapper exits.
+- [ ] Failed launch, normal stop, forced stop, wrapper exit, and app restart clean
+  stale runtime config.
+- [ ] Manager exit with an active wrapper is allowed only after the detached relay
+  owns the exact cleanup path; otherwise an unremovable password-bearing runtime
+  config blocks exit.
 
 ## IBC and paper Gateway/TWS
 
@@ -290,7 +417,7 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
   PAUSED with Start available; it does not report an unexpected-exit error.
 - [ ] IBC command actions work and responses are shown.
 - [ ] API enablement is available for TWS and disabled for Gateway.
-- [ ] API TCP state matches the configured socket.
+- [ ] Passive API-listener state matches the Windows TCP listener table.
 - [ ] The trading client independently confirms the expected paper account and handshake.
 
 ## 1.0.10 filesystem and transaction hardening

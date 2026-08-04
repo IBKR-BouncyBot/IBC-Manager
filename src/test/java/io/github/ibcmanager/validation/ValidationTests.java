@@ -7,15 +7,19 @@ import io.github.ibcmanager.model.CredentialMode;
 import io.github.ibcmanager.model.Profile;
 import io.github.ibcmanager.model.Severity;
 import io.github.ibcmanager.model.TradingMode;
+import io.github.ibcmanager.model.TwoFactorTimeoutAction;
+import io.github.ibcmanager.model.ValidationIssue;
 import io.github.ibcmanager.security.CredentialStore;
 import io.github.ibcmanager.security.CredentialStoreException;
 import io.github.ibcmanager.security.SecureChars;
 import io.github.ibcmanager.security.TextSafety;
+import io.github.ibcmanager.security.WindowsCommandSafety;
 import io.github.ibcmanager.tests.Assertions;
 import io.github.ibcmanager.tests.NamedTest;
 import io.github.ibcmanager.tests.TestSuite;
 import io.github.ibcmanager.tests.TestSupport;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
@@ -24,6 +28,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 public final class ValidationTests implements TestSuite {
     @Override public String name() { return "Profile and setting validation"; }
@@ -44,6 +49,8 @@ public final class ValidationTests implements TestSuite {
                 new NamedTest("warns about non-loopback command binding", this::remoteBinding),
                 new NamedTest("rejects invalid command binding", this::invalidBinding),
                 new NamedTest("validates graceful stop timeout", this::stopTimeout),
+                new NamedTest("validates coherent IBC and wrapper second-factor timeout policy",
+                        this::secondFactorTimeoutPolicy),
                 new NamedTest("validates encrypted credentials", this::encryptedCredentials),
                 new NamedTest("validates existing config mode", this::existingConfig),
                 new NamedTest("warns that reserved advanced settings are ignored", this::reservedSettings),
@@ -55,9 +62,22 @@ public final class ValidationTests implements TestSuite {
                 new NamedTest("validates boolean values", this::booleanValues),
                 new NamedTest("validates enum values", this::enumValues),
                 new NamedTest("validates integer and port values", this::numbers),
+                new NamedTest("validates timeout and client-ID ranges", this::integerRanges),
                 new NamedTest("validates 12-hour and 24-hour times", this::times),
+                new NamedTest("validates documented AM/PM independently of the host locale",
+                        this::timeLocaleIndependence),
+                new NamedTest("validates IBC closedown and settings-save schedules", this::schedules),
+                new NamedTest("validates order-ID reset policy", this::orderIdResetPolicy),
+                new NamedTest("accepts all IBC window-structure logging aliases", this::logStructureAliases),
+                new NamedTest("blocks unsupported FIX CTCI mode", this::unsupportedFixMode),
+                new NamedTest("warns that FIX-only trusted API addresses are ignored",
+                        this::fixOnlyTrustedApiAddresses),
+                new NamedTest("validates TWS-only settings against the selected application",
+                        this::applicationSpecificSettings),
+                new NamedTest("warns when auto-logoff and auto-restart are both set", this::autoScheduleConflict),
                 new NamedTest("validates IP lists", this::ipLists),
-                new NamedTest("detects config duplicates and plaintext secrets", this::documentWarnings));
+                new NamedTest("detects config duplicates and plaintext secrets", this::documentWarnings),
+                new NamedTest("known IBC setting names require canonical letter case", this::canonicalSettingCase));
     }
 
     private void validInstalled() throws Exception {
@@ -135,17 +155,67 @@ public final class ValidationTests implements TestSuite {
         Path root = TestSupport.tempDirectory("validation-unsafe");
         try {
             Profile base = TestSupport.validProfile(root);
-            for (String value : List.of("C:/bad%path", "C:/bad!path", "C:/bad\"path", "C:/bad\npath")) {
+            for (String value : List.of("C:/bad%path", "C:/bad!path", "C:/bad\"path",
+                    "C:/bad&path", "C:/bad|path", "C:/bad<path", "C:/bad>path",
+                    "C:/bad^path", "C:/bad(path", "C:/bad)path", "C:/bad\npath")) {
+                Assertions.isTrue(WindowsCommandSafety.containsUnsafeExternalArgumentCharacter(value),
+                        "shared command-safety policy must reject the test value: " + value);
                 try {
                     ValidationResult result = new ProfileValidator(new FakeStore(true)).validateForEdit(
                             base.toBuilder().ibcPath(Path.of(value)).build(), false);
                     Assertions.isTrue(hasError(result, "ibcPath"), "unsafe path must fail: " + value);
                 } catch (InvalidPathException ex) {
-                    Assertions.isTrue(value.indexOf('\"') >= 0 || TextSafety.containsConfigBreakingControl(value),
-                            "the host file-system rejected an unexpected path value: " + value);
+                    // Windows rejects several CMD metacharacters before ProfileValidator can receive
+                    // a Path. The shared policy above proves that these values remain intentionally
+                    // covered even when the host file-system parser rejects them first.
                 }
             }
+
+            String programFiles = "C:/Program Files (x86)/Java";
+            ValidationResult programFilesResult = new ProfileValidator(new FakeStore(true)).validateForEdit(
+                    base.toBuilder().ibcPath(Path.of(programFiles)).build(), false);
+            ValidationIssue pathIssue = programFilesResult.issues().stream()
+                    .filter(issue -> issue.field().equals("ibcPath")
+                            && issue.severity() == Severity.ERROR)
+                    .findFirst().orElseThrow();
+            Assertions.contains(pathIssue.message(), "unsupported character '('",
+                    "the exact offending character must be named");
+            Assertions.contains(pathIssue.message(), "C:\\IBC",
+                    "the error must offer a simple safe location");
+            Assertions.contains(pathIssue.message(), "Program Files (x86)",
+                    "the common operational restriction must be documented in the error");
+            Assertions.contains(WindowsCommandSafety.externalPathGuidance(),
+                    "\"  %  !  &  |  <  >  ^  (  )",
+                    "the shared guidance must enumerate every rejected CMD character");
         } finally { TestSupport.deleteTree(root); }
+    }
+
+    private void canonicalSettingCase() {
+        ConfigValueValidator validator = new ConfigValueValidator();
+        List<io.github.ibcmanager.model.ValidationIssue> managed = validator.validateManagedConfig(
+                IbcConfigDocument.parse("allowblindtrading=yes\n"));
+        Assertions.isTrue(managed.stream().anyMatch(issue -> issue.severity() == Severity.ERROR
+                        && issue.field().equals("allowblindtrading")
+                        && issue.message().contains("AllowBlindTrading")),
+                "manager-owned config must reject a mistyped known setting name");
+
+        List<io.github.ibcmanager.model.ValidationIssue> external = validator.validate(
+                IbcConfigDocument.parse("allowblindtrading=yes\n"));
+        Assertions.isTrue(external.stream().anyMatch(issue -> issue.severity() == Severity.WARNING
+                        && issue.field().equals("allowblindtrading")),
+                "external config inspection must warn about a mistyped known setting name");
+
+        Map<String, String> wrongCase = new java.util.LinkedHashMap<>();
+        wrongCase.put("allowblindtrading", "yes");
+        Assertions.isTrue(validator.validate(wrongCase).stream().anyMatch(issue -> issue.severity() == Severity.ERROR),
+                "profile settings must require the canonical known-key spelling");
+
+        Map<String, String> duplicateCase = new java.util.LinkedHashMap<>();
+        duplicateCase.put("AllowBlindTrading", "yes");
+        duplicateCase.put("allowblindtrading", "no");
+        Assertions.isTrue(validator.validate(duplicateCase).stream().anyMatch(issue ->
+                        issue.message().contains("more than once")),
+                "profile settings must reject case-variant duplicate known keys");
     }
 
     private void missingIbcFiles() throws Exception {
@@ -155,7 +225,7 @@ public final class ValidationTests implements TestSuite {
             Files.delete(profile.ibcPath().resolve("IBC.jar"));
             ValidationResult missingJar = new ProfileValidator(new FakeStore(true)).validate(profile, true);
             Assertions.isTrue(hasError(missingJar, "ibcPath"), "missing IBC.jar must fail");
-            Files.writeString(profile.ibcPath().resolve("IBC.jar"), "x");
+            TestSupport.writeIbcJar(profile.ibcPath().resolve("IBC.jar"));
             Files.delete(profile.ibcPath().resolve("scripts").resolve("StartIBC.bat"));
             ValidationResult missingScript = new ProfileValidator(new FakeStore(true)).validate(profile, true);
             Assertions.isTrue(hasError(missingScript, "ibcPath"), "missing launcher must fail");
@@ -213,8 +283,29 @@ public final class ValidationTests implements TestSuite {
             assertError(base.toBuilder().gracefulStopTimeoutSeconds(2).build(), "gracefulStopTimeoutSeconds");
             assertError(base.toBuilder().gracefulStopTimeoutSeconds(301).build(), "gracefulStopTimeoutSeconds");
             Assertions.isFalse(hasError(new ProfileValidator(new FakeStore(true)).validateForEdit(
-                    base.toBuilder().gracefulStopTimeoutSeconds(3).build(), false), "gracefulStopTimeoutSeconds"),
+                    base.toBuilder().gracefulStopTimeoutSeconds(30).build(), false), "gracefulStopTimeoutSeconds"),
                     "lower bound must pass");
+        } finally { TestSupport.deleteTree(root); }
+    }
+
+    private void secondFactorTimeoutPolicy() throws Exception {
+        Path root = TestSupport.tempDirectory("validation-2fa-policy");
+        try {
+            Profile base = TestSupport.validProfile(root);
+            Profile impossible = base.toBuilder()
+                    .twoFactorTimeoutAction(TwoFactorTimeoutAction.RESTART)
+                    .reloginAfterSecondFactorTimeout(false)
+                    .build();
+            ValidationResult rejected = new ProfileValidator(new FakeStore(true))
+                    .validateForEdit(impossible, false);
+            Assertions.isTrue(hasError(rejected, "twoFactorTimeoutAction"),
+                    "wrapper restart must not be offered when IBC itself will not exit/relogin on timeout");
+
+            Profile coherent = impossible.toBuilder().reloginAfterSecondFactorTimeout(true).build();
+            ValidationResult accepted = new ProfileValidator(new FakeStore(true))
+                    .validateForEdit(coherent, false);
+            Assertions.isFalse(hasError(accepted, "twoFactorTimeoutAction"),
+                    "coherent internal and wrapper restart policy must pass validation");
         } finally { TestSupport.deleteTree(root); }
     }
 
@@ -232,6 +323,10 @@ public final class ValidationTests implements TestSuite {
                     "stored secret must pass");
             Assertions.isTrue(hasError(new ProfileValidator(store).validate(
                     base.toBuilder().username("").build(), false), "username"), "username required");
+            IbcConfigDocument passwordDocument = IbcConfigDocument.parse("IbPassword=\n");
+            passwordDocument.set("IbPassword", " secret ");
+            Assertions.isTrue(hasError(new ConfigValueValidator().validateRuntimeConfig(passwordDocument),
+                    "IbPassword"), "runtime passwords must not be silently changed by IBC trimming");
         } finally { TestSupport.deleteTree(root); }
     }
 
@@ -247,6 +342,21 @@ public final class ValidationTests implements TestSuite {
             Assertions.isFalse(hasError(new ProfileValidator(new FakeStore(true)).validate(
                     base.toBuilder().baseConfigPath(config).build(), false), "baseConfigPath"),
                     "existing external config must pass");
+
+            Files.writeString(config, "IbLoginId=x\nFIX=yes\n");
+            Assertions.isTrue(hasError(new ProfileValidator(new FakeStore(true)).validate(
+                    base.toBuilder().baseConfigPath(config).build(), false), "FIX"),
+                    "external configurations must not bypass the unsupported FIX-mode block");
+
+            Files.writeString(config, "IbLoginId=x\nSaveTwsSettingsAt=Every\n");
+            Assertions.isTrue(hasError(new ProfileValidator(new FakeStore(true)).validate(
+                    base.toBuilder().baseConfigPath(config).build(), false), "SaveTwsSettingsAt"),
+                    "malformed external schedules that can fail inside IBC must be blocked");
+
+            Files.writeString(config, "IbLoginId=x\nReadOnlyLogin=yes\n");
+            Assertions.isTrue(hasError(new ProfileValidator(new FakeStore(true)).validate(
+                    base.toBuilder().baseConfigPath(config).build(), false), "ReadOnlyLogin"),
+                    "external configurations must not enable unsupported read-only Gateway login");
         } finally { TestSupport.deleteTree(root); }
     }
 
@@ -328,8 +438,17 @@ public final class ValidationTests implements TestSuite {
     private void enumValues() {
         ConfigValueValidator validator = new ConfigValueValidator();
         Assertions.equals(List.of(), validator.validate(Map.of("TradingMode", "paper")), "paper mode valid");
+        Assertions.equals(List.of(), validator.validate(Map.of("TradingMode", "PAPER")),
+                "IBC accepts trading mode case-insensitively");
         Assertions.isTrue(hasError(validator.validate(Map.of("TradingMode", "test")), "TradingMode"),
                 "invalid enum must fail");
+        Assertions.isTrue(hasError(validator.validate(Map.of(
+                "AcceptBidAskLastSizeDisplayUpdateNotification", "ACCEPT")),
+                "AcceptBidAskLastSizeDisplayUpdateNotification"),
+                "IBC enum values with exact lowercase handlers must reject uppercase aliases");
+        Assertions.isTrue(hasError(validator.validate(Map.of("ConfirmCryptoCurrencyOrders", "TRANSMIT")),
+                "ConfirmCryptoCurrencyOrders"),
+                "cryptocurrency confirmation values must use IBC's exact canonical case");
     }
 
     private void numbers() {
@@ -341,6 +460,26 @@ public final class ValidationTests implements TestSuite {
         Assertions.isTrue(hasError(validator.validate(Map.of("CommandServerPort", "x")), "CommandServerPort"),
                 "noninteger port fails");
         Assertions.equals(List.of(), validator.validate(Map.of("LoginDialogDisplayTimeout", "60")), "integer valid");
+        Assertions.isTrue(hasError(validator.validate(Map.of("LoginDialogDisplayTimeout", " 60")),
+                "LoginDialogDisplayTimeout"),
+                "IBC integer parsing does not trim surrounding whitespace");
+        Assertions.isTrue(hasError(validator.validate(Map.of("AllowBlindTrading", "yes ")),
+                "AllowBlindTrading"),
+                "IBC boolean parsing does not trim surrounding whitespace");
+    }
+
+    private void integerRanges() {
+        ConfigValueValidator validator = new ConfigValueValidator();
+        for (String key : List.of("LoginDialogDisplayTimeout", "SecondFactorAuthenticationTimeout",
+                "SecondFactorAuthenticationExitInterval")) {
+            Assertions.isFalse(hasError(validator.validate(Map.of(key, "1")), key), key + " minimum valid");
+            Assertions.isTrue(hasError(validator.validate(Map.of(key, "0")), key), key + " zero must fail");
+            Assertions.isTrue(hasError(validator.validate(Map.of(key, "86401")), key), key + " excessive value must fail");
+        }
+        Assertions.isFalse(hasError(validator.validate(Map.of("OverrideTwsMasterClientID", "0")),
+                "OverrideTwsMasterClientID"), "master client ID zero valid");
+        Assertions.isTrue(hasError(validator.validate(Map.of("OverrideTwsMasterClientID", "-1")),
+                "OverrideTwsMasterClientID"), "negative master client ID must fail");
     }
 
     private void times() {
@@ -348,14 +487,155 @@ public final class ValidationTests implements TestSuite {
         Assertions.equals(List.of(), validator.validate(Map.of("AutoRestartTime", "11:45 PM")), "12-hour time valid");
         Assertions.isTrue(hasError(validator.validate(Map.of("AutoRestartTime", "23:45")), "AutoRestartTime"),
                 "wrong 12-hour format fails");
+        Assertions.isTrue(hasError(validator.validate(Map.of("AutoRestartTime", "11:45 pm")), "AutoRestartTime"),
+                "IBC's case-sensitive 12-hour parser must reject lowercase am/pm");
         Assertions.equals(List.of(), validator.validate(Map.of("ColdRestartTime", "23:45")), "24-hour time valid");
         Assertions.isTrue(hasError(validator.validate(Map.of("ColdRestartTime", "25:00")), "ColdRestartTime"),
                 "invalid hour fails");
     }
 
+    private void timeLocaleIndependence() throws Exception {
+        Process process = new ProcessBuilder(TestSupport.javaCommandWithJvmOptions(
+                List.of("-Duser.language=nl", "-Duser.country=NL"),
+                "validate-documented-time"))
+                .redirectErrorStream(true)
+                .start();
+        boolean finished = process.waitFor(20, TimeUnit.SECONDS);
+        if (!finished) {
+            process.destroyForcibly();
+            Assertions.fail("locale-isolated time validation subprocess timed out");
+        }
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        Assertions.equals(0, process.exitValue(),
+                "documented AM/PM validation must not depend on the Windows locale: " + output);
+        Assertions.contains(output, "TIME-VALIDATION-OK:nl",
+                "regression probe must execute under a Dutch formatting locale");
+    }
+
+    private void schedules() {
+        ConfigValueValidator validator = new ConfigValueValidator();
+        Assertions.equals(List.of(), validator.validate(Map.of("ClosedownAt", "22:00")),
+                "daily closedown schedule valid");
+        String today = new java.text.SimpleDateFormat("E").format(new java.util.Date());
+        Assertions.equals(List.of(), validator.validate(Map.of("ClosedownAt", today + " 22:00")),
+                "locale weekday closedown schedule valid");
+        Assertions.isTrue(hasError(validator.validate(Map.of("ClosedownAt", "Friday 25:00")), "ClosedownAt"),
+                "invalid closedown time must fail");
+        Assertions.isTrue(hasError(validator.validate(Map.of("ClosedownAt", "22:00 trailing")), "ClosedownAt"),
+                "trailing closedown data must fail");
+
+        for (String value : List.of("08:00", "08:00 12:30 17:30", "Every 30",
+                "Every 30 mins", "Every 1 hours 08:00", "Every 1 hours 08:00 24:00",
+                "Every 90 08:00 17:43")) {
+            Assertions.isFalse(hasError(validator.validate(Map.of("SaveTwsSettingsAt", value)),
+                    "SaveTwsSettingsAt"), "valid settings-save schedule: " + value);
+        }
+        for (String value : List.of("Every", "Every x", "Every 0", "Every 24 hours",
+                "Every 30 25:00", "Every 30 08:00 25:00", "Every 30 08:00 17:00 extra",
+                "Every\t30 mins", "08:00\t12:00", "08:00 99:00")) {
+            Assertions.isTrue(hasError(validator.validate(Map.of("SaveTwsSettingsAt", value)),
+                    "SaveTwsSettingsAt"), "invalid settings-save schedule must fail: " + value);
+        }
+    }
+
+    private void orderIdResetPolicy() {
+        ConfigValueValidator validator = new ConfigValueValidator();
+        for (String value : List.of("ignore/ignore", "confirm/reject", "reject/confirm")) {
+            Assertions.isFalse(hasError(validator.validate(Map.of("ConfirmOrderIdReset", value)),
+                    "ConfirmOrderIdReset"), "valid order-ID reset policy: " + value);
+        }
+        for (String value : List.of("ignore", "IGNORE/ignore", "confirm/", "/reject",
+                "confirm/reject/ignore", "yes/no")) {
+            Assertions.isTrue(hasError(validator.validate(Map.of("ConfirmOrderIdReset", value)),
+                    "ConfirmOrderIdReset"), "invalid order-ID reset policy must fail: " + value);
+        }
+    }
+
+    private void logStructureAliases() {
+        ConfigValueValidator validator = new ConfigValueValidator();
+        for (String value : List.of("never", "open", "openclose", "activate", "yes", "true",
+                "no", "false", "activated", "closed", "closing", "deactivated", "deiconified",
+                "focused", "iconified", "lost focus", "opened", "state changed")) {
+            Assertions.isFalse(hasError(validator.validate(Map.of("LogStructureWhen", value)),
+                    "LogStructureWhen"), "IBC logging alias must be accepted: " + value);
+        }
+        Assertions.isFalse(hasError(validator.validate(Map.of("LogComponents", "open")),
+                "LogComponents"), "legacy LogComponents alias must be accepted");
+    }
+
+    private void unsupportedFixMode() {
+        ConfigValueValidator validator = new ConfigValueValidator();
+        Assertions.isFalse(hasError(validator.validate(Map.of("FIX", "no")), "FIX"),
+                "ordinary gateway mode must remain supported");
+        Assertions.isTrue(hasError(validator.validate(Map.of("FIX", "yes")), "FIX"),
+                "FIX CTCI mode must be blocked");
+        Assertions.isTrue(hasError(validator.validate(IbcConfigDocument.parse("FIX=true\n")), "FIX"),
+                "raw configurations must not bypass the FIX-mode block");
+        Assertions.isTrue(hasWarning(validator.validate(Map.of("FIXLoginId", "fix-user")), "FIXLoginId"),
+                "orphan FIX credentials must warn");
+    }
+
+    private void fixOnlyTrustedApiAddresses() {
+        ConfigValueValidator validator = new ConfigValueValidator();
+        Assertions.isTrue(hasWarning(
+                        validator.validate(Map.of("TrustedTwsApiClientIPs", "192.0.2.10")),
+                        "TrustedTwsApiClientIPs"),
+                "IBC's FIX-only trusted-address setting must warn in ordinary TWS/Gateway mode");
+    }
+
+    private void applicationSpecificSettings() throws Exception {
+        Path root = TestSupport.tempDirectory("validation-application-specific");
+        try {
+            Profile gateway = TestSupport.validProfile(root);
+            Profile readOnlyGateway = gateway.toBuilder()
+                    .settings(Map.of("ReadOnlyLogin", "yes"))
+                    .build();
+            Assertions.isTrue(hasError(new ProfileValidator(new FakeStore(true))
+                            .validateForEdit(readOnlyGateway, false).issues(), "ReadOnlyLogin"),
+                    "read-only login must be rejected for Gateway because IBC ignores it there");
+
+            Profile gatewayOnlyWarnings = gateway.toBuilder()
+                    .settings(Map.of(
+                            "StoreSettingsOnServer", "yes",
+                            "ConfirmOrderIdReset", "confirm/reject"))
+                    .build();
+            List<ValidationIssue> gatewayIssues = new ProfileValidator(new FakeStore(true))
+                    .validateForEdit(gatewayOnlyWarnings, false).issues();
+            Assertions.isTrue(hasWarning(gatewayIssues, "StoreSettingsOnServer"),
+                    "Gateway must warn about the TWS-only server-settings option");
+            Assertions.isTrue(hasWarning(gatewayIssues, "ConfirmOrderIdReset"),
+                    "Gateway must warn that its order-ID reset confirmation policy is ignored");
+
+            Profile tws = gateway.toBuilder()
+                    .targetType(io.github.ibcmanager.model.TargetType.TWS)
+                    .settings(Map.of("ReadOnlyLogin", "yes", "StoreSettingsOnServer", "yes"))
+                    .build();
+            List<ValidationIssue> twsIssues = new ProfileValidator(new FakeStore(true))
+                    .validateForEdit(tws, false).issues();
+            Assertions.isFalse(hasError(twsIssues, "ReadOnlyLogin"),
+                    "read-only login remains valid for TWS");
+            Assertions.isFalse(hasWarning(twsIssues, "StoreSettingsOnServer"),
+                    "server-side settings storage remains valid for TWS");
+        } finally {
+            TestSupport.deleteTree(root);
+        }
+    }
+
+    private void autoScheduleConflict() {
+        ConfigValueValidator validator = new ConfigValueValidator();
+        Map<String, String> settings = Map.of("AutoLogoffTime", "11:00 PM", "AutoRestartTime", "11:30 PM");
+        Assertions.isTrue(hasWarning(validator.validate(settings), "AutoLogoffTime"),
+                "IBC ignores AutoLogoffTime when AutoRestartTime is also set");
+        Assertions.isTrue(hasWarning(validator.validate(IbcConfigDocument.parse(
+                "AutoLogoffTime=11:00 PM\nAutoRestartTime=11:30 PM\n")), "AutoLogoffTime"),
+                "raw configuration conflict must warn");
+    }
+
     private void ipLists() {
         ConfigValueValidator validator = new ConfigValueValidator();
-        Assertions.equals(List.of(), validator.validate(Map.of("ControlFrom", "127.0.0.1, localhost")), "resolvable hosts valid");
+        Assertions.equals(List.of(), validator.validate(Map.of("ControlFrom", "127.0.0.1,localhost")), "resolvable hosts valid");
+        Assertions.isTrue(hasError(validator.validate(Map.of("ControlFrom", "127.0.0.1, localhost")), "ControlFrom"),
+                "surrounding whitespace must fail because IBC does not trim command-source entries");
         Assertions.isTrue(hasError(validator.validate(Map.of("ControlFrom", "127.0.0.1,,localhost")), "ControlFrom"),
                 "empty item fails");
         Assertions.isTrue(hasWarning(validator.validate(Map.of("ControlFrom", "999.999.999.999")), "ControlFrom"),

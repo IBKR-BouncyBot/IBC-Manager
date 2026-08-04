@@ -1,8 +1,13 @@
 package io.github.ibcmanager.app;
 
+import io.github.ibcmanager.config.ConfigValueValidator;
+import io.github.ibcmanager.config.IbcCompatibilityPolicy;
+import io.github.ibcmanager.config.IbcConfigDocument;
 import io.github.ibcmanager.config.ManagedConfigService;
 import io.github.ibcmanager.model.CredentialMode;
 import io.github.ibcmanager.model.Profile;
+import io.github.ibcmanager.model.Severity;
+import io.github.ibcmanager.model.ValidationIssue;
 import io.github.ibcmanager.security.BoundedFileReader;
 import io.github.ibcmanager.security.CredentialStore;
 import io.github.ibcmanager.security.CredentialStoreException;
@@ -11,12 +16,16 @@ import io.github.ibcmanager.security.SecureFileOperations;
 import io.github.ibcmanager.security.TextSafety;
 import io.github.ibcmanager.storage.AtomicFileWriter;
 import io.github.ibcmanager.storage.ProfileRepository;
+import io.github.ibcmanager.validation.ProfileSetValidator;
+import io.github.ibcmanager.validation.ProfileValidator;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 
 public final class ProfileSaveService {
@@ -86,6 +95,62 @@ public final class ProfileSaveService {
             if (previousConfig != null) Arrays.fill(previousConfig, (byte) 0);
             if (previousSecret != null) previousSecret.close();
         }
+    }
+
+
+    /** Atomically saves a raw managed config and synchronizes the profile editor's settings view. */
+    public synchronized Profile saveManagedConfig(Profile current, IbcConfigDocument document) throws IOException {
+        Objects.requireNonNull(current, "current");
+        Objects.requireNonNull(document, "document");
+        if (current.credentialMode() == CredentialMode.EXISTING_CONFIG) {
+            throw new IOException("Profiles using an external config.ini cannot save a managed configuration");
+        }
+
+        Path managedPath = configService.managedConfigPath(current);
+        byte[] previousConfig = null;
+        boolean previousConfigExisted = Files.exists(managedPath, LinkOption.NOFOLLOW_LINKS);
+        if (previousConfigExisted) {
+            previousConfig = BoundedFileReader.readBytes(managedPath,
+                    ManagedConfigService.MAX_CONFIG_BYTES, "Managed IBC configuration");
+        }
+        try {
+            List<ValidationIssue> issues = new ArrayList<>(
+                    new ConfigValueValidator().validateManagedConfig(document));
+            failOnErrors(issues, "Managed IBC configuration is invalid");
+
+            Profile synchronizedProfile = configService.synchronizeEditableProfile(current, document);
+            issues.addAll(new ProfileValidator(credentialStore)
+                    .validateForEdit(synchronizedProfile, false).issues());
+            issues.addAll(IbcCompatibilityPolicy.validateForProfile(
+                    synchronizedProfile, document.activeSettings()));
+            List<Profile> candidateSet = new ArrayList<>(repository.loadAll().profiles());
+            candidateSet.removeIf(profile -> profile.id().equals(synchronizedProfile.id()));
+            candidateSet.add(synchronizedProfile);
+            issues.addAll(new ProfileSetValidator().validate(candidateSet).issues());
+            failOnErrors(issues, "Managed config changes would create an invalid profile");
+
+            configService.saveManagedConfig(synchronizedProfile, document);
+            repository.save(synchronizedProfile);
+            return synchronizedProfile;
+        } catch (IOException | RuntimeException failure) {
+            try {
+                repository.save(current);
+            } catch (IOException rollbackFailure) {
+                failure.addSuppressed(rollbackFailure);
+            }
+            rollbackConfig(managedPath, previousConfigExisted, previousConfig, failure);
+            throw failure;
+        } finally {
+            if (previousConfig != null) Arrays.fill(previousConfig, (byte) 0);
+        }
+    }
+
+    private static void failOnErrors(List<ValidationIssue> issues, String prefix) throws IOException {
+        String errors = issues.stream()
+                .filter(issue -> issue.severity() == Severity.ERROR)
+                .map(issue -> issue.field() + ": " + issue.message())
+                .collect(java.util.stream.Collectors.joining("; "));
+        if (!errors.isEmpty()) throw new IOException(prefix + ": " + errors);
     }
 
     private void rollbackProfile(Profile previous, Profile updated, Throwable primary) {

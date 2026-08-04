@@ -1,6 +1,7 @@
 package io.github.ibcmanager.app;
 
 import io.github.ibcmanager.config.RuntimeConfigLease;
+import io.github.ibcmanager.config.RuntimeConfigLocation;
 import io.github.ibcmanager.model.Profile;
 import io.github.ibcmanager.security.BoundedFileReader;
 import io.github.ibcmanager.security.CredentialStore;
@@ -62,7 +63,7 @@ public final class ProfileDeletionService {
                 previousSecret = credentialStore.load(profile.id());
             }
 
-            scrubRuntimeConfiguration(profile.id());
+            scrubRuntimeConfiguration(profile);
             profileMoved = repository.stageDelete(profile.id(), stagedProfile);
             if (!profileMoved) throw new IOException("Profile directory does not exist: " + profile.id());
 
@@ -168,11 +169,18 @@ public final class ProfileDeletionService {
         SecureFileOperations.deleteTree(transaction);
     }
 
-    private void scrubRuntimeConfiguration(UUID profileId) throws IOException {
-        Path runtimeConfig = paths.runtimeDirectory(profileId).resolve("config.ini");
-        if (Files.exists(runtimeConfig, LinkOption.NOFOLLOW_LINKS)) {
-            new RuntimeConfigLease(runtimeConfig).close();
+    private void scrubRuntimeConfiguration(Profile profile) throws IOException {
+        IOException failure = null;
+        for (Path runtimeConfig : RuntimeConfigLocation.cleanupCandidates(paths, profile)) {
+            if (!Files.exists(runtimeConfig, LinkOption.NOFOLLOW_LINKS)) continue;
+            try {
+                new RuntimeConfigLease(runtimeConfig).close();
+            } catch (IOException ex) {
+                if (failure == null) failure = ex;
+                else failure.addSuppressed(ex);
+            }
         }
+        if (failure != null) throw failure;
     }
 
     private void rollback(UUID profileId, Path stagedProfile, boolean profileMoved,

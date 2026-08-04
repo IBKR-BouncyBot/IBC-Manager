@@ -33,7 +33,7 @@ enum ProfileSessionAction {
             "Stop",
             new Color(160, 35, 35),
             "Stop the running IBC-managed session gracefully",
-            "IBC Manager will request a graceful shutdown of the running IBC-managed session. API and market-data connectivity will stop."),
+            "IBC Manager will request a graceful shutdown of the running IBC-managed session. API and market-data connectivity will stop. If the timeout expires, no process is killed automatically; Force Stop remains a separate recovery action."),
     RESTART(
             "Restart",
             "restartProfileButton",
@@ -41,7 +41,7 @@ enum ProfileSessionAction {
             "Restart",
             new Color(166, 83, 0),
             "Restart the running IBC-managed session",
-            "IBC will restart the running session. API and market-data connectivity may be interrupted while it restarts."),
+            "IBC Manager will perform a controlled graceful Stop followed by a fresh Start. This avoids IBC's native RESTART fallback changing the persistent auto-restart schedule. API and market-data connectivity will be interrupted."),
     PAUSE(
             "Pause",
             "pauseProfileButton",

@@ -1,6 +1,7 @@
 package io.github.ibcmanager.discovery;
 
 import io.github.ibcmanager.app.OperatingSystem;
+import io.github.ibcmanager.install.IbcInstallationValidator;
 import io.github.ibcmanager.model.TargetType;
 import io.github.ibcmanager.security.SecureFileOperations;
 
@@ -114,20 +115,22 @@ public final class InstallationDiscoveryService {
         for (Path child : children(versionsDirectory)) {
             String version = child.getFileName() == null ? "" : child.getFileName().toString();
             if (!version.matches("[0-9]{3,5}")) continue;
-            if (hasJarsDirectory(child)) {
+            if (hasApplicationLayout(child, targetType)) {
                 output.add(new AppInstallation(realOrNormalized(root), targetType, version));
             }
         }
     }
 
     private static boolean isIbcDirectory(Path directory) {
-        return SecureFileOperations.isRegularFile(directory.resolve("IBC.jar"))
-                && SecureFileOperations.isRegularFile(directory.resolve("scripts").resolve("StartIBC.bat"));
+        return new IbcInstallationValidator().isValid(directory);
     }
 
-    private static boolean hasJarsDirectory(Path versionDirectory) {
-        return SecureFileOperations.isDirectory(versionDirectory.resolve("jars"))
+    private static boolean hasApplicationLayout(Path versionDirectory, TargetType targetType) {
+        boolean jars = SecureFileOperations.isDirectory(versionDirectory.resolve("jars"))
                 || SecureFileOperations.isDirectory(versionDirectory.resolve("JARS"));
+        if (!jars || !SecureFileOperations.isDirectory(versionDirectory.resolve(".install4j"))) return false;
+        String vmOptions = targetType == TargetType.GATEWAY ? "ibgateway.vmoptions" : "tws.vmoptions";
+        return SecureFileOperations.isRegularFile(versionDirectory.resolve(vmOptions));
     }
 
     private static List<Path> children(Path directory) {

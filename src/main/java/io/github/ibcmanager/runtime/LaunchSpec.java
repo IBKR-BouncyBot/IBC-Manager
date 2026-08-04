@@ -10,7 +10,8 @@ public record LaunchSpec(
         Path workingDirectory,
         Map<String, String> environment,
         Path launchScript,
-        String displayCommand) {
+        String displayCommand,
+        Path cleanupPath) {
 
     public LaunchSpec {
         command = List.copyOf(command);
@@ -18,5 +19,11 @@ public record LaunchSpec(
         environment = Map.copyOf(environment);
         Objects.requireNonNull(launchScript, "launchScript");
         displayCommand = Objects.requireNonNullElse(displayCommand, "");
+        cleanupPath = cleanupPath == null ? null : cleanupPath.toAbsolutePath().normalize();
+    }
+
+    public LaunchSpec(List<String> command, Path workingDirectory, Map<String, String> environment,
+            Path launchScript, String displayCommand) {
+        this(command, workingDirectory, environment, launchScript, displayCommand, null);
     }
 }

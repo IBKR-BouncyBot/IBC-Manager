@@ -18,7 +18,7 @@ import java.util.TreeMap;
 import java.util.UUID;
 
 public final class ProfileCodec {
-    public static final int FORMAT_VERSION = 1;
+    public static final int FORMAT_VERSION = 2;
 
     public String encode(Profile profile) {
         Objects.requireNonNull(profile, "profile");
@@ -34,12 +34,15 @@ public final class ProfileCodec {
         lines.add("twsPath=" + escape(profile.twsPath().toString()));
         lines.add("twsSettingsPath=" + escape(profile.twsSettingsPath().toString()));
         lines.add("baseConfigPath=" + escape(profile.baseConfigPath().toString()));
+        lines.add("ibcJavaPath=" + escape(profile.ibcJavaPath().toString()));
         lines.add("apiPort=" + profile.apiPort());
         lines.add("commandServerPort=" + profile.commandServerPort());
         lines.add("bindAddress=" + escape(profile.bindAddress()));
         lines.add("username=" + escape(profile.username()));
         lines.add("credentialMode=" + profile.credentialMode().name());
         lines.add("twoFactorTimeoutAction=" + profile.twoFactorTimeoutAction().name());
+        lines.add("reloginAfterSecondFactorTimeout=" + profile.reloginAfterSecondFactorTimeout());
+        lines.add("forceApiPortAtLaunch=" + profile.forceApiPortAtLaunch());
         lines.add("autoStart=" + profile.autoStart());
         lines.add("minimizeMainWindow=" + profile.minimizeMainWindow());
         lines.add("gracefulStopTimeoutSeconds=" + profile.gracefulStopTimeoutSeconds());
@@ -74,9 +77,18 @@ public final class ProfileCodec {
         }
 
         int version = parseInt(required(values, "formatVersion"), "formatVersion");
-        if (version != FORMAT_VERSION) {
+        if (version < 1 || version > FORMAT_VERSION) {
             throw new IllegalArgumentException("Unsupported profile format version: " + version);
         }
+        TwoFactorTimeoutAction timeoutAction = TwoFactorTimeoutAction.valueOf(required(values,
+                "twoFactorTimeoutAction"));
+        boolean reloginAfterTimeout = version >= 2
+                ? parseBoolean(required(values, "reloginAfterSecondFactorTimeout"),
+                        "reloginAfterSecondFactorTimeout")
+                : timeoutAction == TwoFactorTimeoutAction.RESTART;
+        boolean forceApiPort = version >= 2
+                ? parseBoolean(required(values, "forceApiPortAtLaunch"), "forceApiPortAtLaunch")
+                : true;
 
         return Profile.builder()
                 .id(UUID.fromString(required(values, "id")))
@@ -89,12 +101,15 @@ public final class ProfileCodec {
                 .twsPath(path(values.get("twsPath")))
                 .twsSettingsPath(path(values.get("twsSettingsPath")))
                 .baseConfigPath(path(values.get("baseConfigPath")))
+                .ibcJavaPath(version >= 2 ? path(values.get("ibcJavaPath")) : Path.of(""))
                 .apiPort(parseInt(required(values, "apiPort"), "apiPort"))
                 .commandServerPort(parseInt(required(values, "commandServerPort"), "commandServerPort"))
                 .bindAddress(required(values, "bindAddress"))
                 .username(required(values, "username"))
                 .credentialMode(CredentialMode.valueOf(required(values, "credentialMode")))
-                .twoFactorTimeoutAction(TwoFactorTimeoutAction.valueOf(required(values, "twoFactorTimeoutAction")))
+                .twoFactorTimeoutAction(timeoutAction)
+                .reloginAfterSecondFactorTimeout(reloginAfterTimeout)
+                .forceApiPortAtLaunch(forceApiPort)
                 .autoStart(parseBoolean(required(values, "autoStart"), "autoStart"))
                 .minimizeMainWindow(parseBoolean(required(values, "minimizeMainWindow"), "minimizeMainWindow"))
                 .gracefulStopTimeoutSeconds(parseInt(required(values, "gracefulStopTimeoutSeconds"), "gracefulStopTimeoutSeconds"))

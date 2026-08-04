@@ -1,5 +1,7 @@
 package io.github.ibcmanager.runtime;
 
+import io.github.ibcmanager.config.RuntimeConfigLease;
+
 import java.io.FileDescriptor;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -11,6 +13,7 @@ import java.nio.file.Path;
 /** Detached process-output relay with bounded sixty-second disk buffering. */
 public final class BufferedProcessRelay {
     private static final int START_FAILURE_EXIT_CODE = 70;
+    private static final int CLEANUP_FAILURE_EXIT_CODE = 74;
 
     private BufferedProcessRelay() { }
 
@@ -60,7 +63,7 @@ public final class BufferedProcessRelay {
                         + System.lineSeparator()).getBytes(StandardCharsets.UTF_8);
                 log.append(message, 0, message.length);
                 if (liveAvailable) writeLive(live, message);
-                return START_FAILURE_EXIT_CODE;
+                return finishWithCleanup(descriptor, log, live, START_FAILURE_EXIT_CODE);
             }
 
             byte[] buffer = new byte[16 * 1024];
@@ -72,14 +75,31 @@ public final class BufferedProcessRelay {
                     if (liveAvailable) liveAvailable = writeLive(live, buffer, 0, count);
                 }
             }
-            return child.waitFor();
+            int exitCode = child.waitFor();
+            return finishWithCleanup(descriptor, log, live, exitCode);
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             return 130;
         } catch (IOException ex) {
-            return 74;
+            return CLEANUP_FAILURE_EXIT_CODE;
         } finally {
             java.util.Arrays.fill(initial, (byte) 0);
+        }
+    }
+
+    private static int finishWithCleanup(ProcessRelayDescriptor descriptor, PeriodicByteLog log,
+            OutputStream live, int originalExitCode) {
+        Path cleanupPath = descriptor.cleanupPath();
+        if (cleanupPath == null) return originalExitCode;
+        try {
+            new RuntimeConfigLease(cleanupPath).close();
+            return originalExitCode;
+        } catch (IOException ex) {
+            byte[] message = ("IBC Manager process relay: could not securely remove runtime configuration: "
+                    + safeMessage(ex) + System.lineSeparator()).getBytes(StandardCharsets.UTF_8);
+            log.append(message, 0, message.length);
+            writeLive(live, message);
+            return originalExitCode == 0 ? CLEANUP_FAILURE_EXIT_CODE : originalExitCode;
         }
     }
 

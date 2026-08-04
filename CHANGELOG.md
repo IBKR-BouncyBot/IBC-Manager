@@ -1,5 +1,230 @@
 # Changelog
 
+## 1.0.19 - 2026-08-04
+
+### IBC configuration fidelity
+
+- Made one full-file Java `Properties.load` operation the authoritative semantic
+  parser for imported IBC configurations. The line scanner now exists only to
+  preserve comments, ordering, and physical formatting.
+- Added explicit mismatch detection between the authoritative JDK map and the
+  formatting scanner. Manager-owned rewrites are blocked until malformed syntax
+  is corrected or explicitly canonicalized; ephemeral external runtime copies
+  canonicalize the authoritative map without inventing scanner semantics.
+- Added deterministic differential coverage against `Properties.load(InputStream)`
+  across 2,000 malformed/random byte sequences and the final-continuation edge
+  case that previously disproved exact scanner equivalence.
+- Added a non-secret warning for imported raw values containing suspicious single
+  Windows backslashes, including guidance that `C:\Jts` is consumed as `C:Jts`
+  and a literal path requires `C:\\Jts`.
+
+### IBC lifecycle and command compatibility
+
+- Added the yellow `RESTARTING` state for automatic restart, cold restart,
+  login-dialog timeout recovery, and second-factor timeout recovery reported by
+  the official `StartIBC.bat` wrapper.
+- Classified the exact `Normal exit`, `Gateway finished at`, and `TWS finished at`
+  wrapper markers as normal or scheduled shutdown completion. A configured
+  `ClosedownAt` no longer becomes a persistent red unexpected-exit error, while
+  unrelated text such as `Abnormal exit` cannot mask a crash.
+- Recognized IBC 3.24.1's exact `Exiting after error with exit code=` message and
+  kept the status non-terminal while the wrapper decides whether to restart.
+- Ensured an IBC-reported error outranks the generic `Normal exit` and
+  `Gateway/TWS finished at` footer that `StartIBC.bat` emits on its shared exit
+  path. A child failure cannot be reclassified as a scheduled stop merely because
+  the wrapper later exits with code zero.
+- Accepted exact bare `OK` and `ERROR` command lines in addition to the normal
+  `OK ...` and `ERROR ...` replies. A later error still overrides a preliminary
+  `OK ... in progress` acknowledgement.
+
+### Windows path policy and diagnostics
+
+- Expanded profile-validation and launch exceptions to identify the exact unsafe
+  character that cannot be transported through official `StartIBC.bat`.
+- Documented the complete fail-closed character set (`" % ! & | < > ^ ( )`) and
+  recommended batch-safe locations such as `C:\IBC`, `C:\Jts`, and
+  `C:\IBKRSettings`. Paths under `C:\Program Files (x86)` remain intentionally
+  unsupported because official batch processing re-expands the parentheses.
+- Added the same guidance to Profile-editor path tooltips, README, user guide,
+  architecture notes, security documentation, and Windows validation checklist.
+
+### Validation
+
+- Expanded the suite to 538 tests and 8,040 assertions.
+- Retained Java 17 targeting, warnings-as-errors, deterministic archive generation,
+  source/release extraction gates, GUI smoke testing, and Windows script policy
+  checks.
+
+## 1.0.18 - 2026-08-04
+
+### Fixed
+
+- Fixed the final Windows package-gate failure in **buffered process relay
+  survives the manager process exiting**. The relay and child test fixture no
+  longer use the disposable log directory as their current working directory,
+  avoiding a Windows current-directory handle race during cleanup.
+- Added bounded Windows retry handling for transient `FileSystemException`
+  failures while deleting test temporary trees. Permanent failures still stop
+  immediately, and transient failures still fail after five seconds.
+- Kept production detached-relay, process, and logging behavior unchanged; the
+  failure occurred after the relay output and exit assertions had completed.
+
+### Validation
+
+- Added deterministic tests for transient retry success, permanent-failure
+  fail-fast behavior, and bounded retry exhaustion.
+- Expanded the suite to 525 tests and 5,983 assertions.
+- Repeated the detached-relay regression and complete deterministic release
+  builds before publishing the artifacts.
+
+## 1.0.17 - 2026-08-04
+
+### Fixed
+
+- Made `AutoLogoffTime` and `AutoRestartTime` validation independent of the
+  IBC Manager JVM's host locale by pinning the documented, case-sensitive
+  English `AM`/`PM` grammar. A valid value such as `11:45 PM` is no longer
+  rejected on Dutch Windows installations.
+- Fixed the four downstream Windows build failures in managed-config
+  synchronization and runtime-config tests that were all caused by the same
+  locale-sensitive time validator.
+- Retained the strict IBC 3.24.1 two-digit `hh:mm AM/PM` behavior and continued
+  rejection of lowercase `am`/`pm`.
+
+### Validation
+
+- Added a fresh-JVM regression probe that runs with `user.language=nl` and
+  `user.country=NL`.
+- Expanded the suite to 524 tests and 5,978 assertions.
+- Ran the complete suite successfully under both the normal release locale and
+  an explicitly selected Dutch JVM locale.
+
+## 1.0.16 - 2026-08-04
+
+### Fixed
+
+- Made Managed config and Profile Edit genuinely bidirectional. Raw changes to
+  represented Profile fields and advanced settings now synchronize to the
+  profile model; structured edits update Managed config without discarding
+  comments or unknown/future properties.
+- Prevented stale profile-setting snapshots from overwriting raw managed edits
+  at runtime.
+- Added transactional rollback when a raw edit would produce an invalid profile
+  or cross-profile port conflict.
+- Fixed the Windows build test that attempted to construct an unsafe path before
+  validating it; host-level invalid-path rejection is now handled portably while
+  production batch safety remains fail closed.
+- Tightened IBC 3.24.1 value compatibility for whitespace, key case, enum case,
+  12/24-hour times, schedules, timeout ranges, and order-ID reset policy.
+- Blocked unsupported FIX CTCI mode and FIX credentials, and removed the
+  FIX-only `TrustedTwsApiClientIPs` option from structured editing.
+- Blocked Gateway read-only login and added application-specific warnings for
+  TWS-only or Gateway-ignored settings.
+- Normalized blank `ConfirmOrderIdReset` to `ignore/ignore` before runtime.
+
+### Validation
+
+- Expanded the suite to 523 tests and 5,976 assertions.
+- Repeated the source-level IBC Manager/IBC 3.24.1 compatibility scan and added
+  regression coverage for every new boundary rule.
+
+## 1.0.15 - 2026-08-04
+
+### IBC 3.24.1 compatibility corrections
+
+- Preserved the runtime `config.ini` path for the complete lifetime of the
+  official `StartIBC.bat` wrapper so automatic restart, cold restart, login
+  timeout, and 2FA recovery can start another IBC JVM with the same valid file.
+  The detached relay owns secure cleanup after the wrapper exits.
+- Replaced the partial config parser/UTF-8 writer with Java Properties-compatible
+  parsing and canonical ASCII/ISO-8859-1 output. Generated files are verified by
+  `Properties.load(InputStream)` before writing, including Unicode and literal
+  backslash round trips.
+- Added command capability gating at IBC's confirmed `Login has completed`
+  boundary. RECONNECTDATA, RECONNECTACCOUNT, PAUSE, and ENABLEAPI cannot be sent
+  while the main window is unavailable or a termination operation is pending.
+- Classified complete IBC command responses so a later `ERROR` overrides a
+  preliminary `OK ... in progress`. PAUSE remains `PAUSING` until the wrapper
+  reports `IBC is paused`; an unconfirmed exit is an error.
+- Replaced native IBC RESTART with controlled graceful Stop followed by fresh
+  Start, avoiding IBC's fallback that changes the persistent auto-restart time.
+- Removed silent escalation from graceful Stop to process-tree termination.
+  A timeout leaves the process running and requires the separately confirmed
+  Force Stop action. The default timeout is now 90 seconds.
+- Coupled the wrapper `/On2FATimeout` action to IBC's
+  `ReloginAfterSecondFactorAuthenticationTimeout` setting and reject incoherent
+  restart policies.
+- Resolved, executed, and version-checked the exact Java runtime passed through
+  `/JavaPath`; IBC 3.24.1 requires Java 17 or newer.
+
+### Installation, listener, and launch hardening
+
+- Made `OverrideTwsApiPort` optional and disabled it for new profiles. Version 1
+  profiles migrate with their previous forced behavior preserved.
+- Strengthened manual IBC validation: external version, embedded JAR version,
+  required classes, and 3.24.1-specific Windows launcher capabilities must agree.
+- Required Windows green API-listener status to match a PID in the managed
+  process tree. Wrong-process and ownership-unavailable listeners remain yellow.
+- Rejected all relevant CMD metacharacters and Windows-ambiguous path segments
+  before calling the official batch launcher.
+- Serialized concurrent starts per canonical offline TWS/Gateway program
+  directory through JVM and cross-process locks until StartIBC completes its
+  executable-rename phase.
+- Moved runtime configuration below the validated TWS settings tree so the
+  config path is subject to the same strict batch-safe path policy.
+- Added profile format 2 fields for explicit IBC Java, 2FA internal relogin,
+  optional API-port override, and a safer 90-second graceful-stop default.
+
+### Validation
+
+- Expanded compatibility and regression coverage to **505 tests** and **5,816
+  assertions** across **112 production** and **24 test** Java source files.
+- Added direct Java Properties conformance, multi-JVM wrapper-lifetime,
+  preliminary-ACK/final-error, main-window gating, listener PID ownership,
+  exact IBC version coherence, Java-resolution precedence, controlled restart,
+  non-forcing stop, and cross-process startup serialization tests.
+
+## 1.0.14 - 2026-08-03
+
+### Passive IB API listener monitoring
+
+- Removed the remaining two-second connect-and-close health check from the
+  configured IB API port. The old check disconnected before sending an IB API
+  version handshake, causing IB Gateway to log `Client disconnected before
+  version was sent` and `API client version is missing` on every refresh.
+- Added passive TCP-listener discovery from the operating-system socket table:
+  trusted `netstat.exe` on Windows, `/proc/net/tcp` and `/proc/net/tcp6` on
+  Linux, and `netstat` on macOS.
+- Shared and cached listener snapshots across all profiles, so normal monitoring
+  neither connects to the API port nor repeatedly launches one inspection per
+  profile.
+- Changed launch preflight to force a fresh passive snapshot before credentials
+  are loaded. Startup now fails closed when listener inspection is unavailable
+  instead of assuming that the API and command ports are free.
+- Added a bounded stale-snapshot bridge for transient runtime inspection
+  failures. Once the bound expires, status becomes explicitly uncertain rather
+  than falsely green or falsely closed.
+- Renamed the green internal and user-facing state from `API_SOCKET_OPEN` to
+  `API_LISTENER_DETECTED`. The state continues to state that no IB API handshake,
+  account, permissions, or trading-readiness validation has occurred.
+- Updated diagnostic, Overview, list-renderer, status-indicator, security, user,
+  architecture, and Windows acceptance documentation to use listener terminology.
+
+### Validation and regression hardening
+
+- Increased the suite to **485 automated tests** and **5,526 assertions** across
+  **102 production** and **24 test** Java source files.
+- Added Windows and Linux listener-table parser tests, an integration test that
+  proves monitoring detects a bound server without accepting a connection,
+  cache/invalidation/failure tests, fail-closed launch tests, uncertain-state
+  tests, and source-architecture checks that reject raw API client sockets.
+- Stabilized a process-tree regression assertion by tracking descendant process
+  identities instead of raw process handles, avoiding false failures after PID
+  reuse while preserving the production PID/start-time safety rule.
+- Retained Java 17 bytecode targeting, `-Xlint:all -Werror`, deterministic
+  archives, extracted-release execution, extracted-source rebuild/retest,
+  real-window GUI smoke, patch reproduction, and SHA-256 publication checks.
+
 ## 1.0.13 - 2026-08-03
 
 ### Quiet IBC command-server monitoring

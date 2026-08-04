@@ -17,11 +17,11 @@ if not exist "%BUILD_DRIVER%" (
 "%IBC_MANAGER_JAVA_EXE%" -Dfile.encoding=UTF-8 "%BUILD_DRIVER%" self-test clean test jar smoke gui-smoke
 if errorlevel 1 exit /b 1
 
-"%IBC_MANAGER_JAVA_EXE%" -jar "dist\IBC-Manager-1.0.13.jar" --version
+"%IBC_MANAGER_JAVA_EXE%" -jar "dist\IBC-Manager-1.0.19.jar" --version
 if errorlevel 1 exit /b 1
 
 set "SMOKE=%TEMP%\IBCManager-Smoke-%RANDOM%-%RANDOM%"
-"%IBC_MANAGER_JAVA_EXE%" -jar "dist\IBC-Manager-1.0.13.jar" --headless-smoke --data-dir "%SMOKE%"
+"%IBC_MANAGER_JAVA_EXE%" -jar "dist\IBC-Manager-1.0.19.jar" --headless-smoke --data-dir "%SMOKE%"
 set "RESULT=%ERRORLEVEL%"
 rmdir /s /q "%SMOKE%" >nul 2>nul
 if not "%RESULT%"=="0" exit /b %RESULT%

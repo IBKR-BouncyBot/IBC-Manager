@@ -5,7 +5,6 @@ import io.github.ibcmanager.security.SecureFileOperations;
 import io.github.ibcmanager.storage.AtomicFileWriter;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
@@ -38,11 +37,20 @@ public final class RuntimeConfigLease implements AutoCloseable {
         IOException scrubFailure = null;
         if (SecureFileOperations.isRegularFile(path)) {
             try {
-                String text = BoundedFileReader.readString(path, StandardCharsets.UTF_8,
+                byte[] bytes = BoundedFileReader.readBytes(path,
                         ManagedConfigService.MAX_CONFIG_BYTES, "Runtime IBC configuration");
-                IbcConfigDocument document = IbcConfigDocument.parse(text);
-                for (String key : IbcConfigSchema.sensitiveKeys()) document.set(key, "");
-                AtomicFileWriter.write(path, document.render().getBytes(StandardCharsets.UTF_8), false);
+                try {
+                    IbcConfigDocument document = IbcConfigDocument.parseBytes(bytes);
+                    if (!document.formattingMatchesIbcSemantics()) {
+                        // Cleanup must use the same authoritative full-file Properties semantics
+                        // as IBC, even for a stale runtime file produced by an older release.
+                        document = document.canonicalizedCopy();
+                    }
+                    for (String key : IbcConfigSchema.sensitiveKeys()) document.set(key, "");
+                    AtomicFileWriter.write(path, document.toIbcBytes(), false);
+                } finally {
+                    java.util.Arrays.fill(bytes, (byte) 0);
+                }
             } catch (IOException | RuntimeException ex) {
                 scrubFailure = ex instanceof IOException io ? io
                         : new IOException("Could not parse runtime configuration while scrubbing it", ex);

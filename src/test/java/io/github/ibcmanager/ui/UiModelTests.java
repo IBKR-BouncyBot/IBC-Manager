@@ -35,6 +35,8 @@ public final class UiModelTests implements TestSuite {
                 new NamedTest("settings model filters sensitive and profile-controlled keys", this::modelFiltering),
                 new NamedTest("settings model trims edits and resets overrides", this::modelEditing),
                 new NamedTest("settings model returns values in schema order and independent maps", this::modelOrdering),
+                new NamedTest("settings model canonicalizes known keys and preserves future settings",
+                        this::modelCanonicalAndFutureSettings),
                 new NamedTest("profile tab owns and normalizes SecondFactorDevice", this::secondFactorDevice),
                 new NamedTest("installation action buttons retain preferred dimensions", this::installationButtons),
                 new NamedTest("session actions present explicit profile-specific confirmations", this::sessionActionPrompts),
@@ -70,15 +72,23 @@ public final class UiModelTests implements TestSuite {
                 "TradingMode", "live",
                 "CommandServerPort", "7462",
                 "SecondFactorDevice", "IBKR Mobile",
+                "FIX", "yes",
+                "FIXLoginId", "fix-user",
+                "TrustedTwsApiClientIPs", "127.0.0.1",
                 "AcceptIncomingConnectionAction", "accept");
         ProfileSettingsTableModel model = new ProfileSettingsTableModel(initial);
         List<String> keys = definitions(model).stream().map(SettingDefinition::key).toList();
         for (String excluded : List.of("IbPassword", "IbLoginId", "TradingMode", "CommandServerPort",
-                "BindAddress", "OverrideTwsApiPort", "MinimizeMainWindow", "IbDir", "SecondFactorDevice")) {
+                "BindAddress", "OverrideTwsApiPort", "MinimizeMainWindow", "IbDir", "SecondFactorDevice",
+                "ReloginAfterSecondFactorAuthenticationTimeout",
+                "ExitAfterSecondFactorAuthenticationTimeout", "FIX", "FIXLoginId", "FIXPassword",
+                "TrustedTwsApiClientIPs")) {
             Assertions.isFalse(keys.contains(excluded), excluded + " must be controlled outside the settings table");
         }
         Assertions.equals(Map.of("AcceptIncomingConnectionAction", "accept"), model.settings(),
-                "only editable non-sensitive overrides may be emitted");
+                "only supported editable non-sensitive overrides may be emitted");
+        Assertions.isFalse(keys.contains("TrustedTwsApiClientIPs"),
+                "FIX-only trusted API client addresses must not be exposed for ordinary Gateway/TWS profiles");
         Assertions.isFalse(keys.stream().anyMatch(IbcConfigSchema::isSensitive),
                 "no sensitive schema entry may reach the settings table");
     }
@@ -112,15 +122,37 @@ public final class UiModelTests implements TestSuite {
         List<String> expected = definitions(model).stream()
                 .map(SettingDefinition::key)
                 .filter(key -> key.equals("AllowBlindTrading") || key.equals("AcceptIncomingConnectionAction"))
-                .toList();
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+        expected.add("UnknownFutureSetting");
         List<String> actual = new ArrayList<>(model.settings().keySet());
-        Assertions.equals(expected, actual, "emitted overrides must follow schema order");
+        Assertions.equals(expected, actual,
+                "known overrides must follow schema order and future settings must remain after them");
         Map<String, String> first = model.settings();
         first.put("AllowBlindTrading", "no");
         Assertions.equals("yes", model.settings().get("AllowBlindTrading"),
                 "callers must receive an independent settings map");
-        Assertions.isFalse(model.settings().containsKey("UnknownFutureSetting"),
-                "unknown settings belong in the raw managed-config editor, not this table");
+        Assertions.equals("preserve elsewhere", model.settings().get("UnknownFutureSetting"),
+                "opening and saving the structured editor must not delete a future setting");
+    }
+
+    private void modelCanonicalAndFutureSettings() {
+        Map<String, String> initial = new java.util.LinkedHashMap<>();
+        initial.put("allowblindtrading", "yes");
+        initial.put("UnknownFutureSetting", "future-value");
+        ProfileSettingsTableModel model = new ProfileSettingsTableModel(initial);
+        Assertions.equals("yes", model.settings().get("AllowBlindTrading"),
+                "known settings must use canonical IBC key spelling");
+        Assertions.isFalse(model.settings().containsKey("allowblindtrading"),
+                "case-variant known-key spelling must not survive structured editing");
+        Assertions.equals("future-value", model.settings().get("UnknownFutureSetting"),
+                "future settings must survive structured editing");
+
+        int row = rowFor(model, "AllowBlindTrading");
+        model.reset(row);
+        Assertions.isFalse(model.settings().containsKey("AllowBlindTrading"),
+                "reset must remove the known override");
+        Assertions.equals("future-value", model.settings().get("UnknownFutureSetting"),
+                "resetting a known row must not remove future settings");
     }
 
 
@@ -214,7 +246,7 @@ public final class UiModelTests implements TestSuite {
 
         ProfileSessionAction.Prompt restart = ProfileSessionAction.RESTART.prompt(live);
         Assertions.equals("Confirm restart", restart.title(), "restart confirmation title mismatch");
-        Assertions.contains(restart.message(), "connectivity may be interrupted",
+        Assertions.contains(restart.message(), "connectivity will be interrupted",
                 "restart confirmation must explain its connectivity impact");
         Assertions.equals(javax.swing.JOptionPane.WARNING_MESSAGE, restart.messageType(),
                 "restart must use a warning confirmation");
@@ -275,14 +307,16 @@ public final class UiModelTests implements TestSuite {
 
     private void statusIndicator() {
         Assertions.equals(StatusIndicator.Tone.GREEN,
-                StatusIndicator.presentationFor(io.github.ibcmanager.model.RuntimeState.API_SOCKET_OPEN).tone(),
-                "API-ready state must use the green indicator");
+                StatusIndicator.presentationFor(io.github.ibcmanager.model.RuntimeState.API_LISTENER_DETECTED).tone(),
+                "API-listener state must use the green indicator");
         for (io.github.ibcmanager.model.RuntimeState state : List.of(
                 io.github.ibcmanager.model.RuntimeState.RUNNING,
                 io.github.ibcmanager.model.RuntimeState.VALIDATING,
                 io.github.ibcmanager.model.RuntimeState.STARTING,
+                io.github.ibcmanager.model.RuntimeState.RESTARTING,
                 io.github.ibcmanager.model.RuntimeState.WAITING_FOR_LOGIN,
                 io.github.ibcmanager.model.RuntimeState.WAITING_FOR_SECOND_FACTOR,
+                io.github.ibcmanager.model.RuntimeState.PAUSING,
                 io.github.ibcmanager.model.RuntimeState.PAUSED,
                 io.github.ibcmanager.model.RuntimeState.STOPPING,
                 io.github.ibcmanager.model.RuntimeState.UNKNOWN)) {
@@ -295,12 +329,12 @@ public final class UiModelTests implements TestSuite {
         Assertions.equals(StatusIndicator.Tone.RED,
                 StatusIndicator.presentationFor(io.github.ibcmanager.model.RuntimeState.ERROR).tone(),
                 "error state must use the red indicator");
-        Assertions.equals("API TCP open",
-                StatusIndicator.presentationFor(io.github.ibcmanager.model.RuntimeState.API_SOCKET_OPEN).headline(),
+        Assertions.equals("API listener detected",
+                StatusIndicator.presentationFor(io.github.ibcmanager.model.RuntimeState.API_LISTENER_DETECTED).headline(),
                 "green state must state exactly what was verified");
-        Assertions.equals("Logged in; API closed",
+        Assertions.equals("Logged in; API not confirmed",
                 StatusIndicator.presentationFor(io.github.ibcmanager.model.RuntimeState.RUNNING).headline(),
-                "login without an API socket must remain an attention state");
+                "login without a detected API listener must remain an attention state");
         StatusIndicator indicator = new StatusIndicator();
         indicator.updateStatus(io.github.ibcmanager.model.ProfileStatus.stopped(java.util.UUID.randomUUID()));
         Assertions.equals("profileStatusIndicator", indicator.getName(), "status component name mismatch");

@@ -18,12 +18,15 @@ public final class Profile {
     private final Path twsPath;
     private final Path twsSettingsPath;
     private final Path baseConfigPath;
+    private final Path ibcJavaPath;
     private final int apiPort;
     private final int commandServerPort;
     private final String bindAddress;
     private final String username;
     private final CredentialMode credentialMode;
     private final TwoFactorTimeoutAction twoFactorTimeoutAction;
+    private final boolean reloginAfterSecondFactorTimeout;
+    private final boolean forceApiPortAtLaunch;
     private final boolean autoStart;
     private final boolean minimizeMainWindow;
     private final int gracefulStopTimeoutSeconds;
@@ -40,12 +43,15 @@ public final class Profile {
         twsPath = normalizePath(builder.twsPath);
         twsSettingsPath = normalizePath(builder.twsSettingsPath);
         baseConfigPath = normalizePath(builder.baseConfigPath);
+        ibcJavaPath = normalizePath(builder.ibcJavaPath);
         apiPort = builder.apiPort;
         commandServerPort = builder.commandServerPort;
         bindAddress = normalize(builder.bindAddress);
         username = normalize(builder.username);
         credentialMode = Objects.requireNonNull(builder.credentialMode, "credentialMode");
         twoFactorTimeoutAction = Objects.requireNonNull(builder.twoFactorTimeoutAction, "twoFactorTimeoutAction");
+        reloginAfterSecondFactorTimeout = builder.reloginAfterSecondFactorTimeout;
+        forceApiPortAtLaunch = builder.forceApiPortAtLaunch;
         autoStart = builder.autoStart;
         minimizeMainWindow = builder.minimizeMainWindow;
         gracefulStopTimeoutSeconds = builder.gracefulStopTimeoutSeconds;
@@ -76,12 +82,15 @@ public final class Profile {
     public Path twsPath() { return twsPath; }
     public Path twsSettingsPath() { return twsSettingsPath; }
     public Path baseConfigPath() { return baseConfigPath; }
+    public Path ibcJavaPath() { return ibcJavaPath; }
     public int apiPort() { return apiPort; }
     public int commandServerPort() { return commandServerPort; }
     public String bindAddress() { return bindAddress; }
     public String username() { return username; }
     public CredentialMode credentialMode() { return credentialMode; }
     public TwoFactorTimeoutAction twoFactorTimeoutAction() { return twoFactorTimeoutAction; }
+    public boolean reloginAfterSecondFactorTimeout() { return reloginAfterSecondFactorTimeout; }
+    public boolean forceApiPortAtLaunch() { return forceApiPortAtLaunch; }
     public boolean autoStart() { return autoStart; }
     public boolean minimizeMainWindow() { return minimizeMainWindow; }
     public int gracefulStopTimeoutSeconds() { return gracefulStopTimeoutSeconds; }
@@ -99,12 +108,15 @@ public final class Profile {
                 .twsPath(twsPath)
                 .twsSettingsPath(twsSettingsPath)
                 .baseConfigPath(baseConfigPath)
+                .ibcJavaPath(ibcJavaPath)
                 .apiPort(apiPort)
                 .commandServerPort(commandServerPort)
                 .bindAddress(bindAddress)
                 .username(username)
                 .credentialMode(credentialMode)
                 .twoFactorTimeoutAction(twoFactorTimeoutAction)
+                .reloginAfterSecondFactorTimeout(reloginAfterSecondFactorTimeout)
+                .forceApiPortAtLaunch(forceApiPortAtLaunch)
                 .autoStart(autoStart)
                 .minimizeMainWindow(minimizeMainWindow)
                 .gracefulStopTimeoutSeconds(gracefulStopTimeoutSeconds)
@@ -126,15 +138,18 @@ public final class Profile {
         private Path twsPath = Path.of("");
         private Path twsSettingsPath = Path.of("");
         private Path baseConfigPath = Path.of("");
+        private Path ibcJavaPath = Path.of("");
         private int apiPort = 4002;
         private int commandServerPort = 7462;
         private String bindAddress = "127.0.0.1";
         private String username = "";
         private CredentialMode credentialMode = CredentialMode.MANUAL;
         private TwoFactorTimeoutAction twoFactorTimeoutAction = TwoFactorTimeoutAction.EXIT;
+        private boolean reloginAfterSecondFactorTimeout;
+        private boolean forceApiPortAtLaunch;
         private boolean autoStart;
         private boolean minimizeMainWindow = true;
-        private int gracefulStopTimeoutSeconds = 20;
+        private int gracefulStopTimeoutSeconds = 90;
         private Map<String, String> settings = new LinkedHashMap<>();
 
         public Builder id(UUID value) { id = value; return this; }
@@ -147,12 +162,15 @@ public final class Profile {
         public Builder twsPath(Path value) { twsPath = value; return this; }
         public Builder twsSettingsPath(Path value) { twsSettingsPath = value; return this; }
         public Builder baseConfigPath(Path value) { baseConfigPath = value; return this; }
+        public Builder ibcJavaPath(Path value) { ibcJavaPath = value; return this; }
         public Builder apiPort(int value) { apiPort = value; return this; }
         public Builder commandServerPort(int value) { commandServerPort = value; return this; }
         public Builder bindAddress(String value) { bindAddress = value; return this; }
         public Builder username(String value) { username = value; return this; }
         public Builder credentialMode(CredentialMode value) { credentialMode = value; return this; }
         public Builder twoFactorTimeoutAction(TwoFactorTimeoutAction value) { twoFactorTimeoutAction = value; return this; }
+        public Builder reloginAfterSecondFactorTimeout(boolean value) { reloginAfterSecondFactorTimeout = value; return this; }
+        public Builder forceApiPortAtLaunch(boolean value) { forceApiPortAtLaunch = value; return this; }
         public Builder autoStart(boolean value) { autoStart = value; return this; }
         public Builder minimizeMainWindow(boolean value) { minimizeMainWindow = value; return this; }
         public Builder gracefulStopTimeoutSeconds(int value) { gracefulStopTimeoutSeconds = value; return this; }
@@ -174,6 +192,8 @@ public final class Profile {
         return enabled == profile.enabled
                 && apiPort == profile.apiPort
                 && commandServerPort == profile.commandServerPort
+                && reloginAfterSecondFactorTimeout == profile.reloginAfterSecondFactorTimeout
+                && forceApiPortAtLaunch == profile.forceApiPortAtLaunch
                 && autoStart == profile.autoStart
                 && minimizeMainWindow == profile.minimizeMainWindow
                 && gracefulStopTimeoutSeconds == profile.gracefulStopTimeoutSeconds
@@ -186,6 +206,7 @@ public final class Profile {
                 && twsPath.equals(profile.twsPath)
                 && twsSettingsPath.equals(profile.twsSettingsPath)
                 && baseConfigPath.equals(profile.baseConfigPath)
+                && ibcJavaPath.equals(profile.ibcJavaPath)
                 && bindAddress.equals(profile.bindAddress)
                 && username.equals(profile.username)
                 && credentialMode == profile.credentialMode
@@ -196,8 +217,9 @@ public final class Profile {
     @Override
     public int hashCode() {
         return Objects.hash(id, name, enabled, targetType, tradingMode, twsMajorVersion, ibcPath,
-                twsPath, twsSettingsPath, baseConfigPath, apiPort, commandServerPort, bindAddress,
-                username, credentialMode, twoFactorTimeoutAction, autoStart, minimizeMainWindow,
+                twsPath, twsSettingsPath, baseConfigPath, ibcJavaPath, apiPort, commandServerPort,
+                bindAddress, username, credentialMode, twoFactorTimeoutAction,
+                reloginAfterSecondFactorTimeout, forceApiPortAtLaunch, autoStart, minimizeMainWindow,
                 gracefulStopTimeoutSeconds, settings);
     }
 

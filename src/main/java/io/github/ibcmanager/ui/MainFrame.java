@@ -281,7 +281,7 @@ public final class MainFrame extends JFrame {
         addDetailRow(form, row++, "Trading mode", modeValue);
         addDetailRow(form, row++, "Process ID", pidValue);
         addDetailRow(form, row++, "IBC command server", commandValue);
-        addDetailRow(form, row++, "API TCP socket", apiValue);
+        addDetailRow(form, row++, "API TCP listener", apiValue);
         addDetailRow(form, row++, "Started", startedValue);
         addDetailRow(form, row++, "Details", messageValue);
         GridBagConstraints filler = new GridBagConstraints();
@@ -293,8 +293,9 @@ public final class MainFrame extends JFrame {
         filler.fill = GridBagConstraints.BOTH;
         form.add(new JPanel(), filler);
         outer.add(form, BorderLayout.CENTER);
-        JLabel apiNotice = new JLabel("<html>API TCP open means the port accepted a socket connection. "
-                + "It does not prove that an IB API handshake or account validation completed.</html>");
+        JLabel apiNotice = new JLabel("<html>API listener detected means the operating system reports a listening TCP socket. "
+                + "IBC Manager does not connect to the port for monitoring. This still does not prove that an IB API "
+                + "handshake or account validation completed.</html>");
         apiNotice.setBorder(BorderFactory.createEmptyBorder(10, 4, 4, 4));
         outer.add(apiNotice, BorderLayout.SOUTH);
         return outer;
@@ -363,7 +364,11 @@ public final class MainFrame extends JFrame {
                     "Profile is running", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        editProfile(profile);
+        try {
+            editProfile(services.managedConfigService().synchronizeEditableProfile(profile));
+        } catch (IOException ex) {
+            UiUtil.showError(this, "Could not synchronize the Profile editor with managed config.ini", ex);
+        }
     }
 
     private void editProfile(Profile current) {
@@ -523,7 +528,17 @@ public final class MainFrame extends JFrame {
                     "Profile is running", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        ManagedConfigDialog.show(this, profile, services.managedConfigService());
+        var edited = ManagedConfigDialog.show(this, profile, services.managedConfigService());
+        if (edited.isEmpty()) return;
+        try {
+            Profile synchronizedProfile = services.profileSaveService().saveManagedConfig(profile, edited.get());
+            services.runtimeRegistry().upsert(synchronizedProfile);
+            loadProfiles();
+            selectProfile(synchronizedProfile.id());
+            statusBar.setText("Managed config.ini saved and synchronized with the Profile editor");
+        } catch (IOException ex) {
+            UiUtil.showError(this, "Managed configuration was not saved", ex);
+        }
     }
 
     private void exportDiagnostics() {
@@ -588,8 +603,20 @@ public final class MainFrame extends JFrame {
                 : "Not ready (" + profile.bindAddress() + ":" + profile.commandServerPort() + ")");
         commandValue.setToolTipText("IBC Manager derives command-server readiness from IBC lifecycle output "
                 + "and real commands; it does not open a monitoring connection every two seconds.");
-        apiValue.setText(status.apiPortOpen() ? "TCP open on 127.0.0.1:" + profile.apiPort()
-                : "Closed (127.0.0.1:" + profile.apiPort() + ")");
+        io.github.ibcmanager.runtime.ListenerObservation apiObservation =
+                controller.get().apiListenerObservation();
+        apiValue.setText(switch (status.apiListenerState()) {
+            case LISTENING -> "Verified listener on "
+                    + (apiObservation.localAddress().isBlank() ? "127.0.0.1" : apiObservation.localAddress())
+                    + ":" + profile.apiPort() + " (PID " + apiObservation.owningPid() + ")";
+            case NOT_LISTENING -> "Not listening (127.0.0.1:" + profile.apiPort() + ")";
+            case UNKNOWN -> apiObservation.state() == io.github.ibcmanager.model.PortListenerState.LISTENING
+                    ? "Listener detected but ownership is unverified"
+                            + (apiObservation.ownershipAvailable() ? " (PID " + apiObservation.owningPid() + ")" : "")
+                    : "Listener state unavailable (127.0.0.1:" + profile.apiPort() + ")";
+        });
+        apiValue.setToolTipText("IBC Manager passively inspects the operating-system listener table; "
+                + "it does not open a raw API connection for health monitoring.");
         startedValue.setText(status.startedAt() == null ? "-" : TIME_FORMAT.format(status.startedAt()));
         messageValue.setText("<html>" + html(status.message()) + "</html>");
         List<String> logLines = controller.get().logs().snapshot();
@@ -604,24 +631,28 @@ public final class MainFrame extends JFrame {
     }
 
     private void updateButtons(ProfileStatus status) {
-        boolean selected = status != null;
+        Optional<ProfileRuntimeController> selectedController = selectedController();
+        boolean selected = status != null && selectedController.isPresent();
         boolean running = selected && status.processAlive();
-        boolean command = running && status.commandPortOpen();
+        ProfileRuntimeController controller = selectedController.orElse(null);
         startButton.setEnabled(!busy && selected && !running);
         stopButton.setEnabled(!busy && running);
-        restartButton.setEnabled(!busy && command);
-        pauseButton.setEnabled(!busy && command);
+        restartButton.setEnabled(!busy && controller != null && controller.canRestartSession());
+        pauseButton.setEnabled(!busy && controller != null && controller.canExecute(io.github.ibcmanager.runtime.IbcCommand.PAUSE));
         editButton.setEnabled(!busy && selected && !running);
         validateButton.setEnabled(!busy && selected);
         configButton.setEnabled(!busy && selected && !running);
         diagnosticsButton.setEnabled(!busy && selected);
-        reconnectDataButton.setEnabled(!busy && command);
-        reconnectAccountButton.setEnabled(!busy && command);
+        reconnectDataButton.setEnabled(!busy && controller != null
+                && controller.canExecute(io.github.ibcmanager.runtime.IbcCommand.RECONNECTDATA));
+        reconnectAccountButton.setEnabled(!busy && controller != null
+                && controller.canExecute(io.github.ibcmanager.runtime.IbcCommand.RECONNECTACCOUNT));
         Profile selectedProfile = profilesList.getSelectedValue();
         boolean twsSelected = selectedProfile != null && selectedProfile.targetType() == TargetType.TWS;
-        enableApiButton.setEnabled(!busy && command && twsSelected);
+        enableApiButton.setEnabled(!busy && controller != null
+                && controller.canExecute(io.github.ibcmanager.runtime.IbcCommand.ENABLEAPI));
         enableApiButton.setToolTipText(twsSelected
-                ? "Enable API connections through the IBC command server"
+                ? "Enable API connections after IBC has confirmed login and main-window readiness"
                 : "IBC's ENABLEAPI command is supported by TWS, not IB Gateway");
     }
 

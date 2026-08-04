@@ -8,6 +8,7 @@ import io.github.ibcmanager.config.RuntimeConfigFactory;
 import io.github.ibcmanager.config.RuntimeConfigLease;
 import io.github.ibcmanager.model.CredentialMode;
 import io.github.ibcmanager.model.Profile;
+import io.github.ibcmanager.model.TradingMode;
 import io.github.ibcmanager.security.CredentialStore;
 import io.github.ibcmanager.security.CredentialStoreException;
 import io.github.ibcmanager.security.SecureChars;
@@ -46,12 +47,35 @@ public final class StorageTests implements TestSuite {
                 new NamedTest("managed config is created from the bundled template", this::managedTemplate),
                 new NamedTest("managed config imports comments and removes secrets", this::managedImport),
                 new NamedTest("managed config applies profile-controlled settings", this::managedApplyProfile),
+                new NamedTest("managed config couples both IBC second-factor timeout policies",
+                        this::managedSecondFactorPolicy),
+                new NamedTest("managed config leaves API-port override disabled by default", this::managedApiOverrideDefault),
                 new NamedTest("managed config ignores reserved advanced overrides", this::managedReserved),
                 new NamedTest("managed config refuses persistent plaintext passwords", this::managedRejectSecret),
                 new NamedTest("managed config preserves imported CRLF layout", this::managedCrlf),
+                new NamedTest("raw managed-config edits synchronize into the Profile editor",
+                        this::managedRawEditSynchronizesProfile),
+                new NamedTest("structured setting reset restores the base configuration value",
+                        this::managedStructuredResetRestoresBaseline),
+                new NamedTest("manager-owned runtime launch preserves raw managed-config edits",
+                        this::runtimeManagedConfigIsAuthoritative),
+                new NamedTest("external config runtime still applies structured profile overrides",
+                        this::runtimeExistingStructuredOverride),
+                new NamedTest("raw managed-config save persists the synchronized profile atomically",
+                        this::profileSaveManagedConfigSynchronizesRepository),
+                new NamedTest("raw managed-config save synchronizes Profile-tab fields bidirectionally",
+                        this::profileSaveManagedConfigSynchronizesProfileFields),
+                new NamedTest("raw managed-config save rejects an invalid synchronized profile atomically",
+                        this::profileSaveManagedConfigRejectsInvalidProfile),
                 new NamedTest("runtime config manual mode contains no password", this::runtimeManual),
                 new NamedTest("runtime config encrypted mode injects the password temporarily", this::runtimeEncrypted),
+                new NamedTest("runtime config uses the validated settings tree and cleans legacy location",
+                        this::runtimeLocationMigration),
                 new NamedTest("runtime config existing-config mode copies the selected file", this::runtimeExisting),
+                new NamedTest("runtime config canonicalizes ambiguous external Properties syntax only in the copy",
+                        this::runtimeExistingCanonicalizesAmbiguousSyntax),
+                new NamedTest("runtime config rejects incompatible external IBC modes and schedules",
+                        this::runtimeExistingRejectsIncompatibleConfiguration),
                 new NamedTest("runtime config rejects an empty encrypted password", this::runtimeEmptyPassword),
                 new NamedTest("runtime config rejects config-breaking credentials", this::runtimeUnsafeCredentials),
                 new NamedTest("runtime config cleanup removes a stale credential file", this::runtimeCleanStale),
@@ -207,6 +231,8 @@ public final class StorageTests implements TestSuite {
             Assertions.equals(profile.username(), document.get("IbLoginId").orElseThrow(), "profile login ID must be applied");
             Assertions.equals("", document.get("IbPassword").orElseThrow(), "persistent password must be blank");
             Assertions.equals("paper", document.get("TradingMode").orElseThrow(), "trading mode must be applied");
+            Assertions.equals("ignore/ignore", document.get("ConfirmOrderIdReset").orElseThrow(),
+                    "managed defaults must use the noninteractive safe order-ID reset policy");
         } finally { TestSupport.deleteTree(root); }
     }
 
@@ -232,6 +258,7 @@ public final class StorageTests implements TestSuite {
         try {
             Profile profile = TestSupport.validProfile(root.resolve("install")).toBuilder()
                     .apiPort(7497).commandServerPort(7999).bindAddress("127.0.0.2")
+                    .forceApiPortAtLaunch(true)
                     .minimizeMainWindow(false).setting("AcceptIncomingConnectionAction", "reject")
                     .setting("SecondFactorDevice", "IBKR Mobile").build();
             ManagedConfigService service = new ManagedConfigService(new AppPaths(root));
@@ -246,11 +273,36 @@ public final class StorageTests implements TestSuite {
         } finally { TestSupport.deleteTree(root); }
     }
 
+
+    private void managedApiOverrideDefault() throws Exception {
+        Path root = TestSupport.tempDirectory("managed-api-default");
+        try {
+            Profile profile = TestSupport.validProfile(root.resolve("install"));
+            IbcConfigDocument document = new ManagedConfigService(new AppPaths(root)).loadManagedConfig(profile);
+            Assertions.equals("", document.get("OverrideTwsApiPort").orElseThrow(),
+                    "API-port override must be opt-in for new profiles");
+        } finally { TestSupport.deleteTree(root); }
+    }
+
+    private void managedSecondFactorPolicy() throws Exception {
+        Path root = TestSupport.tempDirectory("managed-2fa-policy");
+        try {
+            Profile profile = TestSupport.validProfile(root.resolve("install")).toBuilder()
+                    .reloginAfterSecondFactorTimeout(true).build();
+            IbcConfigDocument document = new ManagedConfigService(new AppPaths(root)).loadManagedConfig(profile);
+            Assertions.equals("yes", document.get("ReloginAfterSecondFactorAuthenticationTimeout").orElseThrow(),
+                    "current IBC internal 2FA policy must match the profile");
+            Assertions.equals("", document.get("ExitAfterSecondFactorAuthenticationTimeout").orElseThrow(),
+                    "deprecated fallback must be blank so it cannot override the explicit current policy");
+        } finally { TestSupport.deleteTree(root); }
+    }
+
     private void managedReserved() throws Exception {
         Path root = TestSupport.tempDirectory("managed-reserved");
         try {
             Profile profile = TestSupport.validProfile(root.resolve("install")).toBuilder()
-                    .apiPort(4002).setting("OverrideTwsApiPort", "9999")
+                    .apiPort(4002).forceApiPortAtLaunch(true)
+                    .setting("OverrideTwsApiPort", "9999")
                     .setting("TradingMode", "live").setting("IbPassword", "leak")
                     .setting("ibpassword", "case-variant-leak")
                     .setting("commandserverport", "9998")
@@ -300,6 +352,206 @@ public final class StorageTests implements TestSuite {
         } finally { TestSupport.deleteTree(root); }
     }
 
+    private void managedRawEditSynchronizesProfile() throws Exception {
+        Path root = TestSupport.tempDirectory("managed-sync-raw");
+        try {
+            AppPaths paths = new AppPaths(root);
+            Profile profile = TestSupport.validProfile(root.resolve("install"));
+            ManagedConfigService service = new ManagedConfigService(paths);
+            IbcConfigDocument raw = service.loadManagedConfig(profile);
+            raw.set("AutoRestartTime", "11:45 PM");
+            raw.set("AllowBlindTrading", "yes");
+            raw.set("UnknownFutureSetting", "future-value");
+            service.saveManagedConfig(profile, raw);
+
+            Profile synchronizedProfile = service.synchronizeEditableProfile(profile);
+            Assertions.equals("11:45 PM", synchronizedProfile.settings().get("AutoRestartTime"),
+                    "raw AutoRestartTime must appear in the structured editor");
+            Assertions.equals("yes", synchronizedProfile.settings().get("AllowBlindTrading"),
+                    "raw AllowBlindTrading must appear in the structured editor");
+            Assertions.equals("future-value", synchronizedProfile.settings().get("UnknownFutureSetting"),
+                    "future raw settings must survive a structured edit/save cycle");
+            Assertions.equals("accept", synchronizedProfile.settings().get("AcceptIncomingConnectionAction"),
+                    "the profile's existing structured override must remain synchronized");
+            Assertions.isFalse(synchronizedProfile.settings().containsKey("DismissPasswordExpiryWarning"),
+                    "unchanged template defaults must not become persistent profile overrides");
+        } finally { TestSupport.deleteTree(root); }
+    }
+
+    private void managedStructuredResetRestoresBaseline() throws Exception {
+        Path root = TestSupport.tempDirectory("managed-sync-reset");
+        try {
+            AppPaths paths = new AppPaths(root);
+            Profile profile = TestSupport.validProfile(root.resolve("install"));
+            ManagedConfigService service = new ManagedConfigService(paths);
+            IbcConfigDocument raw = service.loadManagedConfig(profile);
+            raw.set("AllowBlindTrading", "yes");
+            service.saveManagedConfig(profile, raw);
+
+            Profile synchronizedProfile = service.synchronizeEditableProfile(profile);
+            Assertions.equals("yes", synchronizedProfile.settings().get("AllowBlindTrading"),
+                    "raw override must be represented before reset");
+            Map<String, String> withoutOverride = new java.util.LinkedHashMap<>(synchronizedProfile.settings());
+            withoutOverride.remove("AllowBlindTrading");
+            Profile reset = synchronizedProfile.toBuilder().settings(withoutOverride).build();
+            service.refreshManagedSettings(reset);
+
+            IbcConfigDocument refreshed = service.loadManagedConfig(reset);
+            Assertions.equals("no", refreshed.get("AllowBlindTrading").orElseThrow(),
+                    "clearing the structured override must restore the template/base value");
+            Assertions.isFalse(service.synchronizeEditableProfile(reset).settings().containsKey("AllowBlindTrading"),
+                    "restored baseline value must not reappear as an override");
+        } finally { TestSupport.deleteTree(root); }
+    }
+
+    private void runtimeManagedConfigIsAuthoritative() throws Exception {
+        Path root = TestSupport.tempDirectory("managed-runtime-authority");
+        try {
+            AppPaths paths = new AppPaths(root);
+            Profile profile = TestSupport.validProfile(root.resolve("install"));
+            ManagedConfigService service = new ManagedConfigService(paths);
+            IbcConfigDocument raw = service.loadManagedConfig(profile);
+            raw.set("AutoRestartTime", "11:45 PM");
+            service.saveManagedConfig(profile, raw);
+
+            Profile staleSnapshot = profile.toBuilder().setting("AutoRestartTime", "10:00 PM").build();
+            RuntimeConfigLease lease = new RuntimeConfigFactory(paths, service).create(staleSnapshot, null);
+            try {
+                IbcConfigDocument runtime = IbcConfigDocument.parseBytes(Files.readAllBytes(lease.path()));
+                Assertions.equals("11:45 PM", runtime.get("AutoRestartTime").orElseThrow(),
+                        "manager-owned launch must use the raw managed config, not a stale profile snapshot");
+            } finally {
+                lease.close();
+            }
+        } finally { TestSupport.deleteTree(root); }
+    }
+
+    private void runtimeExistingStructuredOverride() throws Exception {
+        Path root = TestSupport.tempDirectory("existing-runtime-override");
+        try {
+            AppPaths paths = new AppPaths(root);
+            Path source = root.resolve("existing.ini");
+            Files.writeString(source, "IbLoginId=external\nIbPassword=external-secret\n"
+                    + "TradingMode=live\nAllowBlindTrading=no\n");
+            Profile profile = TestSupport.validProfile(root.resolve("install")).toBuilder()
+                    .credentialMode(CredentialMode.EXISTING_CONFIG)
+                    .baseConfigPath(source)
+                    .setting("AllowBlindTrading", "yes")
+                    .build();
+            RuntimeConfigLease lease = new RuntimeConfigFactory(paths, new ManagedConfigService(paths))
+                    .create(profile, null);
+            try {
+                IbcConfigDocument runtime = IbcConfigDocument.parseBytes(Files.readAllBytes(lease.path()));
+                Assertions.equals("yes", runtime.get("AllowBlindTrading").orElseThrow(),
+                        "external-config mode must retain its documented structured override behavior");
+            } finally {
+                lease.close();
+            }
+        } finally { TestSupport.deleteTree(root); }
+    }
+
+    private void profileSaveManagedConfigSynchronizesRepository() throws Exception {
+        Path root = TestSupport.tempDirectory("save-managed-sync");
+        try {
+            AppPaths paths = new AppPaths(root);
+            ProfileRepository repository = new ProfileRepository(paths);
+            ManagedConfigService configs = new ManagedConfigService(paths);
+            Profile profile = TestSupport.validProfile(root.resolve("install"));
+            repository.save(profile);
+            configs.ensureManagedConfig(profile);
+
+            IbcConfigDocument raw = configs.loadManagedConfig(profile);
+            raw.set("AutoRestartTime", "11:45 PM");
+            raw.set("UnknownFutureSetting", "future-value");
+            ProfileSaveService saveService = new ProfileSaveService(repository,
+                    new MemoryCredentialStore(), configs);
+            Profile synchronizedProfile = saveService.saveManagedConfig(profile, raw);
+
+            Profile reloaded = repository.loadAll().profiles().get(0);
+            Assertions.equals(synchronizedProfile, reloaded,
+                    "repository and returned profile must contain the same synchronized settings");
+            Assertions.equals("11:45 PM", reloaded.settings().get("AutoRestartTime"),
+                    "raw known setting must persist in the profile snapshot");
+            Assertions.equals("future-value", reloaded.settings().get("UnknownFutureSetting"),
+                    "raw future setting must persist in the profile snapshot");
+            Assertions.equals("11:45 PM", configs.loadManagedConfig(reloaded)
+                            .get("AutoRestartTime").orElseThrow(),
+                    "managed config and persisted profile must stay in sync");
+        } finally { TestSupport.deleteTree(root); }
+    }
+
+    private void profileSaveManagedConfigSynchronizesProfileFields() throws Exception {
+        Path root = TestSupport.tempDirectory("save-managed-profile-fields");
+        try {
+            AppPaths paths = new AppPaths(root);
+            ProfileRepository repository = new ProfileRepository(paths);
+            ManagedConfigService configs = new ManagedConfigService(paths);
+            Profile profile = TestSupport.validProfile(root.resolve("install"));
+            repository.save(profile);
+            configs.ensureManagedConfig(profile);
+
+            IbcConfigDocument raw = configs.loadManagedConfig(profile);
+            raw.set("IbLoginId", "raw-user");
+            raw.set("TradingMode", "live");
+            raw.set("MinimizeMainWindow", "no");
+            raw.set("OverrideTwsApiPort", "4101");
+            raw.set("CommandServerPort", "7562");
+            raw.set("BindAddress", "127.0.0.1");
+            raw.set("ReloginAfterSecondFactorAuthenticationTimeout", "yes");
+            raw.set("SecondFactorDevice", "Primary device");
+
+            Profile synchronizedProfile = new ProfileSaveService(repository,
+                    new MemoryCredentialStore(), configs).saveManagedConfig(profile, raw);
+            Assertions.equals("raw-user", synchronizedProfile.username(),
+                    "raw IbLoginId must synchronize to the Profile tab");
+            Assertions.equals(TradingMode.LIVE, synchronizedProfile.tradingMode(),
+                    "raw TradingMode must synchronize to the Profile tab");
+            Assertions.isFalse(synchronizedProfile.minimizeMainWindow(),
+                    "raw MinimizeMainWindow must synchronize to the Profile tab");
+            Assertions.isTrue(synchronizedProfile.forceApiPortAtLaunch(),
+                    "a raw OverrideTwsApiPort must enable the structured force-port option");
+            Assertions.equals(4101, synchronizedProfile.apiPort(),
+                    "raw OverrideTwsApiPort must synchronize the monitored API port");
+            Assertions.equals(7562, synchronizedProfile.commandServerPort(),
+                    "raw CommandServerPort must synchronize to the Profile tab");
+            Assertions.isTrue(synchronizedProfile.reloginAfterSecondFactorTimeout(),
+                    "raw 2FA relogin policy must synchronize to the Profile tab");
+            Assertions.equals("Primary device", synchronizedProfile.settings().get("SecondFactorDevice"),
+                    "raw SecondFactorDevice must synchronize to its dedicated Profile control");
+
+            IbcConfigDocument saved = configs.loadManagedConfig(synchronizedProfile);
+            Assertions.equals("raw-user", saved.get("IbLoginId").orElseThrow(),
+                    "canonical managed config must retain the synchronized username");
+            Assertions.equals("Primary device", saved.get("SecondFactorDevice").orElseThrow(),
+                    "canonical managed config must retain the synchronized second-factor device");
+        } finally { TestSupport.deleteTree(root); }
+    }
+
+    private void profileSaveManagedConfigRejectsInvalidProfile() throws Exception {
+        Path root = TestSupport.tempDirectory("save-managed-invalid-profile");
+        try {
+            AppPaths paths = new AppPaths(root);
+            ProfileRepository repository = new ProfileRepository(paths);
+            ManagedConfigService configs = new ManagedConfigService(paths);
+            Profile profile = TestSupport.validProfile(root.resolve("install"));
+            repository.save(profile);
+            Path config = configs.ensureManagedConfig(profile);
+            byte[] before = Files.readAllBytes(config);
+
+            IbcConfigDocument raw = configs.loadManagedConfig(profile);
+            raw.set("OverrideTwsApiPort", "4101");
+            raw.set("CommandServerPort", "4101");
+            ProfileSaveService saveService = new ProfileSaveService(repository,
+                    new MemoryCredentialStore(), configs);
+            Assertions.throwsType(IOException.class, () -> saveService.saveManagedConfig(profile, raw),
+                    "a raw edit that makes the API and command ports collide must be rejected");
+            Assertions.isTrue(Arrays.equals(before, Files.readAllBytes(config)),
+                    "rejected raw profile fields must leave managed config unchanged");
+            Assertions.equals(profile, repository.loadAll().profiles().get(0),
+                    "rejected raw profile fields must leave the stored profile unchanged");
+        } finally { TestSupport.deleteTree(root); }
+    }
+
     private void runtimeManual() throws Exception {
         Path root = TestSupport.tempDirectory("runtime-manual");
         try {
@@ -336,12 +588,37 @@ public final class StorageTests implements TestSuite {
         } finally { TestSupport.deleteTree(root); }
     }
 
+    private void runtimeLocationMigration() throws Exception {
+        Path root = TestSupport.tempDirectory("runtime-location");
+        try {
+            AppPaths paths = new AppPaths(root.resolve("data"));
+            Profile profile = TestSupport.validProfile(root.resolve("install"));
+            Path legacy = paths.runtimeDirectory(profile.id()).resolve("config.ini");
+            Files.createDirectories(legacy.getParent());
+            Files.writeString(legacy, "IbPassword=stale-secret\n");
+
+            RuntimeConfigFactory factory = new RuntimeConfigFactory(paths, new ManagedConfigService(paths));
+            factory.cleanStale(profile);
+            Assertions.isFalse(Files.exists(legacy), "the pre-1.0.15 AppData runtime file must be scrubbed");
+            RuntimeConfigLease lease = factory.create(profile, null);
+            try {
+                Path expectedRoot = profile.twsSettingsPath().toAbsolutePath().normalize()
+                        .resolve(".ibc-manager-runtime").resolve(profile.id().toString());
+                Assertions.equals(expectedRoot.resolve("config.ini"), lease.path(),
+                        "StartIBC config path must live below the already batch-safe TWS settings tree");
+            } finally {
+                lease.close();
+            }
+        } finally { TestSupport.deleteTree(root); }
+    }
+
     private void runtimeExisting() throws Exception {
         Path root = TestSupport.tempDirectory("runtime-existing");
         try {
             AppPaths paths = new AppPaths(root);
             Path source = root.resolve("existing.ini");
-            Files.writeString(source, "# existing\nIbLoginId=external\nIbPassword=external-secret\nTradingMode=live\n");
+            Files.writeString(source, "# existing\nIbLoginId=external\nIbPassword=external-secret\n"
+                    + "TradingMode=live\nConfirmOrderIdReset=\n");
             Profile profile = TestSupport.validProfile(root.resolve("install")).toBuilder()
                     .credentialMode(CredentialMode.EXISTING_CONFIG).baseConfigPath(source).build();
             RuntimeConfigLease lease = new RuntimeConfigFactory(paths, new ManagedConfigService(paths)).create(profile, null);
@@ -349,11 +626,69 @@ public final class StorageTests implements TestSuite {
                 String text = Files.readString(lease.path());
                 Assertions.contains(text, "IbLoginId=external", "existing credentials must remain in the temporary copy");
                 Assertions.contains(text, "IbPassword=external-secret", "existing password must remain in the temporary copy");
-                Assertions.equals("paper", IbcConfigDocument.parse(text).get("TradingMode").orElseThrow(),
+                IbcConfigDocument runtime = IbcConfigDocument.parse(text);
+                Assertions.equals("paper", runtime.get("TradingMode").orElseThrow(),
                         "profile-controlled trading mode must still be applied");
-                Assertions.equals("# existing\nIbLoginId=external\nIbPassword=external-secret\nTradingMode=live\n",
+                Assertions.equals("ignore/ignore", runtime.get("ConfirmOrderIdReset").orElseThrow(),
+                        "blank external order-ID policy must be normalized before IBC can index it");
+                Assertions.equals("# existing\nIbLoginId=external\nIbPassword=external-secret\n"
+                                + "TradingMode=live\nConfirmOrderIdReset=\n",
                         Files.readString(source), "source config must never be modified");
             } finally { lease.close(); }
+        } finally { TestSupport.deleteTree(root); }
+    }
+
+    private void runtimeExistingCanonicalizesAmbiguousSyntax() throws Exception {
+        Path root = TestSupport.tempDirectory("runtime-existing-ambiguous");
+        try {
+            AppPaths paths = new AppPaths(root);
+            Path source = root.resolve("existing.ini");
+            String sourceText = "IbLoginId=external\r\nIbPassword=external-secret\r\n"
+                    + "TradingMode=live\r\n\\\r\n";
+            Files.write(source, sourceText.getBytes(StandardCharsets.ISO_8859_1));
+            IbcConfigDocument imported = IbcConfigDocument.parseBytes(Files.readAllBytes(source));
+            Assertions.isFalse(imported.formattingMatchesIbcSemantics(),
+                    "the fixture must exercise a scanner/full-file Properties mismatch");
+
+            Profile profile = TestSupport.validProfile(root.resolve("install")).toBuilder()
+                    .credentialMode(CredentialMode.EXISTING_CONFIG).baseConfigPath(source).build();
+            RuntimeConfigLease lease = new RuntimeConfigFactory(paths, new ManagedConfigService(paths))
+                    .create(profile, null);
+            try {
+                IbcConfigDocument runtime = IbcConfigDocument.parseBytes(Files.readAllBytes(lease.path()));
+                Assertions.isTrue(runtime.formattingMatchesIbcSemantics(),
+                        "the ephemeral runtime copy must be canonical and unambiguous");
+                Assertions.equals("external", runtime.get("IbLoginId").orElseThrow(),
+                        "canonicalization must preserve IBC's authoritative username semantics");
+                Assertions.equals("external-secret", runtime.get("IbPassword").orElseThrow(),
+                        "canonicalization must preserve IBC's authoritative password semantics");
+                Assertions.equals("paper", runtime.get("TradingMode").orElseThrow(),
+                        "structured profile overrides must still be applied after canonicalization");
+                Assertions.isTrue(Arrays.equals(sourceText.getBytes(StandardCharsets.ISO_8859_1),
+                                Files.readAllBytes(source)),
+                        "the external source file must remain byte-for-byte unchanged");
+            } finally {
+                lease.close();
+            }
+        } finally { TestSupport.deleteTree(root); }
+    }
+
+    private void runtimeExistingRejectsIncompatibleConfiguration() throws Exception {
+        Path root = TestSupport.tempDirectory("runtime-existing-incompatible");
+        try {
+            AppPaths paths = new AppPaths(root);
+            Path source = root.resolve("existing.ini");
+            Profile base = TestSupport.validProfile(root.resolve("install")).toBuilder()
+                    .credentialMode(CredentialMode.EXISTING_CONFIG).baseConfigPath(source).build();
+            RuntimeConfigFactory factory = new RuntimeConfigFactory(paths, new ManagedConfigService(paths));
+
+            Files.writeString(source, "IbLoginId=external\nIbPassword=secret\nFIX=yes\n");
+            Assertions.throwsType(IOException.class, () -> factory.create(base, null),
+                    "FIX mode in an external configuration must be rejected before IBC launch");
+
+            Files.writeString(source, "IbLoginId=external\nIbPassword=secret\nSaveTwsSettingsAt=Every\n");
+            Assertions.throwsType(IOException.class, () -> factory.create(base, null),
+                    "malformed external schedules must be rejected before IBC can fail while parsing them");
         } finally { TestSupport.deleteTree(root); }
     }
 

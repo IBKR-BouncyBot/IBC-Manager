@@ -4,9 +4,11 @@ import io.github.ibcmanager.app.Version;
 import io.github.ibcmanager.model.Profile;
 
 import java.io.DataInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -18,6 +20,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 public final class ArchitectureTests implements TestSuite {
@@ -38,6 +41,8 @@ public final class ArchitectureTests implements TestSuite {
                 new NamedTest("runtime supervision avoids global desktop and process automation", this::noGlobalAutomation),
                 new NamedTest("command-server monitoring does not create periodic client connections",
                         this::quietCommandServerMonitoring),
+                new NamedTest("API listener monitoring never opens raw client connections",
+                        this::passiveApiMonitoring),
                 new NamedTest("manual start stop restart and pause actions require confirmation", this::sessionActionConfirmationWiring),
                 new NamedTest("test subprocesses are platform-neutral", this::portableTestSubprocesses),
                 new NamedTest("no TOTP generator or cryptographic OTP implementation is present", this::noTotpImplementation),
@@ -50,6 +55,8 @@ public final class ArchitectureTests implements TestSuite {
                 new NamedTest("every concrete test suite is registered", this::allSuitesRegistered),
                 new NamedTest("default IBC configuration resource is present and parseable", this::defaultConfigResource),
                 new NamedTest("manager distribution does not bundle the IBC executable JAR", this::noBundledIbcJar),
+                new NamedTest("test cleanup retries transient Windows sharing violations",
+                        this::transientCleanupRetry),
                 new NamedTest("asynchronous assertions count one logical assertion", this::eventuallyCountsOnce));
     }
 
@@ -169,6 +176,30 @@ public final class ArchitectureTests implements TestSuite {
                 "command shutdown must invalidate cached readiness");
     }
 
+    private void passiveApiMonitoring() throws Exception {
+        String probe = source("src/main/java/io/github/ibcmanager/runtime/ListeningPortProbe.java");
+        Assertions.notContains(probe, "java.net.Socket",
+                "listener monitoring must not use a client socket");
+        Assertions.notContains(probe, "new Socket(",
+                "listener monitoring must not instantiate a client socket");
+        Assertions.notContains(probe, ".connect(",
+                "listener monitoring must not connect to the IB API port");
+        Assertions.contains(probe, "netstat.exe",
+                "Windows listener monitoring must inspect the operating-system socket table");
+        Assertions.contains(probe, "/proc/net/tcp",
+                "Linux listener monitoring must inspect the operating-system socket table");
+
+        String services = source("src/main/java/io/github/ibcmanager/app/AppServices.java");
+        Assertions.contains(services, "PortProbe portProbe = new ListeningPortProbe",
+                "all profile controllers must share one cached passive listener probe");
+        Assertions.notContains(services, "new TcpPortProbe",
+                "the former connect-and-close API probe must not be wired into production");
+
+        String controller = source("src/main/java/io/github/ibcmanager/runtime/ProfileRuntimeController.java");
+        Assertions.contains(controller, "portProbe.invalidate()",
+                "launch preflight must force a fresh passive listener snapshot");
+    }
+
     private void sessionActionConfirmationWiring() throws Exception {
         String mainFrame = source("src/main/java/io/github/ibcmanager/ui/MainFrame.java");
         Assertions.contains(mainFrame, "startButton.addActionListener(event -> confirmStartSelected())",
@@ -281,6 +312,19 @@ public final class ArchitectureTests implements TestSuite {
                 "README must display the packaged main-window image near its title");
         Assertions.isTrue(Files.size(ROOT.resolve("images/GUI.png")) > 0,
                 "README image must not be empty");
+        String security = Files.readString(ROOT.resolve("docs/SECURITY.md"), StandardCharsets.UTF_8);
+        Assertions.contains(security, "complete lifetime of the official `StartIBC.bat` wrapper",
+                "security documentation must describe the wrapper-lifetime runtime config");
+        Assertions.notContains(security, "deleted after authentication progresses",
+                "security documentation must not claim unsafe post-authentication deletion");
+        String windowsChecklist = Files.readString(
+                ROOT.resolve("docs/WINDOWS_VALIDATION_CHECKLIST.md"), StandardCharsets.UTF_8);
+        Assertions.contains(windowsChecklist,
+                "Runtime config remains present after authentication while `StartIBC.bat` is",
+                "Windows checklist must validate the wrapper-lifetime runtime config");
+        Assertions.notContains(windowsChecklist,
+                "Runtime config is removed after the second-factor/running state",
+                "Windows checklist must not require the incompatible early deletion behavior");
     }
 
     private void bufferedLogArchitecture() throws Exception {
@@ -341,11 +385,11 @@ public final class ArchitectureTests implements TestSuite {
         int releaseArchive = canonical.indexOf("windows-release-zip");
         Assertions.isTrue(releaseArchive > exePackaging,
                 "the Windows release ZIP must be assembled only after EXE installer creation");
-        Assertions.contains(canonical, "IBC_Manager_1.0.13_Release_windows.zip",
+        Assertions.contains(canonical, "IBC_Manager_1.0.19_Release_windows.zip",
                 "Windows release ZIP must use the requested versioned filename");
         Assertions.contains(canonical, "--main-class io.github.ibcmanager.app.IbcManagerApp",
                 "packaging must use the production entry point");
-        Assertions.contains(canonical, "IBC-Manager-1.0.13.jar",
+        Assertions.contains(canonical, "IBC-Manager-1.0.19.jar",
                 "packaging must use the versioned release JAR");
         String driver = Files.readString(
                 ROOT.resolve("src/build/java/io/github/ibcmanager/build/BuildProject.java"),
@@ -438,6 +482,35 @@ public final class ArchitectureTests implements TestSuite {
             }
         }
         Assertions.equals(List.of(), matches, "IBC binary must remain a separate user installation");
+    }
+
+    private void transientCleanupRetry() throws Exception {
+        AtomicInteger transientAttempts = new AtomicInteger();
+        TestSupport.retryTransientFileOperation(() -> {
+            if (transientAttempts.incrementAndGet() < 3) {
+                throw new FileSystemException("temporarily locked");
+            }
+        }, 4, 0);
+        Assertions.equals(3, transientAttempts.get(),
+                "transient file-system failures must be retried until cleanup succeeds");
+
+        AtomicInteger permanentAttempts = new AtomicInteger();
+        Assertions.throwsType(IOException.class, () ->
+                TestSupport.retryTransientFileOperation(() -> {
+                    permanentAttempts.incrementAndGet();
+                    throw new IOException("permanent failure");
+                }, 4, 0), "non-file-system failures must not be retried");
+        Assertions.equals(1, permanentAttempts.get(),
+                "a permanent cleanup failure must stop after the first attempt");
+
+        AtomicInteger exhaustedAttempts = new AtomicInteger();
+        Assertions.throwsType(FileSystemException.class, () ->
+                TestSupport.retryTransientFileOperation(() -> {
+                    exhaustedAttempts.incrementAndGet();
+                    throw new FileSystemException("still locked");
+                }, 3, 0), "transient cleanup must remain bounded");
+        Assertions.equals(3, exhaustedAttempts.get(),
+                "bounded cleanup retry must stop at the configured attempt limit");
     }
 
     private void eventuallyCountsOnce() throws Exception {
