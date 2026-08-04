@@ -9,7 +9,7 @@ public record ProfileStatus(
         RuntimeState state,
         boolean processAlive,
         boolean commandPortOpen,
-        boolean apiPortOpen,
+        PortListenerState apiListenerState,
         long pid,
         Instant startedAt,
         Integer exitCode,
@@ -19,8 +19,17 @@ public record ProfileStatus(
     public ProfileStatus {
         Objects.requireNonNull(profileId, "profileId");
         Objects.requireNonNull(state, "state");
+        apiListenerState = Objects.requireNonNullElse(apiListenerState, PortListenerState.UNKNOWN);
         message = Objects.requireNonNullElse(message, "");
         updatedAt = Objects.requireNonNullElseGet(updatedAt, Instant::now);
+    }
+
+    public boolean apiListenerDetected() {
+        return apiListenerState == PortListenerState.LISTENING;
+    }
+
+    public boolean apiListenerStateKnown() {
+        return apiListenerState != PortListenerState.UNKNOWN;
     }
 
     public static ProfileStatus stopped(UUID profileId) {
@@ -29,7 +38,7 @@ public record ProfileStatus(
                 RuntimeState.STOPPED,
                 false,
                 false,
-                false,
+                PortListenerState.UNKNOWN,
                 -1,
                 null,
                 null,

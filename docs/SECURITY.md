@@ -26,8 +26,11 @@ credentials after the active Windows user or machine is fully compromised.
   identifiers reject CR, LF, NUL, NEL, and Unicode line/paragraph separators.
 - API and command ports are probed before credential decryption; an occupied
   port fails launch before a password-bearing runtime config exists.
-- Temporary runtime configs are ACL/permission hardened, then scrubbed and
-  deleted after authentication progresses or the process stops.
+- Temporary runtime configs are ACL/permission hardened and remain available for
+  the complete lifetime of the official `StartIBC.bat` wrapper, because that
+  supervisor reuses the same path for automatic restart and timeout recovery. A
+  detached relay owns the exact cleanup path and scrubs/deletes the file after
+  the wrapper exits; failed launches and stale files are cleaned separately.
 - Secrets and known IBC password syntaxes are redacted from app logs and
   diagnostic bundles. Redacted config rendering processes every duplicate and
   every comment/raw line rather than only the final active value.
@@ -108,6 +111,37 @@ after import. Windows PowerShell is invoked with process-scoped execution-policy
 bypass so downloaded ZIP zone metadata cannot prevent the local script from
 running; this does not alter the system execution policy.
 
+## Official batch-launcher path restrictions
+
+IBC Manager delegates session startup to official `StartIBC.bat`. That script
+removes outer quotes and re-expands user-selected paths through `cmd.exe`,
+including inside command blocks and in some unquoted commands. The Manager
+therefore rejects these characters in any path transported to the wrapper:
+
+```text
+" % ! & | < > ^ ( )
+```
+
+This is intentionally stricter than normal Windows path syntax. It prevents
+command injection and parsing ambiguity but also excludes common locations such
+as `C:\Program Files (x86)`. The UI names the offending character and recommends
+batch-safe locations such as `C:\IBC`, `C:\Jts`, and `C:\IBKRSettings`. The
+restriction must not be bypassed merely to accept a convenient path; broader
+path support requires replacing or correcting the unsafe batch transport.
+
+## Java Properties configuration boundary
+
+IBC configuration bytes are interpreted by the JDK's full-file
+`Properties.load(InputStream)` parser. Manager-owned writes use an authoritative
+map from that same parser and a separate formatting scanner. If malformed syntax
+causes the two to disagree, persistent mutation fails closed until the user
+corrects or explicitly canonicalizes the file. This prevents a comment-preserving
+scanner from silently assigning different credentials or settings than IBC.
+
+Canonical output escapes Unicode, separators, and literal backslashes and is
+loaded again by the JDK before it can reach IBC. Raw single-backslash diagnostics
+never echo sensitive values.
+
 ## Official IBC installer controls
 
 The GUI can download the tested official Windows IBC release after an explicit
@@ -181,16 +215,18 @@ The default IBC command-server bind address is `127.0.0.1`. Non-loopback or
 blank bind addresses produce validation warnings. Remote `ControlFrom` entries
 also produce a warning.
 
-The manager application's normal runtime network activity is limited to the
-configured local IB API TCP check and explicit local IBC command-server requests.
-Command-server readiness is normally derived from IBC lifecycle output rather
-than recurring socket probes. One command-port fallback probe is allowed when
-reattaching to a process whose startup history is unavailable, and launch
-preflight checks the command port once before credentials are loaded. After an
-explicit GUI confirmation, the optional IBC installer contacts the fixed GitHub
-release and GitHub-controlled redirect hosts. The prerequisite bootstrap contacts
-official Microsoft endpoints and WinGet only after its own explicit consent. The
-manager does not contact IBKR directly.
+Normal status monitoring does not create a network connection to either the IB
+API port or the IBC command port. API and reattachment fallback readiness are
+read from the local operating-system TCP listener table, while steady-state IBC
+command readiness is derived from IBC lifecycle output. Launch preflight forces
+a fresh passive listener snapshot before credentials are loaded and fails closed
+when the socket table is unavailable. Explicit user-requested IBC commands still
+create one local command connection.
+
+After an explicit GUI confirmation, the optional IBC installer contacts the
+fixed GitHub release and GitHub-controlled redirect hosts. The prerequisite
+bootstrap contacts official Microsoft endpoints and WinGet only after its own
+explicit consent. The manager does not contact IBKR directly.
 
 ## Bounded control-file and transaction controls
 

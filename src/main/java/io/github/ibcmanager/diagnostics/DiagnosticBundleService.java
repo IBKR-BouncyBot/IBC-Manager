@@ -120,7 +120,7 @@ public final class DiagnosticBundleService {
                 + "Runtime state: " + status.state() + "\n"
                 + "Process alive: " + status.processAlive() + "\n"
                 + "Command port open: " + status.commandPortOpen() + "\n"
-                + "API TCP port open: " + status.apiPortOpen() + "\n"
+                + "API TCP listener state: " + status.apiListenerState() + "\n"
                 + "PID: " + status.pid() + "\n"
                 + "Status message: " + SecretRedactor.redact(status.message()) + "\n";
     }

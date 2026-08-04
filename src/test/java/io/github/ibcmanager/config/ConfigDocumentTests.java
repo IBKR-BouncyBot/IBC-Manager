@@ -4,11 +4,13 @@ import io.github.ibcmanager.tests.Assertions;
 import io.github.ibcmanager.tests.NamedTest;
 import io.github.ibcmanager.tests.TestSuite;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Random;
 
 public final class ConfigDocumentTests implements TestSuite {
@@ -48,6 +50,24 @@ public final class ConfigDocumentTests implements TestSuite {
         tests.add(new NamedTest("schema sensitive keys agree with definitions", this::schemaSensitive));
         tests.add(new NamedTest("bundled template parses and covers core keys", this::templateParses));
         tests.add(new NamedTest("profile-controlled settings are identified", this::profileControlled));
+        tests.add(new NamedTest("parses the complete Java Properties separator and continuation grammar",
+                this::javaPropertiesGrammar));
+        tests.add(new NamedTest("canonical IBC bytes preserve Unicode and literal backslashes",
+                this::canonicalIbcSemantics));
+        tests.add(new NamedTest("external IBC bytes use strict ISO-8859-1 semantics",
+                this::strictByteSemantics));
+        tests.add(new NamedTest("legacy manager UTF-8 migration is isolated from external configs",
+                this::legacyManagerMigration));
+        tests.add(new NamedTest("secret detection covers colon whitespace and continuation syntax",
+                this::secretGrammar));
+        tests.add(new NamedTest("full-file Properties parsing is authoritative for malformed continuations",
+                this::fullFileParserAuthoritative));
+        tests.add(new NamedTest("full-file parser matches Properties.load across deterministic malformed input",
+                this::fullFileParserDifferential));
+        tests.add(new NamedTest("ambiguous Properties syntax requires explicit canonicalization",
+                this::ambiguousSyntaxCanonicalization));
+        tests.add(new NamedTest("single Windows backslashes are warned without exposing values",
+                this::singleBackslashWarning));
         Random random = new Random(0xC0F16L);
         for (int index = 0; index < 50; index++) {
             long seed = random.nextLong();
@@ -268,6 +288,210 @@ public final class ConfigDocumentTests implements TestSuite {
                     key + " case variant must remain controlled");
         }
         Assertions.isFalse(ManagedConfigService.isProfileControlled("AutoRestartTime"), "ordinary setting must not be controlled");
+    }
+
+    private void javaPropertiesGrammar() {
+        String source = "# hash comment\n"
+                + "! bang comment\n"
+                + "ColonKey:colon value\n"
+                + "SpaceKey whitespace value\n"
+                + "Escaped\\ Key=escaped\\ value\\:\\=\\#\\!\n"
+                + "Continued=first\\\n    second\\\n\\tthird\n"
+                + "Unicode=\\u004A\\u00F6rg\n";
+        IbcConfigDocument document = IbcConfigDocument.parse(source);
+        Assertions.equals("colon value", document.get("ColonKey").orElseThrow(),
+                "colon separator must match Properties.load");
+        Assertions.equals("whitespace value", document.get("SpaceKey").orElseThrow(),
+                "whitespace separator must match Properties.load");
+        Assertions.equals("escaped value:=#!", document.get("Escaped Key").orElseThrow(),
+                "escaped key and value syntax must be decoded");
+        Assertions.equals("firstsecond\tthird", document.get("Continued").orElseThrow(),
+                "continuation lines and escaped tabs must be decoded");
+        Assertions.equals("Jörg", document.get("Unicode").orElseThrow(),
+                "Unicode escapes must be decoded");
+        Assertions.equals(source, document.render(), "unmodified full grammar input must remain lossless");
+    }
+
+    private void canonicalIbcSemantics() throws Exception {
+        IbcConfigDocument document = IbcConfigDocument.empty();
+        document.set("IbLoginId", "Jörg");
+        document.set("SecondFactorDevice", "Téléphone 🔐");
+        document.set("IbPassword", "päss\\test\\u0041");
+        byte[] bytes = document.toIbcBytes();
+        for (byte value : bytes) {
+            Assertions.isTrue((value & 0x80) == 0,
+                    "canonical IBC configuration must be pure ASCII with Unicode escapes");
+        }
+        Properties loaded = new Properties();
+        loaded.load(new ByteArrayInputStream(bytes));
+        Assertions.equals("Jörg", loaded.getProperty("IbLoginId"),
+                "IBC must receive the intended non-ASCII username");
+        Assertions.equals("Téléphone 🔐", loaded.getProperty("SecondFactorDevice"),
+                "IBC must receive the intended second-factor device name");
+        Assertions.equals("päss\\test\\u0041", loaded.getProperty("IbPassword"),
+                "literal backslashes and Unicode-looking password text must remain literal");
+        Assertions.equals(document.activeSettings(), Map.of(
+                "IbLoginId", loaded.getProperty("IbLoginId"),
+                "SecondFactorDevice", loaded.getProperty("SecondFactorDevice"),
+                "IbPassword", loaded.getProperty("IbPassword")),
+                "canonical bytes must preserve all active property semantics");
+    }
+
+    private void strictByteSemantics() {
+        byte[] bytes = new byte[] {'A', '=', (byte) 0xC3, (byte) 0xA4, '\n'};
+        IbcConfigDocument strict = IbcConfigDocument.parseBytes(bytes);
+        Assertions.equals("Ã¤", strict.get("A").orElseThrow(),
+                "external bytes must be interpreted exactly as IBC's ISO-8859-1 loader");
+    }
+
+    private void legacyManagerMigration() {
+        byte[] bytes = "A=ä\n".getBytes(StandardCharsets.UTF_8);
+        Assertions.equals("Ã¤", IbcConfigDocument.parseBytes(bytes).get("A").orElseThrow(),
+                "strict external parsing must never guess UTF-8");
+        Assertions.equals("ä", IbcConfigDocument.parseLegacyManagerBytes(bytes).get("A").orElseThrow(),
+                "legacy manager-owned files may be migrated from the old UTF-8 format");
+        byte[] bom = new byte[] {(byte) 0xEF, (byte) 0xBB, (byte) 0xBF, 'A', '=', '1', '\n'};
+        Assertions.equals("1", IbcConfigDocument.parseLegacyManagerBytes(bom).get("A").orElseThrow(),
+                "legacy manager UTF-8 BOM must be removed only by the migration path");
+        Assertions.isTrue(IbcConfigDocument.parseBytes(bom).get("A").isEmpty(),
+                "strict IBC parsing must not silently discard a BOM that IBC itself would read");
+    }
+
+    private void secretGrammar() {
+        for (String source : List.of(
+                "IbPassword:colon-secret\n",
+                "IbPassword whitespace-secret\n",
+                "FIXPassword=continued\\\n  secret\n",
+                "! copied IbPassword:comment-secret\nA=1\n")) {
+            IbcConfigDocument document = IbcConfigDocument.parse(source);
+            Assertions.isTrue(document.hasPlaintextSecret(),
+                    "all Java Properties secret syntaxes must be detected: " + source);
+            String redacted = document.renderRedacted();
+            Assertions.notContains(redacted, "secret", "diagnostic rendering must redact secret syntax");
+        }
+    }
+
+    private void fullFileParserAuthoritative() throws Exception {
+        String malformed = "\\\r\n";
+        IbcConfigDocument document = IbcConfigDocument.parse(malformed);
+
+        Properties expected = new Properties();
+        expected.load(new java.io.StringReader(malformed));
+        Assertions.equals(Map.of(), expected.stringPropertyNames().stream()
+                        .collect(java.util.stream.Collectors.toMap(
+                                key -> key, expected::getProperty)),
+                "JDK fixture must demonstrate the final-continuation edge case");
+        Assertions.equals(Map.of(), document.activeSettings(),
+                "the full-file JDK parser must be authoritative over the formatting scanner");
+        Assertions.equals(malformed, document.render(),
+                "the formatting model must still preserve the user's exact source text");
+        Assertions.isFalse(document.formattingMatchesIbcSemantics(),
+                "scanner/JDK disagreement must be explicit rather than silently accepted");
+    }
+
+    private void fullFileParserDifferential() throws Exception {
+        Random random = new Random(0x1BC3241L);
+        byte[] alphabet = ("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+                + "\\ =:#!\t\f\r\n._-/").getBytes(StandardCharsets.ISO_8859_1);
+        for (int sample = 0; sample < 2_000; sample++) {
+            byte[] bytes = new byte[random.nextInt(160)];
+            for (int index = 0; index < bytes.length; index++) {
+                bytes[index] = alphabet[random.nextInt(alphabet.length)];
+            }
+
+            Map<String, String> expected;
+            boolean expectedFailure = false;
+            try {
+                Properties properties = new Properties();
+                properties.load(new ByteArrayInputStream(bytes));
+                expected = properties.stringPropertyNames().stream().sorted()
+                        .collect(java.util.stream.Collectors.toMap(
+                                key -> key, properties::getProperty, (left, right) -> right,
+                                java.util.LinkedHashMap::new));
+            } catch (IllegalArgumentException ex) {
+                expected = Map.of();
+                expectedFailure = true;
+            }
+
+            try {
+                IbcConfigDocument document = IbcConfigDocument.parseBytes(bytes);
+                if (expectedFailure) {
+                    Assertions.fail("Manager accepted input rejected by Properties.load at sample " + sample);
+                }
+                Assertions.equals(expected, document.activeSettings(),
+                        "authoritative semantics must match Properties.load at sample " + sample);
+            } catch (IllegalArgumentException ex) {
+                if (!expectedFailure) {
+                    throw new AssertionError("Manager rejected input accepted by Properties.load at sample "
+                            + sample, ex);
+                }
+            }
+        }
+    }
+
+    private void ambiguousSyntaxCanonicalization() {
+        IbcConfigDocument ambiguous = IbcConfigDocument.parse("\\\r\n");
+        List<io.github.ibcmanager.model.ValidationIssue> external =
+                new ConfigValueValidator().validate(ambiguous);
+        Assertions.isTrue(external.stream().anyMatch(issue -> issue.field().equals("config.ini")
+                        && issue.severity() == io.github.ibcmanager.model.Severity.WARNING),
+                "an imported ambiguous file must receive a non-destructive warning");
+        List<io.github.ibcmanager.model.ValidationIssue> managed =
+                new ConfigValueValidator().validateManagedConfig(ambiguous);
+        Assertions.isTrue(managed.stream().anyMatch(issue -> issue.field().equals("config.ini")
+                        && issue.severity() == io.github.ibcmanager.model.Severity.ERROR),
+                "manager-owned ambiguous syntax must be blocked until explicitly canonicalized");
+        Assertions.throwsType(IllegalStateException.class, () -> ambiguous.set("A", "1"),
+                "ambiguous raw formatting must not be mutated implicitly");
+        Assertions.throwsType(IllegalStateException.class, ambiguous::toIbcBytes,
+                "ambiguous raw formatting must not be written implicitly");
+
+        IbcConfigDocument canonical = ambiguous.canonicalizedCopy();
+        Assertions.isTrue(canonical.formattingMatchesIbcSemantics(),
+                "explicit canonicalization must remove the scanner/JDK disagreement");
+        Assertions.equals(Map.of(), canonical.activeSettings(),
+                "canonicalization must preserve the authoritative IBC semantic map");
+        Assertions.equals(0, canonical.toIbcBytes().length,
+                "canonical output for an empty semantic map must contain no invented property");
+    }
+
+    private void singleBackslashWarning() {
+        IbcConfigDocument unsafePath = IbcConfigDocument.parse("IbDir=C:\\Jts\n");
+        Assertions.equals("C:Jts", unsafePath.get("IbDir").orElseThrow(),
+                "the Manager must expose exactly what Properties.load gives IBC");
+        Assertions.equals(java.util.Set.of("IbDir"), unsafePath.suspiciousBackslashKeys(),
+                "a path containing an unescaped single backslash must be identified");
+        List<io.github.ibcmanager.model.ValidationIssue> pathIssues =
+                new ConfigValueValidator().validate(unsafePath);
+        Assertions.isTrue(pathIssues.stream().anyMatch(issue -> issue.field().equals("IbDir")
+                        && issue.severity() == io.github.ibcmanager.model.Severity.WARNING
+                        && issue.message().contains("C:\\\\Jts")
+                        && issue.message().contains("C:\\Jts")),
+                "the warning must show the safe doubled-backslash form and the unsafe form");
+
+        IbcConfigDocument safePath = IbcConfigDocument.parse("IbDir=C:\\\\Jts\n");
+        Assertions.equals("C:\\Jts", safePath.get("IbDir").orElseThrow(),
+                "a doubled backslash must remain literal for IBC");
+        Assertions.equals(java.util.Set.of(), safePath.suspiciousBackslashKeys(),
+                "a correctly escaped path must not produce a warning");
+
+        IbcConfigDocument secret = IbcConfigDocument.parse("IbPassword=do-not-echo\\Jts\n");
+        List<io.github.ibcmanager.model.ValidationIssue> secretIssues =
+                new ConfigValueValidator().validate(secret);
+        String messages = secretIssues.stream()
+                .map(io.github.ibcmanager.model.ValidationIssue::message)
+                .collect(java.util.stream.Collectors.joining("\n"));
+        Assertions.notContains(messages, "do-not-echo",
+                "backslash warnings for sensitive settings must never echo the value");
+        Assertions.isTrue(secretIssues.stream().anyMatch(issue -> issue.field().equals("IbPassword")
+                        && issue.message().contains("single Windows-style backslash")),
+                "a suspicious password escape must warn without displaying password material");
+
+        IbcConfigDocument canonical = IbcConfigDocument.empty();
+        canonical.set("IbDir", "C:\\Jts");
+        IbcConfigDocument reparsed = IbcConfigDocument.parseBytes(canonical.toIbcBytes());
+        Assertions.equals(java.util.Set.of(), reparsed.suspiciousBackslashKeys(),
+                "the canonical writer must not generate a false-positive backslash warning");
     }
 
     private void randomExact(long seed) {

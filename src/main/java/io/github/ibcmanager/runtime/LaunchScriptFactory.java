@@ -5,7 +5,7 @@ import io.github.ibcmanager.app.OperatingSystem;
 import io.github.ibcmanager.model.Profile;
 import io.github.ibcmanager.model.TargetType;
 import io.github.ibcmanager.security.FilePermissionHardener;
-import io.github.ibcmanager.security.TextSafety;
+import io.github.ibcmanager.security.WindowsCommandSafety;
 import io.github.ibcmanager.storage.AtomicFileWriter;
 
 import java.io.IOException;
@@ -19,14 +19,23 @@ import java.util.Objects;
 public final class LaunchScriptFactory implements LaunchSpecFactory {
     private final AppPaths paths;
     private final OperatingSystem operatingSystem;
+    private final IbcJavaRuntimeResolver javaRuntimeResolver;
 
     public LaunchScriptFactory(AppPaths paths) {
-        this(paths, OperatingSystem.current());
+        this(paths, OperatingSystem.current(), new IbcJavaRuntimeResolver());
     }
 
     public LaunchScriptFactory(AppPaths paths, OperatingSystem operatingSystem) {
+        this(paths, operatingSystem, new IbcJavaRuntimeResolver(operatingSystem, System.getenv(),
+                new io.github.ibcmanager.security.DefaultCommandExecutor(),
+                new OfflineApplicationLayoutResolver()));
+    }
+
+    public LaunchScriptFactory(AppPaths paths, OperatingSystem operatingSystem,
+            IbcJavaRuntimeResolver javaRuntimeResolver) {
         this.paths = Objects.requireNonNull(paths, "paths");
         this.operatingSystem = Objects.requireNonNull(operatingSystem, "operatingSystem");
+        this.javaRuntimeResolver = Objects.requireNonNull(javaRuntimeResolver, "javaRuntimeResolver");
     }
 
     public LaunchSpec create(Profile profile, Path runtimeConfig) throws IOException {
@@ -35,48 +44,73 @@ public final class LaunchScriptFactory implements LaunchSpecFactory {
         if (operatingSystem != OperatingSystem.WINDOWS) {
             throw new IOException("IBC Manager 1.0 launches IBC only on Windows");
         }
+        IbcJavaRuntimeResolver.ResolvedJava resolvedJava = javaRuntimeResolver.resolve(profile);
         Path runtimeDirectory = paths.runtimeDirectory(profile.id());
         FilePermissionHardener.hardenDirectory(runtimeDirectory);
         Path script = runtimeDirectory.resolve("launch.cmd");
 
-        List<String> arguments = new ArrayList<>();
-        arguments.add(profile.twsMajorVersion());
-        if (profile.targetType() == TargetType.GATEWAY) arguments.add("/Gateway");
-        arguments.add("/TwsPath:" + profile.twsPath());
-        arguments.add("/TwsSettingsPath:" + profile.twsSettingsPath());
-        arguments.add("/IbcPath:" + profile.ibcPath());
-        arguments.add("/Config:" + runtimeConfig);
-        arguments.add("/Mode:" + profile.tradingMode().ibcValue());
-        arguments.add("/On2FATimeout:" + profile.twoFactorTimeoutAction().ibcValue());
+        List<LaunchArgument> arguments = new ArrayList<>();
+        arguments.add(new LaunchArgument(profile.twsMajorVersion(), true));
+        if (profile.targetType() == TargetType.GATEWAY) arguments.add(new LaunchArgument("/Gateway", true));
+        arguments.add(new LaunchArgument("/TwsPath:" + profile.twsPath(), true));
+        arguments.add(new LaunchArgument("/TwsSettingsPath:" + profile.twsSettingsPath(), true));
+        arguments.add(new LaunchArgument("/IbcPath:" + profile.ibcPath(), true));
+        // StartIBC.bat expands CONFIG through ordinary CMD variable contexts. The runtime
+        // configuration is therefore located below the already validated TWS settings path and
+        // must satisfy the same strict metacharacter policy as every other external argument.
+        arguments.add(new LaunchArgument("/Config:" + runtimeConfig, true));
+        arguments.add(new LaunchArgument("/JavaPath:" + resolvedJava.directory(), true));
+        arguments.add(new LaunchArgument("/Mode:" + profile.tradingMode().ibcValue(), true));
+        arguments.add(new LaunchArgument("/On2FATimeout:" + profile.twoFactorTimeoutAction().ibcValue(), true));
 
         Path officialLauncher = profile.ibcPath().resolve("scripts").resolve("StartIBC.bat");
         StringBuilder content = new StringBuilder();
         content.append("@echo off\r\n");
         content.append("chcp 65001 >nul\r\n");
         content.append("setlocal DisableDelayedExpansion\r\n");
-        content.append("call ").append(quote(officialLauncher.toString()));
-        for (String argument : arguments) content.append(' ').append(quote(argument));
+        content.append("call ").append(quoteExternal(officialLauncher.toString()));
+        for (LaunchArgument argument : arguments) {
+            content.append(' ').append(argument.external() ? quoteExternal(argument.value())
+                    : quoteInternal(argument.value()));
+        }
         content.append("\r\n");
         content.append("set \"IBC_MANAGER_EXIT=%ERRORLEVEL%\"\r\n");
         content.append("exit /b %IBC_MANAGER_EXIT%\r\n");
         AtomicFileWriter.write(script, content.toString().getBytes(StandardCharsets.UTF_8), false);
         FilePermissionHardener.hardenFile(script);
 
-        String commandLine = "call " + quote(script.toString());
+        String commandLine = "call " + quoteInternal(script.toString());
         return new LaunchSpec(
                 List.of("cmd.exe", "/d", "/s", "/c", commandLine),
                 runtimeDirectory,
                 Map.of(),
                 script,
-                commandLine);
+                commandLine,
+                runtimeConfig);
     }
 
     static String quote(String value) {
+        return quoteExternal(value);
+    }
+
+    static String quoteExternal(String value) {
+        return quoteChecked(value, true);
+    }
+
+    static String quoteInternal(String value) {
+        return quoteChecked(value, false);
+    }
+
+    private static String quoteChecked(String value, boolean vulnerableOfficialExpansion) {
         Objects.requireNonNull(value, "value");
-        if (value.indexOf('"') >= 0 || TextSafety.containsConfigBreakingControl(value)
-                || value.indexOf('%') >= 0 || value.indexOf('!') >= 0) {
-            throw new IllegalArgumentException("Value cannot be represented safely in an IBC launch script");
-        }
+        if (vulnerableOfficialExpansion) WindowsCommandSafety.requireSafeExternalArgument(value);
+        else WindowsCommandSafety.requireSafeInternalArgument(value);
         return '"' + value + '"';
+    }
+
+    private record LaunchArgument(String value, boolean external) {
+        private LaunchArgument {
+            Objects.requireNonNull(value, "value");
+        }
     }
 }

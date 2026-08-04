@@ -3,6 +3,7 @@ package io.github.ibcmanager.config;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -10,6 +11,7 @@ import java.util.Set;
 public final class IbcConfigSchema {
     private static final List<SettingDefinition> DEFINITIONS = buildDefinitions();
     private static final Map<String, SettingDefinition> BY_KEY = buildMap();
+    private static final Map<String, SettingDefinition> BY_LOWER_KEY = buildLowerMap();
     private static final Set<String> SENSITIVE = Set.of("IbPassword", "FIXPassword");
 
     private IbcConfigSchema() {
@@ -21,6 +23,15 @@ public final class IbcConfigSchema {
 
     public static Optional<SettingDefinition> find(String key) {
         return Optional.ofNullable(BY_KEY.get(key));
+    }
+
+    public static Optional<SettingDefinition> findIgnoreCase(String key) {
+        if (key == null) return Optional.empty();
+        return Optional.ofNullable(BY_LOWER_KEY.get(key.toLowerCase(Locale.ROOT)));
+    }
+
+    public static String canonicalKey(String key) {
+        return findIgnoreCase(key).map(SettingDefinition::key).orElse(key);
     }
 
     public static boolean isSensitive(String key) {
@@ -37,6 +48,18 @@ public final class IbcConfigSchema {
         return Map.copyOf(result);
     }
 
+    private static Map<String, SettingDefinition> buildLowerMap() {
+        Map<String, SettingDefinition> result = new LinkedHashMap<>();
+        for (SettingDefinition definition : DEFINITIONS) {
+            String lower = definition.key().toLowerCase(Locale.ROOT);
+            if (result.put(lower, definition) != null) {
+                throw new IllegalStateException("IBC schema contains keys differing only by case: "
+                        + definition.key());
+            }
+        }
+        return Map.copyOf(result);
+    }
+
     private static List<SettingDefinition> buildDefinitions() {
         List<SettingDefinition> items = new ArrayList<>();
         add(items, "FIX", "FIX CTCI gateway", "Startup", SettingType.BOOLEAN, List.of("yes", "no"), "no", "Start the FIX CTCI gateway instead of the regular IB API gateway.", false, true);
@@ -48,7 +71,7 @@ public final class IbcConfigSchema {
         add(items, "ReloginAfterSecondFactorAuthenticationTimeout", "Retry after 2FA timeout", "Authentication", SettingType.BOOLEAN, List.of("yes", "no"), "no", "Restart the login sequence after second-factor authentication times out.", false, false);
         add(items, "SecondFactorAuthenticationExitInterval", "2FA completion exit interval", "Authentication", SettingType.INTEGER, List.of(), "", "Seconds to wait after the second-factor action before IBC exits.", false, true);
         add(items, "SecondFactorAuthenticationTimeout", "IBKR 2FA timeout", "Authentication", SettingType.INTEGER, List.of(), "180", "IBKR second-factor timeout in seconds.", false, true);
-        add(items, "ExitAfterSecondFactorAuthenticationTimeout", "Legacy exit after 2FA timeout", "Authentication", SettingType.BOOLEAN, List.of("yes", "no"), "no", "Deprecated IBC setting retained for compatibility.", false, true);
+        add(items, "ExitAfterSecondFactorAuthenticationTimeout", "Legacy exit after 2FA timeout", "Authentication", SettingType.TRI_STATE_BOOLEAN, List.of("", "yes", "no"), "", "Deprecated IBC setting retained for compatibility; blank lets the current ReloginAfter... setting govern behavior.", false, true);
         add(items, "TradingMode", "Trading mode", "Authentication", SettingType.ENUM, List.of("live", "paper"), "live", "Select live or paper trading.", false, false);
         add(items, "AcceptNonBrokerageAccountWarning", "Accept paper-account warning", "Authentication", SettingType.BOOLEAN, List.of("yes", "no"), "no", "Automatically accept the non-brokerage paper-account warning.", false, false);
         add(items, "LoginDialogDisplayTimeout", "Login dialog timeout", "Authentication", SettingType.INTEGER, List.of(), "60", "Seconds to wait for the login dialog before IBC restarts.", false, false);
@@ -65,9 +88,9 @@ public final class IbcConfigSchema {
         }
         add(items, "AcceptBidAskLastSizeDisplayUpdateNotification", "US stock size notification", "API", SettingType.ENUM, List.of("", "accept", "defer", "ignore"), "", "How IBC handles the bid/ask/last size notification.", false, true);
         add(items, "SendMarketDataInLotsForUSstocks", "Send US stock sizes in lots", "API", SettingType.TRI_STATE_BOOLEAN, List.of("", "yes", "no"), "", "Blank preserves the current API setting.", false, true);
-        add(items, "TrustedTwsApiClientIPs", "Trusted API client IPs", "API", SettingType.IP_LIST, List.of(), "", "Comma-separated list. Relevant to the FIX gateway only.", false, true);
+        add(items, "TrustedTwsApiClientIPs", "Trusted API client IPs", "API", SettingType.IP_LIST, List.of(), "", "Comma-separated trusted-client list used only by IBC FIX CTCI Gateway mode; IBC Manager does not support FIX mode.", false, true);
         add(items, "ResetOrderIdsAtStart", "Reset API order IDs at start", "API", SettingType.TRI_STATE_BOOLEAN, List.of("", "yes", "no"), "", "Reset the API order ID sequence at startup.", false, true);
-        add(items, "ConfirmOrderIdReset", "Order-ID reset confirmation", "API", SettingType.TEXT, List.of(), "", "Pair such as confirm/reject. See IBC documentation.", false, true);
+        add(items, "ConfirmOrderIdReset", "Order-ID reset confirmation", "API", SettingType.TEXT, List.of(), "ignore/ignore", "Two lowercase actions separated by '/'; each must be confirm, reject, or ignore.", false, true);
         add(items, "AutoLogoffTime", "Daily auto-logoff", "Scheduling", SettingType.TIME_12_HOUR, List.of(), "", "Daily time in hh:mm AM/PM format.", false, false);
         add(items, "AutoRestartTime", "Daily auto-restart", "Scheduling", SettingType.TIME_12_HOUR, List.of(), "", "Daily time in hh:mm AM/PM format.", false, false);
         add(items, "ColdRestartTime", "Sunday cold restart", "Scheduling", SettingType.TIME_24_HOUR, List.of(), "", "Sunday cold-restart time in HH:mm local time.", false, false);
@@ -84,7 +107,8 @@ public final class IbcConfigSchema {
         add(items, "CommandPrompt", "Command-server prompt", "Command server", SettingType.TEXT, List.of(), "", "Optional prompt returned by the IBC command server.", false, true);
         add(items, "SuppressInfoMessages", "Suppress command info messages", "Command server", SettingType.BOOLEAN, List.of("yes", "no"), "yes", "Suppress intermediate command-server messages.", false, true);
         add(items, "LogStructureScope", "Window structure scope", "Diagnostics", SettingType.ENUM, List.of("known", "unknown", "untitled", "all"), "known", "Which windows are eligible for structure logging.", false, true);
-        add(items, "LogStructureWhen", "Window structure logging", "Diagnostics", SettingType.ENUM, List.of("never", "open", "openclose", "activate"), "never", "When IBC logs Swing component structure.", false, true);
+        add(items, "LogStructureWhen", "Window structure logging", "Diagnostics", SettingType.ENUM, List.of("never", "open", "openclose", "activate", "yes", "true", "no", "false", "activated", "closed", "closing", "deactivated", "deiconified", "focused", "iconified", "lost focus", "opened", "state changed"), "never", "When IBC logs Swing component structure, including IBC's boolean aliases and window-event names.", false, true);
+        add(items, "LogComponents", "Legacy component logging", "Diagnostics", SettingType.ENUM, List.of("ignore", "never", "open", "openclose", "activate", "yes", "true", "no", "false", "activated", "closed", "closing", "deactivated", "deiconified", "focused", "iconified", "lost focus", "opened", "state changed"), "ignore", "Deprecated. A non-ignore value overrides LogStructureScope and LogStructureWhen in IBC 3.24.1.", false, true);
         add(items, "IncludeStackTraceForExceptions", "Include exception stack traces", "Diagnostics", SettingType.TRI_STATE_BOOLEAN, List.of("", "yes", "no"), "", "Include stack traces for unhandled exceptions.", false, true);
         return List.copyOf(items);
     }

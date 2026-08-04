@@ -1,121 +1,127 @@
-# IBC Manager 1.0.13 test report
+# IBC Manager 1.0.19 test report
 
 ## Release identity
 
-- Application version: **1.0.13**
+- Application version: **1.0.19**
 - IBC compatibility baseline: **3.24.1**
-- Validation date: **2026-08-03**
-- Runtime target: **Java 17 or newer**
-- Compilation policy: `--release 17 -encoding UTF-8 -Xlint:all -Werror`
-- External Java runtime dependencies: **none**
+- Java source and bytecode target: **17**
+- Production Java source files: **114**
+- Test Java source files: **24**
 
-## Automated result
+## Result
 
-| Gate | Result |
-|---|---:|
-| Production Java source files | **101 compiled** |
-| Test Java source files | **24 compiled** |
-| Automated test cases | **477 passed** |
-| Assertions | **5,484 passed** |
-| Failed tests | **0** |
-| Skipped tests | **0** |
-| Compiler warnings | **0** |
-| Java bytecode target | **17 / class-file major 61** |
+- Automated test cases: **538 passed**
+- Assertions: **8,040 passed**
+- Failures: **0**
+- Skipped tests: **0**
+- Compiler warnings: **0**, with warnings treated as errors
 
-## Reported runtime symptom
-
-A healthy profile's IBC output repeatedly accumulated:
+Compilation uses:
 
 ```text
-CommandServer: ControlFrom setting =
-CommandServer accepted connection from: /127.0.0.1
-Closing command channel
+javac --release 17 -encoding UTF-8 -g -Xlint:all -Werror
 ```
 
-The sequence appeared at the manager's two-second status-refresh cadence.
+## Version 1.0.19 regression coverage
 
-## Root-cause regression
+### Authoritative Java Properties semantics
 
-The old controller used `TcpPortProbe` against both the IB API port and IBC
-command port during every refresh. Connecting to the IBC command port creates a
-real command channel, so IBC correctly logged every health check. Explicit
-commands also performed a redundant pre-probe before sending the command.
+IBC 3.24.1 reads `config.ini` with one full-file
+`Properties.load(InputStream)` operation. The release tests therefore compare
+IBC Manager's imported byte semantics directly with that JDK parser rather than
+with the Manager's formatting scanner.
 
-Version 1.0.13 adds independent gates for:
+Coverage includes:
 
-1. Parsing IBC command-server STARTING, OPEN, and CLOSED lifecycle output.
-2. Proving twelve consecutive periodic refreshes create zero command-port
-   connections while API TCP monitoring continues.
-3. Proving explicit commands and graceful Stop are not preceded by a TCP probe.
-4. Proving process reattachment performs no constructor-time connection, allows
-   one fallback probe on first refresh when history is unavailable, and never
-   repeats it on later refreshes.
-5. Rejecting source changes that reference the command port from the periodic
-   refresh body or call `portProbe.isOpen` from the command-send path.
+- the final-continuation edge case where a lone backslash plus final CRLF has an
+  empty authoritative property map but is not safely decomposable as one
+  independent property entry;
+- 2,000 deterministic malformed/random ISO-8859-1 byte sequences compared with
+  a real `Properties.load(InputStream)` result or rejection;
+- explicit mismatch reporting when the authoritative semantic map and
+  comment/order-preserving scanner disagree;
+- blocked mutation and persistent writing until the user corrects or explicitly
+  canonicalizes the ambiguous syntax;
+- canonical output reloaded through `Properties.load(InputStream)` before use;
+- Unicode, separators, literal backslashes, and trailing-space mechanics;
+- warnings for suspicious single Windows backslashes without displaying secret
+  content.
 
-## Retained behavior
+### StartIBC lifecycle and normal shutdown
 
-The tests also verify that:
+The log/parser/controller tests cover the wrapper and child-JVM distinction used
+by official `StartIBC.bat`:
 
-- IBC's ready/listening output enables command actions without a probe;
-- closing one client command channel does not mark the server itself closed;
-- command-server shutdown output invalidates readiness;
-- a successful command confirms readiness;
-- an I/O failure invalidates cached readiness;
-- a server-side command rejection propagates while retaining transport
-  availability;
-- Restart clears login/session hints without discarding the command server that
-  remains active;
-- launch preflight still rejects an occupied command port before credentials are
-  loaded or a temporary runtime config is created;
-- API TCP monitoring and its handshake caveat remain unchanged.
+- `Program has exited` remains non-terminal while the wrapper decides what to do;
+- automatic restart, cold restart, login-dialog timeout recovery, and
+  second-factor timeout recovery enter yellow `RESTARTING`;
+- a replacement `Starting IBC with this command:` marker revokes capabilities
+  from the prior child generation;
+- exact `Normal exit`, `Gateway finished at`, and `TWS finished at` wrapper
+  markers permit a zero-code exit to finish as `STOPPED`, including `ClosedownAt`;
+- unrelated lines that merely contain the words `normal exit` do not count as a
+  normal wrapper marker and cannot mask a crash;
+- exact `Exiting after error with exit code=` child output remains non-terminal
+  until the wrapper restarts or exits;
+- the generic `Normal exit` / `Gateway finished at` footer cannot overwrite a
+  previously reported IBC child error, even when the wrapper exits with code zero;
+- an unrecovered wrapper exit after an IBC error becomes `ERROR`.
 
-## Complete retained coverage
+### IBC command replies
 
-The full suite continues to cover:
+The command-client fixture covers:
 
-- randomized profile/configuration round trips;
-- secret detection, DPAPI command handling, redaction, and temporary credential
-  lifecycle;
-- transactional profile save/delete rollback and startup recovery;
-- bounded, strict-decoding, no-follow filesystem operations;
-- IBC command deadlines and response bounds;
-- exact PID/start-time/fingerprint process ownership and reattachment;
-- process-tree cleanup, including descendants created after cooperative shutdown
-  begins;
-- 60-second application/process log batching and detached relay behavior;
-- installation discovery and transactional official-IBC installation;
-- Windows prerequisite consent and package-script invariants;
-- Swing models, action confirmations, status indicators, and real-window GUI
-  smoke;
-- deterministic JAR, normal release ZIP, source ZIP, and Windows-archive
-  assembly invariants.
+- exact bare `OK` as completed;
+- exact bare `ERROR` as rejected;
+- ordinary `OK ...` and `ERROR ...` replies;
+- preliminary `OK ... in progress` followed by later success or rejection;
+- `OK Goodbye` excluded from command success;
+- bounded line, response, and total-deadline handling.
 
-## Release gates
+### Windows batch-path diagnostics
 
-The completed cross-platform release procedure performs:
+Tests enforce the fail-closed `StartIBC.bat` argument policy for:
 
-1. three complete clean test/JAR/smoke/distribution builds;
-2. hash comparison of deterministic JAR and ZIP artifacts;
-3. real-window Swing smoke under Xvfb;
-4. extracted-release `--version` and isolated `--headless-smoke` execution;
-5. extracted-source clean rebuild, complete retest, GUI smoke, and artifact
-   comparison;
-6. optional Ant-wrapper compatibility validation;
-7. ZIP CRC/path/duplicate, source-cleanliness, CRLF/no-BOM, class-file, module,
-   licence, and no-bundled-IBC checks;
-8. patch reproduction and SHA-256 manifest generation/verification.
+```text
+" % ! & | < > ^ ( )
+```
 
-The final gate record and hashes are published separately as
-`IBC_Manager_1.0.13_FINAL_VALIDATION.txt` and
-`IBC_Manager_1.0.13_SHA256SUMS.txt`.
+The profile validator and launch-script factory use one shared policy. Tests
+verify that the exact offending character is reported, safe locations such as
+`C:\IBC` and `C:\Jts` are suggested, and `C:\Program Files (x86)` is rejected
+because its parentheses cannot be transported safely through the official batch
+wrapper.
 
-## Windows-native validation boundary
+## Full release gates
 
-This environment cannot execute Windows PowerShell 5.1, DPAPI, Task Scheduler,
-WinGet/WiX, Windows `jpackage --type exe`, NTFS ACLs, or a real IBKR login. The
-corrected source must therefore be run on Windows with `validate-windows.bat`
-and `package-windows.bat`. The 1.0.13 acceptance check is that an idle profile
-no longer creates a new command-server accepted/closed sequence every two
-seconds. One sequence per real command and at most one fallback sequence during
-reattachment are normal.
+The release gate includes:
+
+- three complete deterministic `clean test jar smoke dist` builds;
+- identical JAR and ZIP hashes across repeated builds;
+- packaged JAR `--version` validation;
+- isolated `--headless-smoke` validation;
+- real-window Swing `MainFrame` smoke testing under Xvfb;
+- extraction and execution of the normal release ZIP;
+- extraction, clean rebuild, full retest, and GUI smoke of the source ZIP;
+- byte-for-byte comparison of source-rebuilt JAR and release/source ZIP files;
+- optional Ant-wrapper compatibility build where Ant is available;
+- patch application to the clean 1.0.18 source and artifact reproduction;
+- JAR/ZIP CRC, path, duplicate-entry, and source-cleanliness checks;
+- Java 17 class-file major version 61 verification;
+- Java module dependency audit;
+- Windows `.bat` and `.ps1` CRLF/no-BOM checks;
+- SHA-256 manifest generation and verification.
+
+## Native Windows acceptance
+
+The cross-platform release environment cannot execute Windows PowerShell 5.1,
+DPAPI, NTFS ACLs, Task Scheduler, WiX, or Windows `jpackage`. The included
+Windows validation checklist remains required for:
+
+- `validate-windows.bat` and `package-windows.bat` on Windows;
+- private Java 17 installation from a Java 8-only starting point;
+- native EXE and `_Release_windows.zip` generation;
+- real IBC/IB Gateway paper-account login;
+- `ClosedownAt`, automatic restart, cold restart, and timeout recovery against
+  the real official wrapper;
+- real command replies and account/API verification.

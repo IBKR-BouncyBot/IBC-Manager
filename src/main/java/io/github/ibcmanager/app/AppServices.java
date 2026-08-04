@@ -4,15 +4,19 @@ import io.github.ibcmanager.config.ManagedConfigService;
 import io.github.ibcmanager.config.RuntimeConfigFactory;
 import io.github.ibcmanager.diagnostics.DiagnosticBundleService;
 import io.github.ibcmanager.model.Profile;
+import io.github.ibcmanager.runtime.ApplicationStartCoordinator;
 import io.github.ibcmanager.runtime.DefaultProcessLauncher;
+import io.github.ibcmanager.runtime.ListeningPortProbe;
 import io.github.ibcmanager.runtime.IbcCommandClient;
 import io.github.ibcmanager.runtime.LaunchScriptFactory;
 import io.github.ibcmanager.runtime.ProcessIdentityStore;
 import io.github.ibcmanager.runtime.ProcessTreeTerminator;
+import io.github.ibcmanager.runtime.OfflineApplicationLayoutResolver;
 import io.github.ibcmanager.runtime.ProfileRuntimeController;
+import io.github.ibcmanager.runtime.PortProbe;
 import io.github.ibcmanager.runtime.RuntimeRegistry;
-import io.github.ibcmanager.runtime.TcpPortProbe;
 import io.github.ibcmanager.security.CredentialStore;
+import io.github.ibcmanager.security.DefaultCommandExecutor;
 import io.github.ibcmanager.security.FilePermissionHardener;
 import io.github.ibcmanager.security.UnavailableCredentialStore;
 import io.github.ibcmanager.security.WindowsDpapiCredentialStore;
@@ -23,6 +27,7 @@ import io.github.ibcmanager.validation.ProfileSetValidator;
 import io.github.ibcmanager.validation.ProfileValidator;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.util.Objects;
 
@@ -83,6 +88,10 @@ public final class AppServices implements AutoCloseable {
         LaunchScriptFactory launchFactory = new LaunchScriptFactory(paths, os);
         ProcessIdentityStore identityStore = new ProcessIdentityStore(paths);
         Clock clock = Clock.systemUTC();
+        PortProbe portProbe = new ListeningPortProbe(os, new DefaultCommandExecutor());
+        ApplicationStartCoordinator startCoordinator = new ApplicationStartCoordinator(
+                Path.of(System.getProperty("java.io.tmpdir"), "IBCManager", "application-start-locks"),
+                new OfflineApplicationLayoutResolver());
         RuntimeRegistry registry = new RuntimeRegistry((Profile profile) -> new ProfileRuntimeController(
                 profile,
                 paths,
@@ -91,11 +100,12 @@ public final class AppServices implements AutoCloseable {
                 credentialStore,
                 launchFactory,
                 new DefaultProcessLauncher(),
-                new TcpPortProbe(),
+                portProbe,
                 new IbcCommandClient(),
                 identityStore,
                 new ProcessTreeTerminator(),
-                clock));
+                clock,
+                startCoordinator));
         DiagnosticBundleService diagnostics = new DiagnosticBundleService(paths, configService, validator, clock);
         TaskSchedulerService scheduler = new WindowsTaskSchedulerService();
         return new AppServices(paths, credentialStore, repository, configService, saveService, deletionService, validator,

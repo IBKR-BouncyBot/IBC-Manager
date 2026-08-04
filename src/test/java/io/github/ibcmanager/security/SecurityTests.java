@@ -52,6 +52,8 @@ public final class SecurityTests implements TestSuite {
                 new NamedTest("file permission hardener applies owner-only POSIX modes", this::permissions),
                 new NamedTest("Windows directory ACL grants the owner traverse permission", this::directoryAclTraverse),
                 new NamedTest("runtime config lease removes password file", this::runtimeLease),
+                new NamedTest("runtime config lease canonicalizes stale ambiguous Properties syntax",
+                        this::runtimeLeaseAmbiguous),
                 new NamedTest("runtime config lease is idempotent", this::runtimeLeaseIdempotent));
     }
 
@@ -394,6 +396,17 @@ public final class SecurityTests implements TestSuite {
             lease.close();
             lease.close();
             Assertions.isFalse(Files.exists(file), "second close must remain harmless");
+        } finally { TestSupport.deleteTree(root); }
+    }
+
+    private void runtimeLeaseAmbiguous() throws Exception {
+        Path root = TestSupport.tempDirectory("runtime-lease-ambiguous");
+        try {
+            Path file = root.resolve("config.ini");
+            Files.writeString(file, "\\\r\n");
+            new RuntimeConfigLease(file).close();
+            Assertions.isFalse(Files.exists(file),
+                    "a stale malformed runtime file must still be scrubbed and removed using IBC semantics");
         } finally { TestSupport.deleteTree(root); }
     }
 

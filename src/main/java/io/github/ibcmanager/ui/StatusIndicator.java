@@ -89,15 +89,17 @@ final class StatusIndicator extends JPanel {
     static Presentation presentationFor(RuntimeState state) {
         if (state == null) return new Presentation(Tone.YELLOW, YELLOW, "No profile selected");
         return switch (state) {
-            case API_SOCKET_OPEN -> new Presentation(Tone.GREEN, GREEN, "API TCP open");
-            case RUNNING -> new Presentation(Tone.YELLOW, YELLOW, "Logged in; API closed");
+            case API_LISTENER_DETECTED -> new Presentation(Tone.GREEN, GREEN, "API listener detected");
+            case RUNNING -> new Presentation(Tone.YELLOW, YELLOW, "Logged in; API not confirmed");
             case ERROR -> new Presentation(Tone.RED, RED, "Error");
             case STOPPED -> new Presentation(Tone.RED, RED, "Stopped");
             case VALIDATING -> new Presentation(Tone.YELLOW, YELLOW, "Validating");
             case STARTING -> new Presentation(Tone.YELLOW, YELLOW, "Starting");
+            case RESTARTING -> new Presentation(Tone.YELLOW, YELLOW, "Restarting");
             case WAITING_FOR_LOGIN -> new Presentation(Tone.YELLOW, YELLOW, "Waiting for login");
             case WAITING_FOR_SECOND_FACTOR -> new Presentation(Tone.YELLOW, YELLOW, "Waiting for second factor");
             case PAUSED -> new Presentation(Tone.YELLOW, YELLOW, "Paused");
+            case PAUSING -> new Presentation(Tone.YELLOW, YELLOW, "Pausing");
             case STOPPING -> new Presentation(Tone.YELLOW, YELLOW, "Stopping");
             case UNKNOWN -> new Presentation(Tone.YELLOW, YELLOW, "Checking status");
         };

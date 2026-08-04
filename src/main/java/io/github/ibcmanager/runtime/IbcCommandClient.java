@@ -30,9 +30,9 @@ public final class IbcCommandClient implements CommandClient {
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress(host, port), remainingMillis(deadline));
             try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(
-                            socket.getOutputStream(), StandardCharsets.UTF_8));
+                            socket.getOutputStream(), StandardCharsets.US_ASCII));
                     InputStreamReader reader = new InputStreamReader(
-                            socket.getInputStream(), StandardCharsets.UTF_8)) {
+                            socket.getInputStream(), StandardCharsets.US_ASCII)) {
                 writer.write(command.name());
                 writer.newLine();
                 writer.write("EXIT");
@@ -41,7 +41,7 @@ public final class IbcCommandClient implements CommandClient {
 
                 StringBuilder response = new StringBuilder();
                 StringBuilder line = new StringBuilder();
-                Boolean commandSuccess = null;
+                CommandDisposition disposition = CommandDisposition.UNKNOWN;
                 int lines = 0;
                 boolean previousCarriageReturn = false;
                 boolean goodbye = false;
@@ -51,22 +51,22 @@ public final class IbcCommandClient implements CommandClient {
                         int value = reader.read();
                         if (value < 0) {
                             if (!line.isEmpty()) {
-                                LineOutcome outcome = finishLine(response, line, commandSuccess);
-                                commandSuccess = outcome.commandSuccess();
+                                LineOutcome outcome = finishLine(response, line, disposition);
+                                disposition = outcome.disposition();
                             }
                             break;
                         }
                         char character = (char) value;
                         if (character == '\r') {
-                            LineOutcome outcome = finishLine(response, line, commandSuccess);
-                            commandSuccess = outcome.commandSuccess();
+                            LineOutcome outcome = finishLine(response, line, disposition);
+                            disposition = outcome.disposition();
                             goodbye = outcome.goodbye();
                             lines++;
                             previousCarriageReturn = true;
                         } else if (character == '\n') {
                             if (!previousCarriageReturn) {
-                                LineOutcome outcome = finishLine(response, line, commandSuccess);
-                                commandSuccess = outcome.commandSuccess();
+                                LineOutcome outcome = finishLine(response, line, disposition);
+                                disposition = outcome.disposition();
                                 goodbye = outcome.goodbye();
                                 lines++;
                             }
@@ -88,17 +88,17 @@ public final class IbcCommandClient implements CommandClient {
                 } catch (SocketTimeoutException ex) {
                     if (response.isEmpty() && line.isEmpty()) throw ex;
                     if (!line.isEmpty()) {
-                        LineOutcome outcome = finishLine(response, line, commandSuccess);
-                        commandSuccess = outcome.commandSuccess();
+                        LineOutcome outcome = finishLine(response, line, disposition);
+                        disposition = outcome.disposition();
                     }
                 }
-                return new IbcCommandResult(Boolean.TRUE.equals(commandSuccess), response.toString());
+                return new IbcCommandResult(disposition, response.toString());
             }
         }
     }
 
     private static LineOutcome finishLine(StringBuilder response, StringBuilder line,
-            Boolean commandSuccess) throws IOException {
+            CommandDisposition currentDisposition) throws IOException {
         String value = line.toString();
         line.setLength(0);
         if (response.length() > 0) response.append('\n');
@@ -106,14 +106,21 @@ public final class IbcCommandClient implements CommandClient {
         if (response.length() > MAX_RESPONSE_CHARACTERS) {
             throw new IOException("IBC command-server response exceeds the safety limit");
         }
-        Boolean result = commandSuccess;
+        CommandDisposition result = currentDisposition;
         boolean goodbye = value.equalsIgnoreCase("OK Goodbye");
-        if (value.startsWith("OK ") && !goodbye && result == null) result = true;
-        if (value.startsWith("ERROR ") && result == null) result = false;
+        String upper = value.toUpperCase(java.util.Locale.ROOT);
+        if (upper.equals("ERROR") || upper.startsWith("ERROR ")) {
+            // A later NACK must override a preliminary "OK ... in progress" acknowledgement.
+            result = CommandDisposition.REJECTED;
+        } else if ((upper.equals("OK") || upper.startsWith("OK ")) && !goodbye
+                && result != CommandDisposition.REJECTED) {
+            result = upper.contains(" IN PROGRESS")
+                    ? CommandDisposition.ACCEPTED : CommandDisposition.COMPLETED;
+        }
         return new LineOutcome(result, goodbye);
     }
 
-    private record LineOutcome(Boolean commandSuccess, boolean goodbye) { }
+    private record LineOutcome(CommandDisposition disposition, boolean goodbye) { }
 
     private static int remainingMillis(long deadline) throws SocketTimeoutException {
         long remaining = deadline - System.nanoTime();

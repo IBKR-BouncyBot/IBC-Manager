@@ -30,7 +30,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
-import java.util.jar.JarFile;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -43,7 +42,6 @@ public final class IbcInstallerService {
     private static final long DEFAULT_MAX_ENTRY_BYTES = 128L * 1024L * 1024L;
     private static final String ASSET_PREFIX = "IBCWin-";
     private static final int MAX_VERSION_BYTES = 4096;
-    private static final int MAX_LAUNCHER_BYTES = 1024 * 1024;
     private static final String ACTIVATION_MARKER = ".ibc-manager-install-owner";
     private static final Set<String> WINDOWS_RESERVED_NAMES = Set.of(
             "CON", "PRN", "AUX", "NUL",
@@ -332,35 +330,7 @@ public final class IbcInstallerService {
     }
 
     private static void validateInstallation(Path root) throws IOException, IbcInstallationException {
-        if (Files.isSymbolicLink(root)) {
-            throw new IbcInstallationException("IBC installation directory must not be a symbolic link.");
-        }
-        for (String required : List.of("IBC.jar", "version", "config.ini", "LICENSE.txt")) {
-            if (!SecureFileOperations.isRegularFile(root.resolve(required))) {
-                throw new IbcInstallationException("IBC installation is missing " + required + '.');
-            }
-        }
-        Path startScript = root.resolve("scripts").resolve("StartIBC.bat");
-        if (!SecureFileOperations.isRegularFile(startScript)) {
-            throw new IbcInstallationException("IBC installation is missing scripts\\StartIBC.bat.");
-        }
-        String version = readVersion(root);
-        if (!Version.IBC_BASELINE.equals(version)) {
-            throw new IbcInstallationException("Expected IBC " + Version.IBC_BASELINE
-                    + " but the archive contains version " + version + '.');
-        }
-        try (JarFile jar = new JarFile(root.resolve("IBC.jar").toFile(), true)) {
-            if (jar.getJarEntry("ibcalpha/ibc/IbcTws.class") == null
-                    || jar.getJarEntry("ibcalpha/ibc/IbcGateway.class") == null) {
-                throw new IbcInstallationException(
-                        "IBC.jar does not contain the expected IbcTws and IbcGateway program classes.");
-            }
-        }
-        String launcher = BoundedFileReader.readString(startScript, StandardCharsets.UTF_8,
-                MAX_LAUNCHER_BYTES, "IBC StartIBC.bat");
-        if (!launcher.toLowerCase(Locale.ROOT).contains("ibc.jar")) {
-            throw new IbcInstallationException("scripts\\StartIBC.bat does not reference IBC.jar.");
-        }
+        new IbcInstallationValidator().validate(root);
     }
 
     private static String readVersion(Path root) throws IOException, IbcInstallationException {

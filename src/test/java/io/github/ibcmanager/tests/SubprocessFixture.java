@@ -1,6 +1,7 @@
 package io.github.ibcmanager.tests;
 
 import io.github.ibcmanager.app.SingleInstanceLock;
+import io.github.ibcmanager.config.ConfigValueValidator;
 import io.github.ibcmanager.runtime.DefaultProcessLauncher;
 import io.github.ibcmanager.runtime.LaunchSpec;
 import io.github.ibcmanager.runtime.ManagedProcess;
@@ -10,8 +11,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Map;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 /**
  * Small Java subprocess used by integration tests so the suite does not depend
@@ -41,6 +44,7 @@ public final class SubprocessFixture {
             case "write-pid-and-sleep" -> writePidAndSleep(
                     stringArgument(arguments, 1), longArgument(arguments, 2));
             case "try-lock" -> tryLock(stringArgument(arguments, 1));
+            case "validate-documented-time" -> validateDocumentedTime();
             default -> throw new IllegalArgumentException("Unknown subprocess-fixture mode: " + arguments[0]);
         }
     }
@@ -84,9 +88,19 @@ public final class SubprocessFixture {
     private static void launchBufferedAndExit(String logValue, long flushMillis) throws Exception {
         Path log = Path.of(logValue).toAbsolutePath().normalize();
         Files.createDirectories(log.getParent());
+        Path stableWorkingDirectory = Path.of(System.getProperty("user.dir", "."))
+                .toAbsolutePath().normalize();
+        if (!Files.isDirectory(stableWorkingDirectory)) {
+            throw new IOException("Detached-relay fixture working directory is unavailable: "
+                    + stableWorkingDirectory);
+        }
+        // Keep the detached relay's current directory outside the disposable log tree. Windows
+        // can retain a terminating process's current-directory handle briefly after isAlive()
+        // becomes false, which must not turn successful relay behavior into a cleanup failure.
         LaunchSpec spec = new LaunchSpec(
                 TestSupport.javaCommand("line-then-sleep", "detached-buffered-line", "600"),
-                log.getParent(), Map.of(), log.getParent().resolve("none"), "detached test");
+                stableWorkingDirectory, Map.of(), stableWorkingDirectory.resolve("none"),
+                "detached test");
         ManagedProcess relay = new DefaultProcessLauncher(Duration.ofMillis(flushMillis))
                 .launch(spec, log, "detached-session-header\n");
         System.out.println("RELAY:" + relay.pid());
@@ -154,6 +168,21 @@ public final class SubprocessFixture {
         } finally {
             acquired.close();
         }
+    }
+
+    private static void validateDocumentedTime() {
+        ConfigValueValidator validator = new ConfigValueValidator();
+        var validIssues = validator.validate(Map.of("AutoRestartTime", "11:45 PM"));
+        if (!validIssues.isEmpty()) {
+            throw new IllegalStateException("Documented IBC time was rejected: " + validIssues);
+        }
+        var invalidIssues = validator.validate(Map.of("AutoRestartTime", "11:45 pm"));
+        if (invalidIssues.isEmpty()) {
+            throw new IllegalStateException("Lowercase am/pm was unexpectedly accepted");
+        }
+        Locale locale = Locale.getDefault(Locale.Category.FORMAT);
+        System.out.println("TIME-VALIDATION-OK:" + locale.toLanguageTag());
+        System.out.flush();
     }
 
     private static String stringArgument(String[] arguments, int index) {

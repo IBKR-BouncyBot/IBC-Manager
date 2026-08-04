@@ -389,9 +389,31 @@ public final class IbcInstallerTests implements TestSuite {
                     () -> service(new FakeDownloader(zip(entries))).install(noClassesRoot.resolve("IBC"),
                             InstallProgress.none()),
                     "JAR without IBC classes must fail");
-            Assertions.contains(error.getMessage(), "program classes", "JAR-content error is unclear");
+            Assertions.contains(error.getMessage(), "program class", "JAR-content error is unclear");
         } finally {
             TestSupport.deleteTree(noClassesRoot);
+        }
+
+        Path mismatchRoot = TestSupport.tempDirectory("ibc-install-version-mismatch");
+        try {
+            List<ArchiveEntry> entries = validEntries("");
+            Map<String, byte[]> jarEntries = new LinkedHashMap<>();
+            jarEntries.put("ibcalpha/ibc/IbcTws.class", new byte[]{0});
+            jarEntries.put("ibcalpha/ibc/IbcGateway.class", new byte[]{0});
+            jarEntries.put("ibcalpha/ibc/CommandDispatcher.class", new byte[]{0});
+            jarEntries.put("ibcalpha/ibc/RestartTask.class", new byte[]{0});
+            jarEntries.put("ibcalpha/ibc/DefaultSettings.class", new byte[]{0});
+            jarEntries.put("ibcalpha/ibc/IbcVersionInfo.class",
+                    TestSupport.mismatchedIbcVersionInfoClassBytes());
+            replace(entries, "IBC.jar", jarWithEntries(jarEntries));
+            IbcInstallationException error = Assertions.throwsType(IbcInstallationException.class,
+                    () -> service(new FakeDownloader(zip(entries))).install(mismatchRoot.resolve("IBC"),
+                            InstallProgress.none()),
+                    "mixed version file and IBC.jar must fail");
+            Assertions.contains(error.getMessage(), "internally inconsistent",
+                    "mixed-installation error is unclear");
+        } finally {
+            TestSupport.deleteTree(mismatchRoot);
         }
 
         Path launcherRoot = TestSupport.tempDirectory("ibc-install-launcher");
@@ -484,7 +506,13 @@ public final class IbcInstallerTests implements TestSuite {
         entries.add(new ArchiveEntry(prefix + "config.ini", "IbLoginId=\n".getBytes(StandardCharsets.UTF_8)));
         entries.add(new ArchiveEntry(prefix + "LICENSE.txt", "GPL-3.0\n".getBytes(StandardCharsets.UTF_8)));
         entries.add(new ArchiveEntry(prefix + "scripts/StartIBC.bat",
-                "@echo off\r\njava -cp \"IBC.jar\" ibcalpha.ibc.IbcTws\r\n".getBytes(StandardCharsets.UTF_8)));
+                ("@echo off\r\n"
+                        + "rem IBC.jar\r\n"
+                        + "rem /On2FATimeout\r\n"
+                        + "rem Starting IBC with this command:\r\n"
+                        + "rem JXBROWSER_OPT -DjxBrowserKey=\r\n"
+                        + "rem IBCSessionId\r\n"
+                        + "rem IBC is paused\r\n").getBytes(StandardCharsets.UTF_8)));
         return entries;
     }
 
@@ -495,13 +523,23 @@ public final class IbcInstallerTests implements TestSuite {
         Files.writeString(destination.resolve("config.ini"), "IbLoginId=\n", StandardCharsets.UTF_8);
         Files.writeString(destination.resolve("LICENSE.txt"), "GPL-3.0\n", StandardCharsets.UTF_8);
         Files.writeString(destination.resolve("scripts").resolve("StartIBC.bat"),
-                "@echo off\r\njava -cp \"IBC.jar\" ibcalpha.ibc.IbcTws\r\n", StandardCharsets.UTF_8);
+                "@echo off\r\n"
+                        + "rem IBC.jar\r\n"
+                        + "rem /On2FATimeout\r\n"
+                        + "rem Starting IBC with this command:\r\n"
+                        + "rem JXBROWSER_OPT -DjxBrowserKey=\r\n"
+                        + "rem IBCSessionId\r\n"
+                        + "rem IBC is paused\r\n", StandardCharsets.UTF_8);
     }
 
     private static byte[] validIbcJar() throws IOException {
         Map<String, byte[]> entries = new LinkedHashMap<>();
         entries.put("ibcalpha/ibc/IbcTws.class", new byte[]{(byte) 0xCA, (byte) 0xFE});
         entries.put("ibcalpha/ibc/IbcGateway.class", new byte[]{(byte) 0xCA, (byte) 0xFE});
+        entries.put("ibcalpha/ibc/CommandDispatcher.class", new byte[]{(byte) 0xCA, (byte) 0xFE});
+        entries.put("ibcalpha/ibc/RestartTask.class", new byte[]{(byte) 0xCA, (byte) 0xFE});
+        entries.put("ibcalpha/ibc/DefaultSettings.class", new byte[]{(byte) 0xCA, (byte) 0xFE});
+        entries.put("ibcalpha/ibc/IbcVersionInfo.class", TestSupport.ibcVersionInfoClassBytes());
         return jarWithEntries(entries);
     }
 

@@ -399,7 +399,7 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
         }
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         Assertions.equals(0, process.exitValue(), "build-driver self-test failed: " + output);
-        Assertions.contains(output, "Build-driver self-test passed for version 1.0.13",
+        Assertions.contains(output, "Build-driver self-test passed for version 1.0.19",
                 "build-driver self-test must report the current release version");
     }
 
@@ -592,7 +592,7 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
         Assertions.contains(pack, "runtime\\bin\\java.exe",
                 "package-windows.bat must fail before release assembly when the Java launcher is absent");
         Assertions.contains(pack,
-                "set \"WINDOWS_RELEASE_ZIP=dist\\IBC_Manager_1.0.13_Release_windows.zip\"",
+                "set \"WINDOWS_RELEASE_ZIP=dist\\IBC_Manager_1.0.19_Release_windows.zip\"",
                 "Windows release ZIP filename must equal the normal release name plus _windows");
         Assertions.contains(driver,
                 "IBC_Manager_\" + releaseVersion + \"_Release_windows.zip",
@@ -612,14 +612,14 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
         String build = read("build.xml");
         String run = read("scripts/run.bat");
         String pack = read("scripts/package-windows.bat");
-        Assertions.contains(version, "VERSION = \"1.0.13\"", "application version must be 1.0.13");
-        Assertions.contains(build, "name=\"app.version\" value=\"1.0.13\"",
-                "optional Ant release version must be 1.0.13");
-        Assertions.contains(run, "IBC-Manager-1.0.13.jar", "run JAR must be version 1.0.13");
-        Assertions.contains(pack, "--app-version 1.0.13", "Windows package version must be 1.0.13");
-        Assertions.contains(pack, "IBC-Manager-1.0.13.jar", "packaged JAR must be version 1.0.13");
-        Assertions.contains(pack, "IBC_Manager_1.0.13_Release_windows.zip",
-                "Windows release ZIP must be version 1.0.13");
+        Assertions.contains(version, "VERSION = \"1.0.19\"", "application version must be 1.0.19");
+        Assertions.contains(build, "name=\"app.version\" value=\"1.0.19\"",
+                "optional Ant release version must be 1.0.19");
+        Assertions.contains(run, "IBC-Manager-1.0.19.jar", "run JAR must be version 1.0.19");
+        Assertions.contains(pack, "--app-version 1.0.19", "Windows package version must be 1.0.19");
+        Assertions.contains(pack, "IBC-Manager-1.0.19.jar", "packaged JAR must be version 1.0.19");
+        Assertions.contains(pack, "IBC_Manager_1.0.19_Release_windows.zip",
+                "Windows release ZIP must be version 1.0.19");
     }
 
     private static int count(String source, String token) {

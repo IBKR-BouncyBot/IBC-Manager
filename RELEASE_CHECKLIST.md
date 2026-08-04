@@ -16,9 +16,18 @@
 - [ ] Run every automated test with zero failures and zero skipped tests.
 - [ ] Run the JAR version and isolated headless smoke tests.
 - [ ] Run the real-window Swing smoke test.
-- [ ] Run an idle-profile command-server regression: periodic status refreshes
-      must not create repeated accepted/closed IBC command channels; one
-      reattachment fallback and one connection per real command are permitted.
+- [ ] Differential-check imported IBC configuration bytes against one full-file
+      `Properties.load(InputStream)` pass; malformed scanner/JDK disagreement
+      must require explicit canonicalization.
+- [ ] Exercise normal/scheduled shutdown, automatic/cold/timeout restart, exact
+      IBC error-exit wording, and bare/status-bearing command acknowledgements.
+- [ ] Verify all paths passed to `StartIBC.bat` reject the documented CMD
+      character set with field-specific guidance.
+- [ ] Run idle-profile API and command-server regressions: periodic status
+      refreshes must not create repeated accepted/closed IBC command channels or
+      IB Gateway `version was not sent`/`API client version is missing` entries.
+      Passive reattachment inspection and one connection per real IBC command
+      are permitted.
 - [ ] Complete three clean builds and compare JAR, release ZIP, and source ZIP
       hashes for deterministic output.
 - [ ] Extract and execute the release ZIP.

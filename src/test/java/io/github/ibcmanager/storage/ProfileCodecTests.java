@@ -35,6 +35,7 @@ public final class ProfileCodecTests implements TestSuite {
         tests.add(new NamedTest("rejects duplicate core keys", this::duplicateCore));
         tests.add(new NamedTest("rejects duplicate setting keys", this::duplicateSetting));
         tests.add(new NamedTest("rejects unsupported format versions", this::unsupportedVersion));
+        tests.add(new NamedTest("migrates version 1 compatibility defaults", this::migrateVersionOne));
         tests.add(new NamedTest("rejects missing required keys", this::missingKey));
         tests.add(new NamedTest("rejects invalid integers", this::invalidInteger));
         tests.add(new NamedTest("rejects invalid booleans", this::invalidBoolean));
@@ -65,12 +66,15 @@ public final class ProfileCodecTests implements TestSuite {
                 .twsPath(Path.of("C:/Jts"))
                 .twsSettingsPath(Path.of("C:/Users/test/Jts-NBIS"))
                 .baseConfigPath(Path.of("C:/base/config.ini"))
+                .ibcJavaPath(Path.of("C:/Java17/bin"))
                 .apiPort(7497)
                 .commandServerPort(7463)
                 .bindAddress("127.0.0.1")
                 .username("U1234567")
                 .credentialMode(CredentialMode.ENCRYPTED)
                 .twoFactorTimeoutAction(TwoFactorTimeoutAction.RESTART)
+                .reloginAfterSecondFactorTimeout(true)
+                .forceApiPortAtLaunch(false)
                 .autoStart(true)
                 .minimizeMainWindow(false)
                 .gracefulStopTimeoutSeconds(45)
@@ -79,7 +83,7 @@ public final class ProfileCodecTests implements TestSuite {
         String encoded = codec.encode(profile);
         Assertions.equals(profile, codec.decode(encoded), "complete profile must round-trip");
         Assertions.isTrue(encoded.endsWith("\n"), "encoded profile must end with one newline");
-        Assertions.contains(encoded, "formatVersion=1", "format version must be emitted");
+        Assertions.contains(encoded, "formatVersion=2", "format version must be emitted");
     }
 
     private void deterministicOrdering() {
@@ -126,9 +130,30 @@ public final class ProfileCodecTests implements TestSuite {
     }
 
     private void unsupportedVersion() {
-        String text = codec.encode(base().build()).replace("formatVersion=1", "formatVersion=999");
+        String text = codec.encode(base().build()).replace("formatVersion=2", "formatVersion=999");
         Assertions.throwsType(IllegalArgumentException.class, () -> codec.decode(text),
                 "unsupported format must fail");
+    }
+
+
+    private void migrateVersionOne() {
+        Profile current = base()
+                .twoFactorTimeoutAction(TwoFactorTimeoutAction.RESTART)
+                .forceApiPortAtLaunch(false)
+                .reloginAfterSecondFactorTimeout(false)
+                .build();
+        String legacy = codec.encode(current)
+                .replace("formatVersion=2", "formatVersion=1")
+                .replaceAll("(?m)^ibcJavaPath=.*\n", "")
+                .replaceAll("(?m)^reloginAfterSecondFactorTimeout=.*\n", "")
+                .replaceAll("(?m)^forceApiPortAtLaunch=.*\n", "");
+        Profile migrated = codec.decode(legacy);
+        Assertions.isTrue(migrated.reloginAfterSecondFactorTimeout(),
+                "version 1 restart policy must preserve the old internal-relogin behavior");
+        Assertions.isTrue(migrated.forceApiPortAtLaunch(),
+                "version 1 profiles must preserve the old forced API-port behavior");
+        Assertions.equals(Path.of(""), migrated.ibcJavaPath(),
+                "version 1 profiles must leave the Java override unset");
     }
 
     private void missingKey() {
@@ -198,9 +223,11 @@ public final class ProfileCodecTests implements TestSuite {
                 .commandServerPort(1 + random.nextInt(65535))
                 .username(randomText(random, 24))
                 .credentialMode(CredentialMode.values()[random.nextInt(CredentialMode.values().length)])
+                .reloginAfterSecondFactorTimeout(random.nextBoolean())
+                .forceApiPortAtLaunch(random.nextBoolean())
                 .autoStart(random.nextBoolean())
                 .minimizeMainWindow(random.nextBoolean())
-                .gracefulStopTimeoutSeconds(3 + random.nextInt(298))
+                .gracefulStopTimeoutSeconds(30 + random.nextInt(271))
                 .settings(settings)
                 .build();
         Assertions.equals(profile, codec.decode(codec.encode(profile)), "random profile must round-trip for seed " + seed);

@@ -6,6 +6,7 @@ import io.github.ibcmanager.config.ManagedConfigService;
 import io.github.ibcmanager.model.CredentialMode;
 import io.github.ibcmanager.model.Profile;
 import io.github.ibcmanager.model.ProfileStatus;
+import io.github.ibcmanager.model.PortListenerState;
 import io.github.ibcmanager.model.RuntimeState;
 import io.github.ibcmanager.security.UnavailableCredentialStore;
 import io.github.ibcmanager.tests.Assertions;
@@ -255,7 +256,8 @@ public final class DiagnosticsTests implements TestSuite {
         }
 
         private ProfileStatus status(String message) {
-            return new ProfileStatus(profile.id(), RuntimeState.RUNNING, true, true, true, 1234,
+            return new ProfileStatus(profile.id(), RuntimeState.RUNNING, true, true,
+                    PortListenerState.LISTENING, 1234,
                     NOW.minusSeconds(60), null, message, NOW);
         }
 

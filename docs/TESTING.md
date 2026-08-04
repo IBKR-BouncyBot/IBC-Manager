@@ -22,18 +22,23 @@ warnings as release failures.
 The dependency-free runner covers:
 
 - profile serialization and randomized round trips;
-- line-preserving IBC config parsing, mutation, duplicate detection, and random
-  exact render round trips;
+- line-preserving IBC config parsing, mutation, duplicate detection, random
+  exact render round trips, full-file `Properties.load(InputStream)` authority,
+  deterministic malformed-input differentials, explicit canonicalization, and
+  non-secret single-backslash diagnostics;
 - profile and multi-profile validation;
 - redaction, UTF-8/Base64-safe DPAPI command construction, command
   timeouts/output caps, and file/directory permission hardening;
 - atomic storage and recovery;
-- IBC command protocol, log parser, occupied-port preflight, process identity,
+- IBC command protocol including bare and status-bearing `OK`/`ERROR` replies,
+  log parser, passive operating-system TCP-listener
+  inspection, fail-closed occupied-port preflight, process identity,
   launch-script quoting, configuration-injection rejection, incremental UTF-8
   log tailing, 60-second application/process disk batching, detached live-output
   relay survival, descriptor validation, and final partial-batch commits;
-- complete controller state transitions, failure cleanup, exact process-tree
-  termination, and runtime credential-file lifecycle;
+- complete controller state transitions, automatic/cold/timeout restart lifecycle,
+  scheduled normal shutdown, exact IBC 3.24.1 error markers, failure cleanup,
+  exact process-tree termination, and runtime credential-file lifecycle;
 - diagnostics redaction, unique naming, permissions, and failure cleanup;
 - Windows Task Scheduler quoting, interactive logon, least privilege, and delay
   validation;
@@ -73,7 +78,8 @@ The dependency-free runner covers:
   round trips, live-before-disk output, 60-second production cadence, final
   process-exit commit, and continued persistence after the manager process exits;
 - traffic-light status mapping, explicit non-color text, API-handshake caveat,
-  profile-list rendering, and real-window visibility;
+  passive Windows/Linux/macOS listener-table parsing, no-connect API monitoring,
+  uncertain inspection state, profile-list rendering, and real-window visibility;
 - source architecture, README image/release inclusion, Windows archive-only
   installer/portable-image layout, dependency boundaries, Java class-file
   version, licensing, absence of global desktop automation, and deterministic
@@ -163,6 +169,103 @@ terminator to discover the child. It deliberately does not use a JVM shutdown
 hook because external process termination does not provide portable shutdown-hook
 semantics across Windows and Unix-like systems. A source-architecture assertion
 rejects reintroduction of that non-portable test pattern.
+
+## 1.0.19 automated result
+
+Validated on 2026-08-04 in the release build environment:
+
+- 114 production source files and 24 test source files;
+- 538 automated test cases;
+- 8,040 assertions;
+- zero failed or skipped cases;
+- Java 17 bytecode target verified as class-file major version 61;
+- real `MainFrame` GUI smoke test under Xvfb;
+- packaged JAR `--version` and isolated `--headless-smoke`;
+- release/source extraction, clean rebuild, retest, and byte-for-byte
+  reproducibility gates.
+
+The 1.0.19 compatibility gate compares imported byte semantics directly with the
+JDK's full-file `Properties.load(InputStream)` implementation across 2,000
+deterministic malformed/random samples. It also covers explicit canonicalization,
+single-backslash warnings without secret disclosure, exact bare `OK`/`ERROR`
+classification, `StartIBC.bat` automatic/cold/timeout restart decisions,
+`ClosedownAt` normal completion, exact IBC 3.24.1 error-exit wording, and the
+complete Windows batch-path restriction message.
+
+## 1.0.18 automated result
+
+Validated on 2026-08-04 in the release build environment:
+
+- 114 production source files and 24 test source files;
+- 525 automated test cases;
+- 5,983 assertions;
+- zero failed or skipped cases;
+- Java 17 bytecode target verified as class-file major version 61;
+- real `MainFrame` GUI smoke test under Xvfb;
+- packaged JAR `--version` and isolated `--headless-smoke`;
+- release/source extraction, clean rebuild, retest, and byte-for-byte
+  reproducibility gates.
+
+The 1.0.18 regression addresses a Windows-only test cleanup race after the
+detached process relay had already committed its output and exited. The relay
+fixture now keeps its current working directory outside the temporary log tree.
+Windows test-tree cleanup retries only transient `FileSystemException` failures
+for a bounded five-second period; permanent failures fail immediately and an
+unreleased handle still fails after the limit. A deterministic helper test
+proves successful transient retry, fail-fast permanent errors, and bounded
+exhaustion.
+
+## 1.0.17 automated result
+
+Validated on 2026-08-04 in the release build environment. In addition to the
+normal release run, the complete suite passed with the parent JVM configured as
+`nl-NL`, and a dedicated fresh-JVM test enforces the same locale regression on
+every ordinary run.
+
+
+- 114 production source files and 24 test source files;
+- 524 automated test cases;
+- 5,978 assertions;
+- zero failed or skipped cases;
+- Java 17 bytecode target verified as class-file major version 61;
+- real `MainFrame` GUI smoke test under Xvfb;
+- packaged JAR `--version` and isolated `--headless-smoke`;
+- release/source extraction, clean rebuild, retest, and byte-for-byte
+  reproducibility gates.
+
+The compatibility gate reproduces the contracts used by official IBC 3.24.1:
+Java Properties byte/escape behavior, persistent configuration-path reuse across
+wrapper-launched JVM generations, command acknowledgements followed by later
+errors, `Login has completed` command gating, PAUSE wrapper confirmation,
+StartIBC Java resolution, optional API-port override, PID-owned listener status,
+exact installation-version coherence, strict batch-path handling, and
+per-installation startup serialization.
+
+## 1.0.14 automated result
+
+Validated on 2026-08-03 in the release build environment:
+
+- 102 production source files and 24 test source files;
+- 485 automated test cases;
+- 5,526 assertions;
+- zero failed or skipped cases;
+- Java 17 bytecode target verified as class-file major version 61;
+- real `MainFrame` GUI smoke test under Xvfb;
+- packaged JAR `--version` and isolated `--headless-smoke`;
+- release and source archive extraction/rebuild checks.
+
+The 1.0.14 regression gate proves that periodic API monitoring detects a bound
+listener without creating a client connection. It checks Windows, Linux, and
+macOS listener-table parsing; shared snapshot caching; launch-preflight
+invalidation; bounded stale data; fail-closed startup when inspection is
+unavailable; and yellow/uncertain runtime status after the stale bound expires.
+Architecture tests reject `Socket` creation or `.connect()` calls in the passive
+listener implementation and reject wiring the former `TcpPortProbe` into
+application services.
+
+The process-tree test now verifies descendant exit through PID/start-time process
+identities rather than raw handles, preventing a post-exit PID reuse from being
+misreported as a surviving managed descendant.
 
 ## 1.0.13 automated result
 

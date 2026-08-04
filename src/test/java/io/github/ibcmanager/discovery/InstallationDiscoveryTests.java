@@ -34,8 +34,8 @@ public final class InstallationDiscoveryTests implements TestSuite {
         try {
             Path ibc = completeIbc(root.resolve("IBC"));
             Path jts = root.resolve("Jts");
-            Files.createDirectories(jts.resolve("1044").resolve("jars"));
-            Files.createDirectories(jts.resolve("ibgateway").resolve("1045").resolve("jars"));
+            TestSupport.createOfflineTwsInstallation(jts, "1044");
+            TestSupport.createOfflineGatewayInstallation(jts, "1045");
 
             List<DetectedInstallation> result = InstallationDiscoveryService.discover(List.of(ibc), List.of(jts));
             Assertions.equals(2, result.size(), "both offline products must be detected");
@@ -58,7 +58,7 @@ public final class InstallationDiscoveryTests implements TestSuite {
             Path parent = root.resolve("downloads");
             Path ibc = completeIbc(parent.resolve("IBC-3.24.1"));
             Path jts = root.resolve("Jts");
-            Files.createDirectories(jts.resolve("ibgateway").resolve("1045").resolve("jars"));
+            TestSupport.createOfflineGatewayInstallation(jts, "1045");
             List<DetectedInstallation> result = InstallationDiscoveryService.discover(List.of(parent), List.of(jts));
             Assertions.equals(1, result.size(), "one-level IBC distribution must be found");
             Assertions.equals(ibc.toRealPath(), result.get(0).ibcPath(), "nested IBC path mismatch");
@@ -73,6 +73,8 @@ public final class InstallationDiscoveryTests implements TestSuite {
             Path ibc = completeIbc(root.resolve("IBC"));
             Path jts = root.resolve("Jts");
             Files.createDirectories(jts.resolve("1050").resolve("JARS"));
+            Files.createDirectories(jts.resolve("1050").resolve(".install4j"));
+            Files.writeString(jts.resolve("1050").resolve("tws.vmoptions"), "-Xmx512m\n");
             Files.createDirectories(jts.resolve("ibgateway").resolve("abc").resolve("jars"));
             Files.createDirectories(jts.resolve("ibgateway").resolve("12").resolve("jars"));
             Files.createDirectories(jts.resolve("ibgateway").resolve("123456").resolve("jars"));
@@ -93,8 +95,8 @@ public final class InstallationDiscoveryTests implements TestSuite {
             Path ibcB = completeIbc(root.resolve("IBC-B"));
             Path jtsA = root.resolve("Jts-A");
             Path jtsB = root.resolve("Jts-B");
-            Files.createDirectories(jtsA.resolve("ibgateway").resolve("1045").resolve("jars"));
-            Files.createDirectories(jtsB.resolve("1046").resolve("jars"));
+            TestSupport.createOfflineGatewayInstallation(jtsA, "1045");
+            TestSupport.createOfflineTwsInstallation(jtsB, "1046");
             List<DetectedInstallation> result = InstallationDiscoveryService.discover(
                     List.of(ibcB, ibcA), List.of(jtsA, jtsB));
             Assertions.equals(4, result.size(), "every valid IBC/application pairing must be offered");
@@ -113,7 +115,7 @@ public final class InstallationDiscoveryTests implements TestSuite {
         try {
             Path ibc = completeIbc(root.resolve("IBC"));
             Path jts = root.resolve("Jts");
-            Files.createDirectories(jts.resolve("ibgateway").resolve("1045").resolve("jars"));
+            TestSupport.createOfflineGatewayInstallation(jts, "1045");
             List<DetectedInstallation> result = InstallationDiscoveryService.discover(
                     List.of(ibc, ibc.resolve("."), ibc.toAbsolutePath()),
                     List.of(jts, jts.resolve("."), jts.toAbsolutePath()));
@@ -130,7 +132,7 @@ public final class InstallationDiscoveryTests implements TestSuite {
             Files.createDirectories(incomplete.resolve("scripts"));
             Files.writeString(incomplete.resolve("IBC.jar"), "test");
             Path jts = root.resolve("Jts");
-            Files.createDirectories(jts.resolve("ibgateway").resolve("1045").resolve("jars"));
+            TestSupport.createOfflineGatewayInstallation(jts, "1045");
             Assertions.equals(List.of(), InstallationDiscoveryService.discover(List.of(incomplete), List.of(jts)),
                     "missing StartIBC.bat must invalidate IBC installation");
             Assertions.equals(List.of(), InstallationDiscoveryService.discover(List.of(), List.of(jts)),
@@ -191,9 +193,6 @@ public final class InstallationDiscoveryTests implements TestSuite {
     }
 
     private static Path completeIbc(Path path) throws Exception {
-        Files.createDirectories(path.resolve("scripts"));
-        Files.writeString(path.resolve("IBC.jar"), "test");
-        Files.writeString(path.resolve("scripts").resolve("StartIBC.bat"), "@echo off\r\n");
-        return path;
+        return TestSupport.createCompleteIbcInstallation(path);
     }
 }

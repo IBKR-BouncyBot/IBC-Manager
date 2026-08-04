@@ -10,6 +10,7 @@ import io.github.ibcmanager.model.Profile;
 import io.github.ibcmanager.model.TargetType;
 import io.github.ibcmanager.model.TradingMode;
 import io.github.ibcmanager.model.TwoFactorTimeoutAction;
+import io.github.ibcmanager.security.WindowsCommandSafety;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
@@ -60,6 +61,7 @@ public final class ProfileEditorDialog extends JDialog {
     private final JTextField twsPathField = new JTextField(36);
     private final JTextField settingsPathField = new JTextField(36);
     private final JTextField baseConfigField = new JTextField(36);
+    private final JTextField ibcJavaPathField = new JTextField(36);
     private final JSpinner apiPortSpinner = new JSpinner(new SpinnerNumberModel(4002, 1, 65535, 1));
     private final JSpinner commandPortSpinner = new JSpinner(new SpinnerNumberModel(7462, 1, 65535, 1));
     private final JTextField bindAddressField = new JTextField("127.0.0.1", 20);
@@ -71,9 +73,13 @@ public final class ProfileEditorDialog extends JDialog {
     private final JLabel passwordHint = new JLabel();
     private final JComboBox<TwoFactorTimeoutAction> twoFactorActionBox =
             new JComboBox<>(TwoFactorTimeoutAction.values());
+    private final JCheckBox reloginAfterSecondFactorTimeoutBox =
+            new JCheckBox("Retry the login sequence inside IBC after a 2FA timeout");
+    private final JCheckBox forceApiPortBox =
+            new JCheckBox("Force this API port into TWS/Gateway through IBC at startup");
     private final JCheckBox autoStartBox = new JCheckBox("Start this profile when IBC Manager starts");
     private final JCheckBox minimizeBox = new JCheckBox("Minimize TWS/Gateway after login");
-    private final JSpinner gracefulStopSpinner = new JSpinner(new SpinnerNumberModel(20, 3, 300, 1));
+    private final JSpinner gracefulStopSpinner = new JSpinner(new SpinnerNumberModel(90, 30, 300, 1));
     private final ProfileSettingsTableModel settingsModel;
     private final SettingsTable settingsTable;
     private ProfileEditResult result;
@@ -145,16 +151,26 @@ public final class ProfileEditorDialog extends JDialog {
         UiUtil.addRow(panel, row++, "Trading mode", tradingModeBox);
         UiUtil.addRow(panel, row++, "Offline version number", versionField);
         versionField.setToolTipText("Numeric major version used by the offline installer, for example 1045");
+        String batchPathGuidance = WindowsCommandSafety.externalPathGuidance();
+        ibcPathField.setToolTipText(batchPathGuidance);
+        twsPathField.setToolTipText(batchPathGuidance);
+        settingsPathField.setToolTipText(batchPathGuidance);
+        baseConfigField.setToolTipText(batchPathGuidance);
+        ibcJavaPathField.setToolTipText("Optional folder containing java.exe for IBC. "
+                + batchPathGuidance);
         UiUtil.addRow(panel, row++, "IBC directory", UiUtil.pathField(this, ibcPathField, true));
         UiUtil.addRow(panel, row++, "TWS/Gateway root", UiUtil.pathField(this, twsPathField, true));
         UiUtil.addRow(panel, row++, "TWS settings directory", UiUtil.pathField(this, settingsPathField, true));
         UiUtil.addRow(panel, row++, "Existing/base config.ini", UiUtil.pathField(this, baseConfigField, false));
+        UiUtil.addRow(panel, row++, "IBC Java directory", UiUtil.pathField(this, ibcJavaPathField, true));
 
         JPanel portPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
         portPanel.add(apiPortSpinner);
         portPanel.add(new JLabel("     IBC command port: "));
         portPanel.add(commandPortSpinner);
         UiUtil.addRow(panel, row++, "API socket port", portPanel);
+        forceApiPortBox.setToolTipText("Normally disabled. Enabling this asks IBC to open the application configuration UI and change its persistent API port.");
+        UiUtil.addRow(panel, row++, "API port override", forceApiPortBox);
         UiUtil.addRow(panel, row++, "Command bind address", bindAddressField);
         UiUtil.addRow(panel, row++, "IBKR username", usernameField);
         secondFactorDeviceField.setName("secondFactorDeviceField");
@@ -164,7 +180,10 @@ public final class ProfileEditorDialog extends JDialog {
         UiUtil.addRow(panel, row++, "Password", passwordField);
         UiUtil.addRow(panel, row++, "Confirm password", confirmPasswordField);
         UiUtil.addRow(panel, row++, "", passwordHint);
-        UiUtil.addRow(panel, row++, "On 2FA timeout", twoFactorActionBox);
+        reloginAfterSecondFactorTimeoutBox.setToolTipText("Controls IBC's ReloginAfterSecondFactorAuthenticationTimeout setting inside the current Java process");
+        UiUtil.addRow(panel, row++, "IBC 2FA retry policy", reloginAfterSecondFactorTimeoutBox);
+        twoFactorActionBox.setToolTipText("Controls what StartIBC.bat does only after IBC exits with its 2FA-timeout exit code");
+        UiUtil.addRow(panel, row++, "After IBC exits on 2FA timeout", twoFactorActionBox);
         UiUtil.addRow(panel, row++, "Automatic startup", autoStartBox);
         UiUtil.addRow(panel, row++, "Window handling", minimizeBox);
         UiUtil.addRow(panel, row++, "Graceful stop timeout", gracefulStopSpinner);
@@ -271,6 +290,7 @@ public final class ProfileEditorDialog extends JDialog {
         twsPathField.setText(pathText(source.twsPath()));
         settingsPathField.setText(pathText(source.twsSettingsPath()));
         baseConfigField.setText(pathText(source.baseConfigPath()));
+        ibcJavaPathField.setText(pathText(source.ibcJavaPath()));
         apiPortSpinner.setValue(source.apiPort());
         commandPortSpinner.setValue(source.commandServerPort());
         bindAddressField.setText(source.bindAddress());
@@ -279,6 +299,8 @@ public final class ProfileEditorDialog extends JDialog {
                 source, ManagedConfigService.SECOND_FACTOR_DEVICE_KEY));
         credentialModeBox.setSelectedItem(source.credentialMode());
         twoFactorActionBox.setSelectedItem(source.twoFactorTimeoutAction());
+        reloginAfterSecondFactorTimeoutBox.setSelected(source.reloginAfterSecondFactorTimeout());
+        forceApiPortBox.setSelected(source.forceApiPortAtLaunch());
         autoStartBox.setSelected(source.autoStart());
         minimizeBox.setSelected(source.minimizeMainWindow());
         gracefulStopSpinner.setValue(source.gracefulStopTimeoutSeconds());
@@ -330,12 +352,15 @@ public final class ProfileEditorDialog extends JDialog {
                     .twsPath(toPath(twsPathField.getText()))
                     .twsSettingsPath(toPath(settingsPathField.getText()))
                     .baseConfigPath(toPath(baseConfigField.getText()))
+                    .ibcJavaPath(toPath(ibcJavaPathField.getText()))
                     .apiPort((Integer) apiPortSpinner.getValue())
                     .commandServerPort((Integer) commandPortSpinner.getValue())
                     .bindAddress(bindAddressField.getText())
                     .username(usernameField.getText())
                     .credentialMode(mode)
                     .twoFactorTimeoutAction((TwoFactorTimeoutAction) twoFactorActionBox.getSelectedItem())
+                    .reloginAfterSecondFactorTimeout(reloginAfterSecondFactorTimeoutBox.isSelected())
+                    .forceApiPortAtLaunch(forceApiPortBox.isSelected())
                     .autoStart(autoStartBox.isSelected())
                     .minimizeMainWindow(minimizeBox.isSelected())
                     .gracefulStopTimeoutSeconds((Integer) gracefulStopSpinner.getValue())
