@@ -21,16 +21,16 @@ if exist "%INPUT%" rmdir /s /q "%INPUT%"
 if exist "%DEST%" rmdir /s /q "%DEST%"
 mkdir "%INPUT%" || exit /b 1
 mkdir "%DEST%" || exit /b 1
-copy /y "dist\IBC-Manager-1.0.19.jar" "%INPUT%\" >nul || exit /b 1
+copy /y "dist\IBC-Manager-1.0.21.jar" "%INPUT%\" >nul || exit /b 1
 
 "%IBC_MANAGER_JPACKAGE_EXE%" ^
   --type app-image ^
   --name "IBC Manager" ^
-  --app-version 1.0.19 ^
+  --app-version 1.0.21 ^
   --vendor "IBC Manager contributors" ^
   --description "Graphical manager for separately installed IBC" ^
   --input "%INPUT%" ^
-  --main-jar "IBC-Manager-1.0.19.jar" ^
+  --main-jar "IBC-Manager-1.0.21.jar" ^
   --main-class io.github.ibcmanager.app.IbcManagerApp ^
   --dest "%DEST%" ^
   --jlink-options "%JLINK_OPTIONS%" ^
@@ -53,11 +53,11 @@ for %%F in ("%DEST%\IBC Manager\runtime\bin\java.exe") do if %%~zF LEQ 0 (
 "%IBC_MANAGER_JPACKAGE_EXE%" ^
   --type exe ^
   --name "IBC Manager" ^
-  --app-version 1.0.19 ^
+  --app-version 1.0.21 ^
   --vendor "IBC Manager contributors" ^
   --description "Graphical manager for separately installed IBC" ^
   --input "%INPUT%" ^
-  --main-jar "IBC-Manager-1.0.19.jar" ^
+  --main-jar "IBC-Manager-1.0.21.jar" ^
   --main-class io.github.ibcmanager.app.IbcManagerApp ^
   --dest "%DEST%" ^
   --win-menu ^
@@ -76,7 +76,7 @@ if errorlevel 1 (
   echo [IBC Manager] The Windows installer was created, but the Windows release ZIP could not be assembled.
   exit /b 1
 )
-set "WINDOWS_RELEASE_ZIP=dist\IBC_Manager_1.0.19_Release_windows.zip"
+set "WINDOWS_RELEASE_ZIP=dist\IBC_Manager_1.0.21_Release_windows.zip"
 if not exist "%WINDOWS_RELEASE_ZIP%" (
   echo [IBC Manager] Windows release ZIP creation reported success, but the archive was not found:
   echo [IBC Manager]   %WINDOWS_RELEASE_ZIP%

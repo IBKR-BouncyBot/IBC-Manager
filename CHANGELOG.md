@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.0.21 - 2026-08-26
+
+### Dynamic latest official IBC installer
+
+- Replaced the fixed IBC 3.24.2 download URL and embedded release checksum with
+  resolution through GitHub's official `IbcAlpha/IBC` `releases/latest` REST
+  endpoint at installation time.
+- Added strict, bounded, dependency-free JSON handling for release metadata,
+  including duplicate-key, malformed-input, draft, prerelease, numeric-version,
+  asset-ambiguity, URL, size, and SHA-256 validation.
+- Selects exactly `IBCWin-<resolved-version>.zip` and verifies the completed
+  transfer against the size and `sha256:` digest published in GitHub's asset
+  metadata.
+- Retains IBC 3.24.2 as the minimum supported version and retained reference
+  template, while accepting newer official numeric releases only when their
+  external/JAR versions, required classes, launcher switches, and referenced
+  helper scripts satisfy IBC Manager's compatibility checks.
+- Reuses an existing installation only when it already matches the currently
+  resolved latest release. A different non-empty installation is never silently
+  upgraded or overwritten.
+- Updated the installer UI, version output, diagnostics, Windows package names,
+  tests, and documentation. No unrelated runtime supervision behavior changed.
+
+## 1.0.20 - 2026-08-22
+
+### IBC baseline update
+
+- Updated the supported and downloadable official IBC baseline from 3.24.1 to 3.24.2.
+- Updated the pinned Windows release asset to `IBCWin-3.24.2.zip` and its published SHA-256 checksum.
+- Updated installation validation for IBC 3.24.2's `StartIBC.bat` and required `scripts\getExtraJavaOptions.ps1` helper.
+- Updated version labels, packaging filenames, documentation, tests, and retained third-party notices to the 3.24.2 baseline.
+- No other application behavior was changed.
+
 ## 1.0.19 - 2026-08-04
 
 ### IBC configuration fidelity

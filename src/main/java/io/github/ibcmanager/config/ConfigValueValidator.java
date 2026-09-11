@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.Set;
 
 public final class ConfigValueValidator {
-    // Validate IBC 3.24.1's documented, case-sensitive English AM/PM grammar
+    // Validate IBC's documented, case-sensitive English AM/PM grammar
     // independently of the Manager JVM's host locale. In particular, a Dutch
     // Windows locale must not reject "11:45 PM", while lowercase am/pm remains invalid.
     private static final DateTimeFormatter TIME_12 = DateTimeFormatter.ofPattern("hh:mm a", Locale.ENGLISH);
@@ -182,7 +182,7 @@ public final class ConfigValueValidator {
                     "FIX credentials are ignored because IBC Manager does not support FIX CTCI mode"));
         } else if (definition.key().equals("TrustedTwsApiClientIPs") && !trimmed.isEmpty()) {
             issues.add(new ValidationIssue(Severity.WARNING, definition.key(),
-                    "IBC 3.24.1 uses this setting only for FIX CTCI Gateway mode; it is ignored in IBC Manager's supported ordinary TWS and IB Gateway modes"));
+                    "IBC uses this setting only for FIX CTCI Gateway mode; it is ignored in IBC Manager's supported ordinary TWS and IB Gateway modes"));
         }
 
         if (definition.key().equals("ConfirmOrderIdReset") && !trimmed.isEmpty()) {
@@ -223,7 +223,7 @@ public final class ConfigValueValidator {
         String autoRestart = settingValueIgnoreCase(settings, "AutoRestartTime").trim();
         if (!autoLogoff.isEmpty() && !autoRestart.isEmpty()) {
             issues.add(new ValidationIssue(Severity.WARNING, "AutoLogoffTime",
-                    "Both AutoLogoffTime and AutoRestartTime are set; IBC 3.24.1 uses AutoRestartTime and ignores AutoLogoffTime"));
+                    "Both AutoLogoffTime and AutoRestartTime are set; IBC uses AutoRestartTime and ignores AutoLogoffTime"));
         }
     }
 

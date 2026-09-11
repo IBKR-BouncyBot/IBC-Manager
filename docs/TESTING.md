@@ -37,16 +37,17 @@ The dependency-free runner covers:
   log tailing, 60-second application/process disk batching, detached live-output
   relay survival, descriptor validation, and final partial-batch commits;
 - complete controller state transitions, automatic/cold/timeout restart lifecycle,
-  scheduled normal shutdown, exact IBC 3.24.1 error markers, failure cleanup,
+  scheduled normal shutdown, exact supported-IBC error markers, failure cleanup,
   exact process-tree termination, and runtime credential-file lifecycle;
 - diagnostics redaction, unique naming, permissions, and failure cleanup;
 - Windows Task Scheduler quoting, interactive logon, least privilege, and delay
   validation;
 - common installation discovery;
-- official IBC 3.24.1 release-coordinate policy, HTTPS redirect restrictions,
-  pinned official archive SHA-256, transactional installation, hostile ZIP
-  handling, cancellation, destination races, activation cleanup, and
-  existing-install reuse;
+- GitHub latest-release metadata parsing, draft/prerelease rejection, numeric
+  compatibility-floor checks, exact Windows-asset selection, published
+  size/SHA-256 enforcement, HTTPS redirect restrictions, transactional
+  installation, hostile ZIP handling, cancellation, destination races,
+  activation cleanup, current-latest reuse, and non-overwrite of older installs;
 - dedicated `SecondFactorDevice` profile ownership, canonicalization, blank-value
   removal, and generated-config plumbing;
 - real profile-dialog construction, installation-action sizing, vertical scrolling,
@@ -58,7 +59,8 @@ The dependency-free runner covers:
   application-log batching, final close commit, and service lifecycle;
 - Swing table models, constrained editors, command availability, explicit
   force-stop controls, EDT helpers, and secret result lifecycle;
-- Java 8 version parsing/rejection and Java 17+ selection;
+- Java 8 version parsing/rejection, Java 17+ selection, and enforcement of a higher
+  class-file requirement from a future dynamically resolved IBC release;
 - Windows PowerShell binding of initially empty Java candidate collections;
 - explicit prerequisite-installation consent and decline behavior;
 - private Java installation paths and absence of persistent environment changes;
@@ -169,6 +171,24 @@ terminator to discover the child. It deliberately does not use a JVM shutdown
 hook because external process termination does not provide portable shutdown-hook
 semantics across Windows and Unix-like systems. A source-architecture assertion
 rejects reintroduction of that non-portable test pattern.
+
+## 1.0.21 automated result
+
+Validated on 2026-08-26 in the release build environment:
+
+- 119 production source files and 24 test source files;
+- 541 automated test cases;
+- 8,125 assertions;
+- zero failed or skipped cases;
+- Java 17 bytecode target verified as class-file major version 61;
+- packaged JAR version/headless smoke and real-window GUI smoke;
+- deterministic release/source archive generation and extracted-source rebuild.
+
+Version 1.0.21 replaces the fixed IBC download coordinate with GitHub's official
+latest-release API. The release tests use deterministic metadata fixtures for
+current and future versions, verify strict JSON and URL handling, enforce the
+published asset size and SHA-256, and prove that no 3.24.2 download URL or
+release-specific checksum remains in the installer path.
 
 ## 1.0.19 automated result
 
@@ -386,7 +406,7 @@ public/live release, execute `validate-windows.bat` and complete
 - `schtasks.exe`;
 - source build, test, validation, and package operation on a machine with no Ant
   installed;
-- official IBC 3.24.1 download, transactional installation, reuse, cancellation,
+- official latest IBC resolution/download, transactional installation, reuse, cancellation,
   access-denied handling, and non-overwrite behavior for `C:\IBC`;
 - profile-dialog layout at common Windows DPI scales and
   `SecondFactorDevice` persistence;

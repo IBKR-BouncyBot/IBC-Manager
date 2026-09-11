@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project name="IBC Manager" default="dist" basedir=".">
-    <property name="app.version" value="1.0.13"/>
+    <property name="app.version" value="1.0.21"/>
     <property name="build.driver"
               value="src/build/java/io/github/ibcmanager/build/BuildProject.java"/>
 

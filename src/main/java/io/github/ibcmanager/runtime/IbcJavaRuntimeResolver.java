@@ -1,6 +1,8 @@
 package io.github.ibcmanager.runtime;
 
 import io.github.ibcmanager.app.OperatingSystem;
+import io.github.ibcmanager.install.IbcInstallationException;
+import io.github.ibcmanager.install.IbcInstallationValidator;
 import io.github.ibcmanager.model.Profile;
 import io.github.ibcmanager.security.BoundedFileReader;
 import io.github.ibcmanager.security.CommandExecutor;
@@ -30,18 +32,27 @@ public final class IbcJavaRuntimeResolver {
     private final Map<String, String> environment;
     private final CommandExecutor executor;
     private final OfflineApplicationLayoutResolver layoutResolver;
+    private final IbcInstallationValidator ibcInstallationValidator;
 
     public IbcJavaRuntimeResolver() {
         this(OperatingSystem.current(), System.getenv(), new DefaultCommandExecutor(),
-                new OfflineApplicationLayoutResolver());
+                new OfflineApplicationLayoutResolver(), new IbcInstallationValidator());
     }
 
     public IbcJavaRuntimeResolver(OperatingSystem operatingSystem, Map<String, String> environment,
             CommandExecutor executor, OfflineApplicationLayoutResolver layoutResolver) {
+        this(operatingSystem, environment, executor, layoutResolver, new IbcInstallationValidator());
+    }
+
+    IbcJavaRuntimeResolver(OperatingSystem operatingSystem, Map<String, String> environment,
+            CommandExecutor executor, OfflineApplicationLayoutResolver layoutResolver,
+            IbcInstallationValidator ibcInstallationValidator) {
         this.operatingSystem = Objects.requireNonNull(operatingSystem, "operatingSystem");
         this.environment = Map.copyOf(Objects.requireNonNull(environment, "environment"));
         this.executor = Objects.requireNonNull(executor, "executor");
         this.layoutResolver = Objects.requireNonNull(layoutResolver, "layoutResolver");
+        this.ibcInstallationValidator = Objects.requireNonNull(
+                ibcInstallationValidator, "ibcInstallationValidator");
     }
 
     public boolean isSupportedPlatform() {
@@ -51,6 +62,13 @@ public final class IbcJavaRuntimeResolver {
     public ResolvedJava resolve(Profile profile) throws IOException {
         if (!isSupportedPlatform()) {
             throw new IOException("IBC Java runtime resolution is supported only on Windows");
+        }
+        int requiredJavaMajor;
+        try {
+            requiredJavaMajor = ibcInstallationValidator.validate(profile.ibcPath()).requiredJavaMajor();
+        } catch (IbcInstallationException ex) {
+            throw new IOException("Could not determine the Java requirement of the selected IBC installation: "
+                    + ex.getMessage(), ex);
         }
         OfflineApplicationLayoutResolver.Layout layout = layoutResolver.resolve(profile);
         Path javaDirectory = null;
@@ -84,7 +102,7 @@ public final class IbcJavaRuntimeResolver {
         }
         if (javaDirectory == null) {
             throw new IOException("StartIBC.bat cannot find a Java runtime for the selected offline installation; "
-                    + "select an explicit Java 17+ directory");
+                    + "select an explicit Java " + requiredJavaMajor + "+ directory");
         }
         Path executable = javaDirectory.resolve("java.exe").normalize();
         if (!SecureFileOperations.isRegularFile(executable)) {
@@ -104,9 +122,9 @@ public final class IbcJavaRuntimeResolver {
         String combined = result.stderr() + System.lineSeparator() + result.stdout();
         String version = extractVersion(combined);
         int major = majorVersion(version);
-        if (major < 17) {
-            throw new IOException("IBC " + io.github.ibcmanager.app.Version.IBC_BASELINE
-                    + " requires Java 17 or newer, but StartIBC would use Java " + version
+        if (major < requiredJavaMajor) {
+            throw new IOException("The selected IBC release requires Java " + requiredJavaMajor
+                    + " or newer, but StartIBC would use Java " + version
                     + " from " + javaDirectory);
         }
         return new ResolvedJava(javaDirectory, executable, version, major, source, layout);

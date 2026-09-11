@@ -749,7 +749,7 @@ public final class ReleaseAuditTests implements TestSuite {
             if (!trySymlink(root.resolve("version"), target)) { Assertions.isTrue(true, "symbolic links unavailable"); return; }
             Assertions.isFalse(IbcInstallerService.isValidInstallation(root),
                     "symbolic required installer file must be rejected");
-            Assertions.equals("3.24.1", Files.readString(target), "target version file must remain unchanged");
+            Assertions.equals("3.24.2", Files.readString(target), "target version file must remain unchanged");
             Assertions.isTrue(Files.isSymbolicLink(root.resolve("version")), "link must remain visible");
         } finally { TestSupport.deleteTree(root); }
     }
@@ -793,7 +793,7 @@ public final class ReleaseAuditTests implements TestSuite {
 
     private static void createMinimalIbc(Path root) throws IOException {
         Files.createDirectories(root.resolve("scripts"));
-        Files.writeString(root.resolve("version"), "3.24.1");
+        Files.writeString(root.resolve("version"), "3.24.2");
         Files.writeString(root.resolve("config.ini"), "TradingMode=paper\n");
         Files.writeString(root.resolve("LICENSE.txt"), "GPL-3.0\n");
         Files.writeString(root.resolve("scripts/StartIBC.bat"), "@echo off\r\nrem IBC.jar\r\n");

@@ -56,7 +56,7 @@ public final class InstallationDiscoveryTests implements TestSuite {
         Path root = TestSupport.tempDirectory("discovery-nested");
         try {
             Path parent = root.resolve("downloads");
-            Path ibc = completeIbc(parent.resolve("IBC-3.24.1"));
+            Path ibc = completeIbc(parent.resolve("IBC-3.24.2"));
             Path jts = root.resolve("Jts");
             TestSupport.createOfflineGatewayInstallation(jts, "1045");
             List<DetectedInstallation> result = InstallationDiscoveryService.discover(List.of(parent), List.of(jts));

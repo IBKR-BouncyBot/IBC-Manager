@@ -149,7 +149,7 @@ public final class ProfileValidator {
         if (profile.twoFactorTimeoutAction() == TwoFactorTimeoutAction.RESTART
                 && !profile.reloginAfterSecondFactorTimeout()) {
             error(issues, "twoFactorTimeoutAction", "Restart after a 2FA timeout requires IBC's internal "
-                    + "2FA relogin policy to be enabled; otherwise IBC 3.24.1 does not exit with the "
+                    + "2FA relogin policy to be enabled; otherwise the supported IBC integration does not exit with the "
                     + "timeout code that StartIBC.bat can restart");
         }
 

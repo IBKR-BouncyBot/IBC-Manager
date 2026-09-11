@@ -51,8 +51,9 @@
       environment and verify private Java 17 installation after consent.
 - [ ] Exercise DPAPI save/load/delete and NTFS ACL behavior as a non-admin user.
 - [ ] Exercise Task Scheduler creation/removal and startup after login.
-- [ ] Install official IBC 3.24.1 through the GUI into `C:\IBC` and verify refusal
-      to overwrite an invalid non-empty destination.
+- [ ] Resolve and install GitHub's latest published official IBC release through the
+      GUI into `C:\IBC`; record the resolved version/digest and verify refusal to
+      overwrite invalid, older, or otherwise different non-empty destinations.
 - [ ] Build the app image, EXE installer, and `_Release_windows.zip` with
       `package-windows.bat`; confirm the portable and installed runtimes contain
       nonempty `runtime\bin\java.exe`, then install, uninstall, and run both

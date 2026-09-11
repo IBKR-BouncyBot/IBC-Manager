@@ -46,7 +46,9 @@ public final class ArchitectureTests implements TestSuite {
                 new NamedTest("manual start stop restart and pause actions require confirmation", this::sessionActionConfirmationWiring),
                 new NamedTest("test subprocesses are platform-neutral", this::portableTestSubprocesses),
                 new NamedTest("no TOTP generator or cryptographic OTP implementation is present", this::noTotpImplementation),
-                new NamedTest("IBC baseline resource and GPL notices are retained", this::ibcNotices),
+                new NamedTest("IBC compatibility-floor reference and GPL notices are retained", this::ibcNotices),
+                new NamedTest("IBC installer resolves latest official releases without a version pin",
+                        this::dynamicLatestIbcInstaller),
                 new NamedTest("release documentation and build scripts are present", this::releaseFiles),
                 new NamedTest("application and process logs use 60-second disk batching", this::bufferedLogArchitecture),
                 new NamedTest("Windows packaging launchers enforce the complete release gates", this::windowsPackagingScripts),
@@ -277,19 +279,45 @@ public final class ArchitectureTests implements TestSuite {
     }
 
     private void ibcNotices() throws Exception {
-        Path retainedLicense = ROOT.resolve("third_party/ibc-3.24.1/LICENSE.txt");
+        Path retainedLicense = ROOT.resolve("third_party/ibc-3.24.2/LICENSE.txt");
         Path projectLicense = ROOT.resolve("LICENSE.txt");
-        Path version = ROOT.resolve("third_party/ibc-3.24.1/version.txt");
+        Path version = ROOT.resolve("third_party/ibc-3.24.2/version.txt");
         Assertions.fileExists(retainedLicense, "IBC license must be retained");
         Assertions.fileExists(projectLicense, "project GPL license must be present");
-        Assertions.fileExists(version, "IBC baseline marker must be retained");
+        Assertions.fileExists(version, "IBC compatibility-floor marker must be retained");
         String license = Files.readString(retainedLicense, StandardCharsets.UTF_8);
         Assertions.contains(license, "GNU GENERAL PUBLIC LICENSE", "retained license is not GPL");
         Assertions.contains(license, "Version 3", "retained license must be GPL version 3");
-        Assertions.equals(Version.IBC_BASELINE, Files.readString(version, StandardCharsets.UTF_8).trim(),
-                "code and retained IBC baseline must agree");
+        Assertions.equals(Version.IBC_MINIMUM_SUPPORTED_VERSION, Files.readString(version, StandardCharsets.UTF_8).trim(),
+                "code and retained IBC compatibility floor must agree");
         Assertions.contains(Files.readString(ROOT.resolve("NOTICE.txt"), StandardCharsets.UTF_8),
                 "not affiliated", "unofficial-project notice must be explicit");
+    }
+
+    private void dynamicLatestIbcInstaller() throws Exception {
+        String resolver = source(
+                "src/main/java/io/github/ibcmanager/install/GithubLatestIbcReleaseResolver.java");
+        String service = source(
+                "src/main/java/io/github/ibcmanager/install/IbcInstallerService.java");
+        String version = source("src/main/java/io/github/ibcmanager/app/Version.java");
+        String installerUi = source("src/main/java/io/github/ibcmanager/ui/ProfileEditorDialog.java");
+
+        Assertions.contains(resolver, "/repos/IbcAlpha/IBC/releases/latest",
+                "installer must query GitHub's latest-release endpoint");
+        Assertions.contains(resolver, "browser_download_url",
+                "latest-release metadata must select the published asset URL");
+        Assertions.contains(resolver, "sha256:",
+                "latest-release metadata must require GitHub's published SHA-256 digest");
+        Assertions.contains(version, "IBC_MINIMUM_SUPPORTED_VERSION",
+                "future releases must retain a reviewed compatibility floor");
+        Assertions.contains(installerUi, "Install latest IBC from GitHub...",
+                "profile UI must describe the dynamic latest-release behavior");
+        Assertions.notContains(service, "OFFICIAL_WINDOWS_ARCHIVE_SHA256",
+                "installer must not retain a release-specific checksum pin");
+        Assertions.notContains(service, "/releases/download/3.24.2/",
+                "installer service must not retain a fixed 3.24.2 asset URL");
+        Assertions.notContains(resolver, "/releases/download/3.24.2/",
+                "latest-release resolver must not retain a fixed release URL");
     }
 
     private void releaseFiles() throws Exception {
@@ -385,11 +413,11 @@ public final class ArchitectureTests implements TestSuite {
         int releaseArchive = canonical.indexOf("windows-release-zip");
         Assertions.isTrue(releaseArchive > exePackaging,
                 "the Windows release ZIP must be assembled only after EXE installer creation");
-        Assertions.contains(canonical, "IBC_Manager_1.0.19_Release_windows.zip",
+        Assertions.contains(canonical, "IBC_Manager_1.0.21_Release_windows.zip",
                 "Windows release ZIP must use the requested versioned filename");
         Assertions.contains(canonical, "--main-class io.github.ibcmanager.app.IbcManagerApp",
                 "packaging must use the production entry point");
-        Assertions.contains(canonical, "IBC-Manager-1.0.19.jar",
+        Assertions.contains(canonical, "IBC-Manager-1.0.21.jar",
                 "packaging must use the versioned release JAR");
         String driver = Files.readString(
                 ROOT.resolve("src/build/java/io/github/ibcmanager/build/BuildProject.java"),

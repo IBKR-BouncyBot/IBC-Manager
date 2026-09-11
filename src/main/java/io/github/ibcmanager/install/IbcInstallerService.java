@@ -1,14 +1,12 @@
 package io.github.ibcmanager.install;
 
 import io.github.ibcmanager.app.OperatingSystem;
-import io.github.ibcmanager.app.Version;
 import io.github.ibcmanager.security.BoundedFileReader;
 import io.github.ibcmanager.security.SecureFileOperations;
 import io.github.ibcmanager.storage.AtomicFileWriter;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -35,12 +33,9 @@ import java.util.zip.ZipInputStream;
 
 public final class IbcInstallerService {
     public static final Path DEFAULT_WINDOWS_DIRECTORY = Path.of("C:\\IBC");
-    public static final String OFFICIAL_WINDOWS_ARCHIVE_SHA256 =
-            "03a467c4636cb36cd5f6b5c4406812ee598319231bbed6b4d01a6953bf30e7c2";
     private static final int DEFAULT_MAX_ENTRIES = 4096;
     private static final long DEFAULT_MAX_EXTRACTED_BYTES = 256L * 1024L * 1024L;
     private static final long DEFAULT_MAX_ENTRY_BYTES = 128L * 1024L * 1024L;
-    private static final String ASSET_PREFIX = "IBCWin-";
     private static final int MAX_VERSION_BYTES = 4096;
     private static final String ACTIVATION_MARKER = ".ibc-manager-install-owner";
     private static final Set<String> WINDOWS_RESERVED_NAMES = Set.of(
@@ -48,25 +43,20 @@ public final class IbcInstallerService {
             "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
             "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9");
 
+    private final IbcReleaseResolver releaseResolver;
     private final IbcReleaseDownloader downloader;
     private final int maxEntries;
     private final long maxExtractedBytes;
     private final long maxEntryBytes;
-    private final String expectedArchiveSha256;
 
     public IbcInstallerService() {
-        this(new HttpsIbcReleaseDownloader(), DEFAULT_MAX_ENTRIES,
-                DEFAULT_MAX_EXTRACTED_BYTES, DEFAULT_MAX_ENTRY_BYTES,
-                OFFICIAL_WINDOWS_ARCHIVE_SHA256);
+        this(new GithubLatestIbcReleaseResolver(), new HttpsIbcReleaseDownloader(),
+                DEFAULT_MAX_ENTRIES, DEFAULT_MAX_EXTRACTED_BYTES, DEFAULT_MAX_ENTRY_BYTES);
     }
 
-    IbcInstallerService(IbcReleaseDownloader downloader, int maxEntries,
-            long maxExtractedBytes, long maxEntryBytes) {
-        this(downloader, maxEntries, maxExtractedBytes, maxEntryBytes, null);
-    }
-
-    IbcInstallerService(IbcReleaseDownloader downloader, int maxEntries,
-            long maxExtractedBytes, long maxEntryBytes, String expectedArchiveSha256) {
+    IbcInstallerService(IbcReleaseResolver releaseResolver, IbcReleaseDownloader downloader,
+            int maxEntries, long maxExtractedBytes, long maxEntryBytes) {
+        this.releaseResolver = Objects.requireNonNull(releaseResolver, "releaseResolver");
         this.downloader = Objects.requireNonNull(downloader, "downloader");
         if (maxEntries < 1 || maxExtractedBytes < 1 || maxEntryBytes < 1) {
             throw new IllegalArgumentException("Installer safety limits must be positive");
@@ -74,21 +64,10 @@ public final class IbcInstallerService {
         this.maxEntries = maxEntries;
         this.maxExtractedBytes = maxExtractedBytes;
         this.maxEntryBytes = maxEntryBytes;
-        this.expectedArchiveSha256 = expectedArchiveSha256 == null ? null
-                : normalizeSha256(expectedArchiveSha256);
     }
 
     public boolean isAvailable() {
         return OperatingSystem.current() == OperatingSystem.WINDOWS;
-    }
-
-    public static String releaseAssetName() {
-        return ASSET_PREFIX + Version.IBC_BASELINE + ".zip";
-    }
-
-    public static URI releaseAssetUri() {
-        return URI.create("https://github.com/IbcAlpha/IBC/releases/download/"
-                + Version.IBC_BASELINE + "/" + releaseAssetName());
     }
 
     public IbcInstallResult installDefault(InstallProgress progress) throws IbcInstallationException {
@@ -102,11 +81,23 @@ public final class IbcInstallerService {
         InstallProgress listener = progress == null ? InstallProgress.none() : progress;
         try {
             checkCancelled();
-            if (isValidInstallation(destination)) {
-                return new IbcInstallResult(destination, readVersion(destination),
-                        "existing installation", sha256(destination.resolve("IBC.jar")), false);
+            IbcInstallationValidator.InstallationInfo existing = inspectExistingInstallation(destination);
+            boolean restoreEmptyDestination = false;
+            if (existing == null) restoreEmptyDestination = rejectNonEmptyDestination(destination);
+
+            IbcReleaseInfo release = releaseResolver.resolveLatest(listener);
+            checkCancelled();
+            if (existing != null) {
+                if (IbcVersion.parse(existing.version()).semanticallyEquals(IbcVersion.parse(release.version()))) {
+                    return new IbcInstallResult(destination, existing.version(),
+                            "existing installation", sha256(destination.resolve("IBC.jar")), false);
+                }
+                throw new IbcInstallationException("The IBC destination contains version " + existing.version()
+                        + ", but GitHub's latest official release is " + release.version() + ". IBC Manager will "
+                        + "not overwrite a non-empty installation. Rename or remove the existing IBC folder, then "
+                        + "run the installation again.");
             }
-            boolean restoreEmptyDestination = rejectNonEmptyDestination(destination);
+
             Path parent = destination.getParent();
             if (parent == null) throw new IbcInstallationException("IBC installation path has no parent directory.");
             SecureFileOperations.ensureDirectory(parent);
@@ -116,17 +107,19 @@ public final class IbcInstallerService {
             String activationToken = UUID.randomUUID().toString();
             boolean activated = false;
             try {
-                listener.update("Downloading official IBC " + Version.IBC_BASELINE, 0, -1);
+                listener.update("Downloading official IBC " + release.version(), 0, release.assetBytes());
                 IbcReleaseDownloader.DownloadResult download =
-                        downloader.download(releaseAssetUri(), archive, listener);
+                        downloader.download(release.downloadUri(), archive, listener);
                 checkCancelled();
-                validateDownload(archive, download);
-                listener.update("Validating and extracting IBC", download.bytes(), download.bytes());
+                validateDownload(archive, download, release);
+                listener.update("Validating and extracting IBC " + release.version(),
+                        download.bytes(), download.bytes());
                 Files.createDirectory(staging);
                 extractSafely(archive, staging);
                 checkCancelled();
                 Path extractedRoot = locateInstallationRoot(staging);
-                validateInstallation(extractedRoot);
+                IbcInstallationValidator.InstallationInfo extracted = validateInstallation(extractedRoot);
+                requireReleaseVersion(extracted.version(), release.version());
                 ensureOnlyInstallationTree(staging, extractedRoot);
                 Path marker = extractedRoot.resolve(ACTIVATION_MARKER);
                 AtomicFileWriter.write(marker, activationToken.getBytes(StandardCharsets.US_ASCII), false);
@@ -136,7 +129,8 @@ public final class IbcInstallerService {
                 activated = true;
                 try {
                     validateActivationMarker(destination, activationToken);
-                    validateInstallation(destination);
+                    IbcInstallationValidator.InstallationInfo installed = validateInstallation(destination);
+                    requireReleaseVersion(installed.version(), release.version());
                     Files.delete(destination.resolve(ACTIVATION_MARKER));
                 } catch (IOException | IbcInstallationException | RuntimeException validationFailure) {
                     rollbackActivatedDestination(destination, activationToken, restoreEmptyDestination, validationFailure);
@@ -144,7 +138,7 @@ public final class IbcInstallerService {
                     throw validationFailure;
                 }
                 listener.update("IBC installation completed", download.bytes(), download.bytes());
-                return new IbcInstallResult(destination, readVersion(destination), releaseAssetName(),
+                return new IbcInstallResult(destination, readVersion(destination), release.assetName(),
                         download.sha256(), true);
             } finally {
                 cleanupQuietly(staging);
@@ -179,30 +173,45 @@ public final class IbcInstallerService {
         }
     }
 
-    private void validateDownload(Path archive, IbcReleaseDownloader.DownloadResult download)
-            throws IOException, IbcInstallationException {
+    private static IbcInstallationValidator.InstallationInfo inspectExistingInstallation(Path destination)
+            throws IOException {
+        if (!Files.exists(destination, LinkOption.NOFOLLOW_LINKS)) return null;
+        if (Files.isSymbolicLink(destination) || !Files.isDirectory(destination, LinkOption.NOFOLLOW_LINKS)) {
+            return null;
+        }
+        try {
+            return validateInstallation(destination);
+        } catch (IOException | IbcInstallationException | SecurityException ex) {
+            return null;
+        }
+    }
+
+    private static void requireReleaseVersion(String installedVersion, String releaseVersion)
+            throws IbcInstallationException {
+        if (!IbcVersion.parse(installedVersion).semanticallyEquals(IbcVersion.parse(releaseVersion))) {
+            throw new IbcInstallationException("The downloaded archive reports IBC " + installedVersion
+                    + " but GitHub identified the latest release as " + releaseVersion + '.');
+        }
+    }
+
+    private static void validateDownload(Path archive, IbcReleaseDownloader.DownloadResult download,
+            IbcReleaseInfo release) throws IOException, IbcInstallationException {
         HttpsIbcReleaseDownloader.validateUri(download.finalUri());
         long actualBytes = Files.size(archive);
         if (actualBytes != download.bytes()) {
             throw new IbcInstallationException("Downloaded IBC archive size changed during transfer.");
         }
+        if (actualBytes != release.assetBytes()) {
+            throw new IbcInstallationException("Downloaded IBC archive size does not match GitHub release metadata.");
+        }
         String actualSha256 = sha256(archive);
         if (!actualSha256.equals(download.sha256())) {
             throw new IbcInstallationException("Downloaded IBC archive SHA-256 changed during transfer.");
         }
-        if (expectedArchiveSha256 != null && !actualSha256.equals(expectedArchiveSha256)) {
-            throw new IbcInstallationException("Downloaded IBC archive does not match the SHA-256 "
-                    + "published for the supported official GitHub release.");
+        if (!actualSha256.equals(release.sha256())) {
+            throw new IbcInstallationException("Downloaded IBC archive does not match the SHA-256 digest "
+                    + "published by GitHub for the latest release asset.");
         }
-    }
-
-    private static String normalizeSha256(String value) {
-        String normalized = Objects.requireNonNull(value, "expectedArchiveSha256")
-                .trim().toLowerCase(Locale.ROOT);
-        if (!normalized.matches("[0-9a-f]{64}")) {
-            throw new IllegalArgumentException("expectedArchiveSha256 must contain 64 hexadecimal characters");
-        }
-        return normalized;
     }
 
     private void extractSafely(Path archive, Path destination) throws IOException, IbcInstallationException {
@@ -329,18 +338,19 @@ public final class IbcInstallerService {
         }
     }
 
-    private static void validateInstallation(Path root) throws IOException, IbcInstallationException {
-        new IbcInstallationValidator().validate(root);
+    private static IbcInstallationValidator.InstallationInfo validateInstallation(Path root)
+            throws IOException, IbcInstallationException {
+        return new IbcInstallationValidator().validate(root);
     }
 
     private static String readVersion(Path root) throws IOException, IbcInstallationException {
         String value = BoundedFileReader.readString(root.resolve("version"), StandardCharsets.UTF_8,
                 MAX_VERSION_BYTES, "IBC version file").trim();
         if (value.startsWith("\uFEFF")) value = value.substring(1).trim();
-        if (value.isEmpty() || value.length() > 32 || !value.matches("[0-9]+(?:\\.[0-9]+){2}")) {
+        if (value.isEmpty() || value.length() > 32) {
             throw new IbcInstallationException("IBC version file is invalid.");
         }
-        return value;
+        return IbcVersion.parse(value).text();
     }
 
     private static boolean rejectNonEmptyDestination(Path destination) throws IOException, IbcInstallationException {

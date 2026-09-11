@@ -73,7 +73,7 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
   the GUI.
 - [ ] From a freshly extracted source ZIP with no `dist` directory or JAR,
   `run.bat` explains the on-demand build, requests JDK permission when necessary,
-  creates `dist\IBC-Manager-1.0.19.jar`, smoke-tests it, and opens the GUI without
+  creates `dist\IBC-Manager-1.0.21.jar`, smoke-tests it, and opens the GUI without
   requiring `build.bat` first.
 - [ ] Corrupt a copy of the release JAR and confirm `run.bat` reports the Java/JAR
   failure in the console and does not attempt the detached `javaw` launch.
@@ -86,9 +86,9 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
   gives a manual WiX instruction.
 - [ ] A successful `package-windows.bat` run creates the app image under
   `dist\windows\IBC Manager`, the versioned installer
-  `dist\windows\IBC Manager-1.0.19.exe`, and
-  `dist\IBC_Manager_1.0.19_Release_windows.zip`.
-- [ ] The Windows release ZIP contains `IBC Manager-1.0.19.exe` at its root and
+  `dist\windows\IBC Manager-1.0.21.exe`, and
+  `dist\IBC_Manager_1.0.21_Release_windows.zip`.
+- [ ] The Windows release ZIP contains `IBC Manager-1.0.21.exe` at its root and
   one complete portable `IBC Manager` folder at its root.
 - [ ] The portable folder contains nonempty `IBC Manager.exe`, the versioned
   application JAR, and `runtime\bin\java.exe`.
@@ -101,12 +101,12 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
 
 ## Portable-runtime regression introduced in 1.0.12
 
-- [ ] Run `package-windows.bat` from a freshly extracted 1.0.19 source ZIP.
+- [ ] Run `package-windows.bat` from a freshly extracted 1.0.21 source ZIP.
 - [ ] Confirm both jpackage commands show the explicit jlink option list without
   `--strip-native-commands`.
 - [ ] Confirm `dist\windows\IBC Manager\runtime\bin\java.exe` exists and is
   nonempty before the EXE installer stage begins.
-- [ ] Confirm `dist\IBC_Manager_1.0.19_Release_windows.zip` contains the exact
+- [ ] Confirm `dist\IBC_Manager_1.0.21_Release_windows.zip` contains the exact
   nonempty entry `IBC Manager/runtime/bin/java.exe`.
 - [ ] Extract only the portable `IBC Manager` folder to a new directory, start
   `IBC Manager.exe`, and start a paper profile. The profile must not report
@@ -114,7 +114,7 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
 - [ ] Confirm the detached process relay remains alive while IBC/Gateway runs,
   live output appears in the Logs tab, and the manager-owned process log receives
   its final batch when the managed process exits.
-- [ ] Install with `IBC Manager-1.0.19.exe`, start the installed application, and
+- [ ] Install with `IBC Manager-1.0.21.exe`, start the installed application, and
   repeat the paper-profile launch test. The installed runtime must also contain
   `runtime\bin\java.exe`.
 - [ ] Remove or rename `runtime\bin\java.exe` in a copy of the app image and
@@ -123,7 +123,7 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
 
 ## Windows process-tree regression introduced in 1.0.11
 
-- [ ] From a freshly extracted 1.0.19 source ZIP, both `validate-windows.bat`
+- [ ] From a freshly extracted 1.0.21 source ZIP, both `validate-windows.bat`
   and `package-windows.bat` pass the test named **process tree terminator captures
   descendants spawned during cooperative shutdown**.
 - [ ] Repeat the complete Windows test gate at least three times; the dynamic
@@ -176,7 +176,7 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
 - [ ] If the repeated version-missing pair remains, close every older IBC Manager
   instance and identify any other program performing a raw TCP health check.
 
-## 1.0.19 Properties, lifecycle, command, and path compatibility
+## 1.0.21 Properties, lifecycle, command, and path compatibility
 
 - [ ] Import an external config containing `IbDir=C:\Jts`; validation warns that
   IBC interprets it as `C:Jts`, does not echo any credential value, and recommends
@@ -206,7 +206,7 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
 
 ## 1.0.18 detached-relay Windows cleanup regression
 
-- [ ] Run `package-windows.bat` from a freshly extracted 1.0.19 source ZIP.
+- [ ] Run `package-windows.bat` from a freshly extracted 1.0.21 source ZIP.
 - [ ] Confirm all 538 Java tests pass, including **buffered process relay
   survives the manager process exiting**.
 - [ ] Confirm the test no longer fails while deleting a temporary `logs`
@@ -247,9 +247,9 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
 
 ## 1.0.16 IBC compatibility regression
 
-- [ ] A manually selected IBC folder is rejected when the `version` file is not
-  3.24.1, when `IBC.jar` embeds another version, or when the tested launcher
-  capabilities are missing.
+- [ ] A manually selected IBC folder is rejected when its numeric version is
+  below 3.24.2, when its `version` file and embedded `IBC.jar` version disagree,
+  or when required launcher/JAR/helper capabilities are missing.
 - [ ] The resolved Java directory shown in validation is the same directory
   passed to `StartIBC.bat /JavaPath:` and reports Java 17 or newer.
 - [ ] A username, password, or `SecondFactorDevice` containing non-ASCII text and
@@ -301,7 +301,7 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
 
 - [ ] `IBC Manager.exe` starts without a separately installed Java runtime.
 - [ ] The app image and installer are signed or Windows warning behavior is documented.
-- [ ] `--version` reports 1.0.19 and IBC baseline 3.24.1.
+- [ ] `--version` reports 1.0.21, the latest-official installer channel, and compatibility floor 3.24.2.
 - [ ] `--headless-smoke` succeeds in a clean data directory.
 - [ ] A second manager instance is rejected without corrupting the first.
 - [ ] Uninstall leaves user data untouched unless explicitly selected.
@@ -309,20 +309,28 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
 
 ## Official IBC installer and profile dialog
 
-- [ ] **Detect common installations...** and **Install IBC 3.24.1 from GitHub...**
+- [ ] **Detect common installations...** and **Install latest IBC from GitHub...**
   are fully visible and clickable at 100%, 125%, 150%, and 200% Windows display
   scaling; the profile form scrolls vertically instead of clipping rows.
 - [ ] The IBC install action asks for explicit confirmation before network or file
   changes and clearly states that IB Gateway/TWS is not included.
-- [ ] On an empty destination, the official `IBCWin-3.24.1.zip` asset downloads over
-  GitHub HTTPS infrastructure and activates as a valid `C:\IBC` installation.
-- [ ] The downloaded ZIP equals the SHA-256 published by GitHub for the supported
-  asset and pinned in IBC Manager. A deliberately altered but otherwise valid IBC
-  ZIP is rejected before extraction or destination creation.
-- [ ] The completion dialog reports IBC version 3.24.1, the asset name, destination,
-  and a 64-character SHA-256 digest.
-- [ ] A valid existing IBC 3.24.1 installation in `C:\IBC` is reused without a
-  download and is selected in the profile.
+- [ ] Simulate unavailable/rate-limited/malformed latest-release metadata. The
+  operation fails without modifying `C:\IBC` and reports an actionable error.
+- [ ] Draft, prerelease, below-floor, duplicate-asset, missing-digest, unexpected
+  host/path, and mismatched archive-version cases all fail closed.
+- [ ] On an empty destination, the Manager queries the official
+  `IbcAlpha/IBC` latest-release API, displays progress, downloads the exact
+  `IBCWin-<resolved-version>.zip` asset over GitHub HTTPS infrastructure, and
+  activates a valid `C:\IBC` installation.
+- [ ] Record the resolved tag, asset name, asset size, and `sha256:` digest from
+  GitHub metadata. Confirm the downloaded ZIP matches them. A deliberately
+  altered but otherwise valid ZIP is rejected before activation.
+- [ ] The completion dialog reports the dynamically resolved IBC version, asset
+  name, destination, and a 64-character SHA-256 digest.
+- [ ] A valid existing installation matching the currently resolved latest
+  version is reused without download and selected in the profile.
+- [ ] A valid but older/different non-empty IBC installation is preserved and the
+  automatic update is refused with clear rename/remove guidance.
 - [ ] A non-empty invalid `C:\IBC` directory is never overwritten or merged.
 - [ ] Cancelling during download/extraction leaves no partial destination, staging
   directory, or temporary archive.
@@ -364,17 +372,18 @@ Use a disposable clean Windows 11 VM for destructive/failure-path tests.
 ## Profile and configuration
 
 - [ ] Common-installation discovery finds the intended IBC and offline application.
-- [ ] **Install IBC 3.24.1 from GitHub...** asks for confirmation before
-  network access and installs the official Windows release in `C:\IBC`.
+- [ ] **Install latest IBC from GitHub...** asks for confirmation before
+  network access, resolves the latest published full release, and installs the
+  validated official Windows asset in `C:\IBC`.
 - [ ] Cancelling the IBC download leaves no partial `C:\IBC`, staging tree,
   or temporary ZIP.
-- [ ] A valid existing IBC 3.24.1 installation is reused without a download.
+- [ ] A valid existing installation matching the resolved latest release is reused without a download.
 - [ ] A non-empty invalid `C:\IBC` is preserved and never overwritten.
 - [ ] Standard-user access denial is reported clearly; an explicitly elevated
   retry succeeds when Windows policy requires elevation for `C:\IBC`.
 - [ ] The installed files match the official archive structure and IBC Manager
   does not modify `IBC.jar` or `scripts\StartIBC.bat`.
-- [ ] **Detect common installations...** and **Install IBC 3.24.1 from
+- [ ] **Detect common installations...** and **Install latest IBC from
   GitHub...** are fully visible at 100%, 125%, 150%, and 200% display scaling.
 - [ ] The Profile tab scrolls vertically on a small display without clipping
   either installation button or the Save/Cancel controls.

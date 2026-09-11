@@ -36,7 +36,7 @@ public final class ApplicationTests implements TestSuite {
                 new NamedTest("single-instance lock excludes a second process and can be reacquired", this::singleInstance),
                 new NamedTest("startup command uses the packaged application path", this::packagedStartup),
                 new NamedTest("startup command record is normalized and immutable", this::startupRecord),
-                new NamedTest("version command reports application and IBC baseline", this::versionCommand),
+                new NamedTest("version command reports application, IBC release channel, and compatibility floor", this::versionCommand),
                 new NamedTest("invalid command-line arguments return usage error", this::invalidArguments),
                 new NamedTest("headless smoke succeeds with an empty data directory", this::emptySmoke),
                 new NamedTest("headless smoke reports invalid stored profiles", this::invalidProfileSmoke),
@@ -187,8 +187,10 @@ public final class ApplicationTests implements TestSuite {
         });
         Assertions.contains(captured.stdout(), Version.APPLICATION_NAME + " " + Version.VERSION,
                 "version output must identify application");
-        Assertions.contains(captured.stdout(), "IBC baseline " + Version.IBC_BASELINE,
-                "version output must identify IBC compatibility baseline");
+        Assertions.contains(captured.stdout(), "IBC installer: " + Version.IBC_RELEASE_CHANNEL,
+                "version output must identify the dynamic IBC release channel");
+        Assertions.contains(captured.stdout(), "compatibility floor " + Version.IBC_MINIMUM_SUPPORTED_VERSION,
+                "version output must identify the IBC compatibility floor");
         Assertions.equals("", captured.stderr(), "version command must not print errors");
     }
 
@@ -344,8 +346,10 @@ public final class ApplicationTests implements TestSuite {
         Assertions.equals("IBC Manager", Version.APPLICATION_NAME, "application name changed unexpectedly");
         Assertions.isTrue(Version.VERSION.matches("[0-9]+\\.[0-9]+\\.[0-9]+"),
                 "manager version must use semantic numeric form");
-        Assertions.isTrue(Version.IBC_BASELINE.matches("[0-9]+\\.[0-9]+\\.[0-9]+"),
-                "IBC baseline must use semantic numeric form");
+        Assertions.isTrue(Version.IBC_MINIMUM_SUPPORTED_VERSION.matches("[0-9]+\\.[0-9]+\\.[0-9]+"),
+                "IBC compatibility floor must use semantic numeric form");
+        Assertions.equals("latest official", Version.IBC_RELEASE_CHANNEL,
+                "IBC release channel changed unexpectedly");
     }
 
     private static Captured capture(ThrowingRunnable action) throws Exception {

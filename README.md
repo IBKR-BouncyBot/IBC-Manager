@@ -11,9 +11,25 @@ startup to the official `scripts\StartIBC.bat` from a separately installed IBC
 release and uses IBC's command server for supported session controls. This keeps
 IBC's mature Swing-dialog automation intact.
 
-- Version: **1.0.19**
-- IBC compatibility baseline: **3.24.1**
-- Runtime target: **Java 17 or newer**
+- Version: **1.0.21**
+- IBC download channel: **latest published official GitHub release**
+- IBC compatibility floor/reference: **3.24.2**
+- Manager runtime target: **Java 17 or newer**; the selected IBC release's class-file requirement is checked separately before launch
+
+## Version 1.0.21 dynamic latest-release installer
+
+Version 1.0.21 no longer pins the GUI installer to one IBC version. Each
+installation request queries the official `IbcAlpha/IBC` GitHub
+`releases/latest` endpoint, selects the matching `IBCWin-<version>.zip` asset,
+and validates the asset against the SHA-256 digest and size published in the
+same GitHub release metadata.
+
+The installer still fails closed. It accepts only a published non-draft,
+non-prerelease numeric release at or above the tested 3.24.2 compatibility
+floor. The downloaded tree must expose every launcher, JAR, helper, and command
+capability required by IBC Manager. A future release that changes that interface
+is rejected rather than installed blindly. Existing non-empty installations are
+never silently upgraded or overwritten.
 
 ## Main capabilities
 
@@ -21,8 +37,9 @@ IBC's mature Swing-dialog automation intact.
 - Multiple isolated profiles with separate API ports, IBC command ports,
   settings directories, credentials, logs, and process identities.
 - Common Windows installation discovery for IBC and offline TWS/Gateway builds.
-- Optional download and transactional installation of the official Windows IBC
-  3.24.1 release from GitHub into the conventional `C:\IBC` directory.
+- Optional resolution, download, and transactional installation of GitHub's
+  latest published official Windows IBC release into the conventional `C:\IBC`
+  directory.
 - Structured editor for common IBC settings, including a dedicated
   `SecondFactorDevice` profile field.
 - Raw `config.ini` editor that preserves comments, ordering, unknown future
@@ -194,10 +211,11 @@ most for unattended operation:
   `ReloginAfterSecondFactorAuthenticationTimeout` setting. Incoherent
   combinations are rejected.
 - The exact Java runtime passed to `StartIBC.bat` is resolved and version-checked
-  before launch. IBC 3.24.1 is rejected unless that runtime is Java 17 or newer.
-- Manually selected IBC installations must identify themselves as 3.24.1 in both
-  the external version file and the embedded `IBC.jar` version, contain the
-  required classes, and expose the expected 3.24.1 Windows launcher capabilities.
+  before launch. Java 17 is the minimum; a future dynamically selected IBC release
+  compiled for a newer Java feature level requires that higher runtime.
+- Manually selected IBC installations must be at least 3.24.2, identify the same
+  version in the external version file and embedded `IBC.jar`, contain the required
+  classes, and expose the launcher capabilities used by IBC Manager.
 - Forcing `OverrideTwsApiPort` is now optional and disabled by default.
 - On Windows, green API-listener status requires the listener PID to belong to
   the managed process tree. A listener owned by another process remains yellow
@@ -339,15 +357,17 @@ completed, that the intended account is authenticated, or that trading is
 permitted. A trading application must still perform its own API handshake,
 account, mode, permission, and read-only-state verification.
 
-IBC Manager does not bundle IBC, TWS, or IB Gateway. The profile editor can
-install the tested official IBC 3.24.1 Windows release, but offline TWS or IB
-Gateway must still be installed separately. Use the **offline** TWS/IB Gateway
+IBC Manager does not bundle IBC, TWS, or IB Gateway. The profile editor can resolve and install the latest published official IBC
+Windows release after capability validation, but offline TWS or IB Gateway must
+still be installed separately. Use the **offline** TWS/IB Gateway
 installer expected by IBC, not an installation layout that changes underneath
 the launcher.
 
-The IBC installer targets the tested compatibility baseline rather than silently
-selecting an untested future release. Updating `IBC_BASELINE` requires a new IBC
-Manager build and validation cycle.
+The installer resolves GitHub's current latest published full release at the time
+of installation. Version 3.24.2 remains the compatibility floor and retained
+reference template, not a download pin. Future releases are accepted only when
+their version, archive, embedded JAR version, launcher switches, required classes,
+and any referenced helper scripts satisfy the Manager's compatibility checks.
 
 ## Credential modes
 
@@ -409,14 +429,14 @@ visible. Do not run either ZIP directly without extracting it first.
 
 IBC Manager additionally requires:
 
-1. IBC 3.24.1 containing `IBC.jar` and `scripts\StartIBC.bat`.
+1. A compatible official IBC release (3.24.2 or newer) containing `IBC.jar` and `scripts\StartIBC.bat`.
 2. A separate offline TWS or IB Gateway installation.
 3. An interactive Windows desktop for IBKR authentication dialogs.
 
 Advanced users who already have Java 17+ can also run:
 
 ```bat
-java -jar IBC-Manager-1.0.19.jar
+java -jar IBC-Manager-1.0.21.jar
 ```
 
 ## Creating a profile and installing IBC
@@ -425,18 +445,22 @@ On first launch, the profile editor opens automatically. At the top of the
 **Profile** tab:
 
 - **Detect common installations...** searches conventional Windows locations.
-- **Install IBC 3.24.1 from GitHub...** asks for confirmation, downloads the
-  official Windows release asset, validates it, and installs it in `C:\IBC`.
+- **Install latest IBC from GitHub...** asks for confirmation, resolves the
+  latest published full release from the official repository, validates its
+  Windows asset, and installs it in `C:\IBC`.
 
-The installer never overwrites a non-empty invalid `C:\IBC` directory. It uses a
-staging directory, enforces compressed/extracted size and entry-count limits,
-rejects unsafe ZIP paths, validates the version file, required files,
-`StartIBC.bat`, and expected classes in `IBC.jar`, and only then activates the
-installation. The complete archive must also match the SHA-256 published for the
-supported official GitHub asset and pinned in this IBC Manager release. A
-pre-existing valid IBC 3.24.1 installation is reused without a download. Because
-`C:\IBC` is at the drive root, Windows can require IBC Manager to be started as
-administrator to create it.
+The installer never overwrites a non-empty invalid `C:\IBC` directory. It first
+queries GitHub's official latest-release API, requires a non-draft,
+non-prerelease numeric release, and selects exactly `IBCWin-<version>.zip`. It
+then uses a staging directory, enforces metadata, compressed/extracted size and
+entry-count limits, rejects unsafe ZIP paths, validates the version file,
+required files, `StartIBC.bat`, referenced helper scripts, and expected classes
+in `IBC.jar`, and only then activates the installation. The downloaded bytes
+must match both the transfer hash and GitHub's published asset SHA-256 digest.
+A pre-existing valid installation is reused only when its version equals the
+currently resolved latest release. A different non-empty installation is never
+overwritten automatically. Because `C:\IBC` is at the drive root, Windows can
+require IBC Manager to be started as administrator to create it.
 
 The installer downloads IBC only. It does not install IB Gateway or TWS and does
 not alter the downloaded IBC code or JAR.
@@ -486,7 +510,7 @@ command-channel sequence to IBC output.
 --autostart                 Start enabled profiles marked for automatic startup
 --data-dir <directory>      Override the application data directory
 --headless-smoke            Validate bootstrap and stored profiles without a GUI
---version                   Print application and IBC baseline versions
+--version                   Print application version, IBC release channel, and compatibility floor
 ```
 
 ## Release versus source archive
@@ -500,7 +524,7 @@ files. Running `run.bat` from an extracted source tree builds and smoke-tests th
 missing JAR before launching the GUI.
 
 The Windows packaging script additionally creates
-`IBC_Manager_1.0.19_Release_windows.zip`. This Windows-only archive intentionally
+`IBC_Manager_1.0.21_Release_windows.zip`. This Windows-only archive intentionally
 contains exactly two payloads at its root: the generated installer EXE and the
 complete portable `IBC Manager` application-image folder. It does not duplicate
 the normal JAR release, documentation, batch launchers, or checksum files.
@@ -548,7 +572,7 @@ The native build driver compiles with `--release 17`, `-Xlint:all`, and
 and smoke-tests the packaged JAR. Mutating build targets are serialized with an
 operating-system lock derived from the canonical source-tree path, so concurrent
 `clean`, compile, test, and distribution commands cannot delete each other's
-output. Version 1.0.19 includes **538 automated test cases with 8,040 assertions**
+output. Version 1.0.21 includes **541 automated test cases with 8,125 assertions**
 across 114 production and 24 test Java source files, plus a real-window Swing
 GUI smoke gate. See
 [TEST_REPORT.md](TEST_REPORT.md) and [docs/TESTING.md](docs/TESTING.md).
@@ -573,13 +597,13 @@ installer. After the installer is created, the script validates that there is
 exactly one versioned installer in the Windows output directory and creates:
 
 ```text
-dist\IBC_Manager_1.0.19_Release_windows.zip
+dist\IBC_Manager_1.0.21_Release_windows.zip
 ```
 
 That archive contains only:
 
 ```text
-IBC Manager-1.0.19.exe
+IBC Manager-1.0.21.exe
 IBC Manager\
     IBC Manager.exe
     app\...
@@ -608,6 +632,6 @@ separately installed IBC and offline TWS/IB Gateway.
 ## License
 
 IBC Manager is licensed under GPLv3. See `LICENSE.txt` and `NOTICE.txt`. The
-retained IBC template and notices are under `third_party/ibc-3.24.1`. The IBC
+retained IBC template and notices are under `third_party/ibc-3.24.2`. The IBC
 downloader retrieves the official IBC release at runtime; IBC is not included in
 IBC Manager's release ZIP.
