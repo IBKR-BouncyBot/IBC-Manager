@@ -25,7 +25,7 @@ import java.util.regex.Pattern;
 /**
  * Comment/order-preserving representation of an IBC Java-properties configuration.
  *
- * <p>IBC 3.24.1 loads config.ini through {@link Properties#load(java.io.InputStream)}. This class
+ * <p>IBC loads config.ini through {@link Properties#load(java.io.InputStream)}. This class
  * therefore uses Java Properties grammar for parsing and emits an ASCII/ISO-8859-1-safe canonical
  * form for files consumed by IBC. The ordinary {@link #render()} method remains lossless for
  * untouched input so the raw editor can preserve comments and formatting.</p>
@@ -63,7 +63,7 @@ public final class IbcConfigDocument {
     }
 
     /**
-     * Parses bytes exactly as IBC 3.24.1 reads them through
+     * Parses bytes exactly as IBC reads them through
      * {@link Properties#load(java.io.InputStream)}: one ISO-8859-1 character per byte, with Java
      * Properties escapes applied afterwards. The full-file JDK parser is authoritative; the
      * formatting scanner is used only to preserve comments, ordering, and line endings.

@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Compatibility rules imposed by IBC Manager's supported IBC 3.24.1 integration surface.
+ * Compatibility rules imposed by IBC Manager's supported IBC integration surface.
  *
  * <p>IBC itself supports FIX CTCI mode, but IBC Manager's lifecycle, command, status, and
  * credential model is intentionally limited to ordinary TWS and IB Gateway sessions.</p>
@@ -41,7 +41,7 @@ public final class IbcCompatibilityPolicy {
         }
         if (isTruthy(valueIgnoreCase(settings, "ReadOnlyLogin"))) {
             issues.add(new ValidationIssue(Severity.ERROR, "ReadOnlyLogin",
-                    "IBC 3.24.1 does not support read-only login for IB Gateway; use TWS or disable this setting"));
+                    "The supported IBC integration does not support read-only login for IB Gateway; use TWS or disable this setting"));
         }
         if (!valueIgnoreCase(settings, "StoreSettingsOnServer").isBlank()) {
             issues.add(new ValidationIssue(Severity.WARNING, "StoreSettingsOnServer",

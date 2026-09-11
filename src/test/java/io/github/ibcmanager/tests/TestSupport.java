@@ -151,18 +151,31 @@ public final class TestSupport {
 
     public static Path createCompleteIbcInstallation(Path ibc) throws IOException {
         Files.createDirectories(ibc.resolve("scripts"));
-        Files.writeString(ibc.resolve("version"), Version.IBC_BASELINE + "\n");
+        Files.writeString(ibc.resolve("version"), Version.IBC_MINIMUM_SUPPORTED_VERSION + "\n");
         Files.writeString(ibc.resolve("config.ini"), "IbLoginId=\nIbPassword=\n");
         Files.writeString(ibc.resolve("LICENSE.txt"), "GPL-3.0 test fixture\n");
         writeIbcJar(ibc.resolve("IBC.jar"));
         Files.writeString(ibc.resolve("scripts").resolve("StartIBC.bat"),
                 "@echo off\r\n"
                 + "rem IBC.jar\r\n"
-                + "rem /On2FATimeout\r\n"
-                        + "rem Starting IBC with this command:\r\n"
-                        + "rem JXBROWSER_OPT -DjxBrowserKey=\r\n"
+                + "rem /Gateway\r\n"
+                + "rem /TwsPath:\r\n"
+                + "rem /TwsSettingsPath:\r\n"
+                + "rem /IbcPath:\r\n"
+                + "rem /Config:\r\n"
+                + "rem /JavaPath:\r\n"
+                + "rem /Mode:\r\n"
+                + "rem /On2FATimeout:\r\n"
+                + "rem Starting IBC with this command:\r\n"
+                + "rem getExtraJavaOptions.ps1\r\n"
+                + "rem EXTRA_JAVA_OPTIONS\r\n"
                 + "rem IBCSessionId\r\n"
                 + "rem IBC is paused\r\n");
+        Files.writeString(ibc.resolve("scripts").resolve("getExtraJavaOptions.ps1"),
+                "param([string]$Install4J)\r\n"
+                + "$confPath = Join-Path $Install4J \"i4jparams.conf\"\r\n"
+                + "$line = Select-String -Path $confPath -Pattern 'javaOptions'\r\n"
+                + "Write-Output $line\r\n");
         return ibc;
     }
 
@@ -188,6 +201,13 @@ public final class TestSupport {
     }
 
     public static void writeIbcJar(Path jarPath) throws IOException {
+        writeIbcJar(jarPath, Version.IBC_MINIMUM_SUPPORTED_VERSION, 61);
+    }
+
+    public static void writeIbcJar(Path jarPath, String version, int classMajor) throws IOException {
+        if (classMajor < 45 || classMajor > 0xFFFF) {
+            throw new IllegalArgumentException("classMajor is outside the class-file range");
+        }
         Files.createDirectories(jarPath.toAbsolutePath().normalize().getParent());
         List<String> classes = List.of(
                 "ibcalpha/ibc/IbcTws.class",
@@ -195,6 +215,9 @@ public final class TestSupport {
                 "ibcalpha/ibc/CommandDispatcher.class",
                 "ibcalpha/ibc/RestartTask.class",
                 "ibcalpha/ibc/DefaultSettings.class");
+        byte[] versionClass = ibcVersionInfoClassBytes(version);
+        versionClass[6] = (byte) (classMajor >>> 8);
+        versionClass[7] = (byte) classMajor;
         try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(jarPath))) {
             for (String name : classes) {
                 JarEntry entry = new JarEntry(name);
@@ -206,13 +229,28 @@ public final class TestSupport {
             JarEntry versionEntry = new JarEntry("ibcalpha/ibc/IbcVersionInfo.class");
             versionEntry.setTime(0L);
             output.putNextEntry(versionEntry);
-            output.write(ibcVersionInfoClassBytes());
+            output.write(versionClass);
             output.closeEntry();
+        } finally {
+            java.util.Arrays.fill(versionClass, (byte) 0);
         }
     }
 
     public static byte[] ibcVersionInfoClassBytes() throws IOException {
         return classBytes(FixtureIbcVersionInfo.class);
+    }
+
+    public static byte[] ibcVersionInfoClassBytes(String version) throws IOException {
+        if (Version.IBC_MINIMUM_SUPPORTED_VERSION.equals(version)) {
+            return classBytes(FixtureIbcVersionInfo.class);
+        }
+        if ("4.0.0".equals(version)) {
+            return classBytes(FixtureFutureIbcVersionInfo.class);
+        }
+        if ("9.9.9".equals(version)) {
+            return classBytes(FixtureMismatchedIbcVersionInfo.class);
+        }
+        throw new IOException("No compiled IBC version fixture for " + version);
     }
 
     public static byte[] mismatchedIbcVersionInfoClassBytes() throws IOException {
@@ -231,8 +269,13 @@ public final class TestSupport {
 
     /** The ConstantValue attribute is read without loading the class from the synthetic IBC JAR. */
     public static final class FixtureIbcVersionInfo {
-        public static final String IBC_VERSION = Version.IBC_BASELINE;
+        public static final String IBC_VERSION = Version.IBC_MINIMUM_SUPPORTED_VERSION;
         private FixtureIbcVersionInfo() { }
+    }
+
+    public static final class FixtureFutureIbcVersionInfo {
+        public static final String IBC_VERSION = "4.0.0";
+        private FixtureFutureIbcVersionInfo() { }
     }
 
     public static final class FixtureMismatchedIbcVersionInfo {

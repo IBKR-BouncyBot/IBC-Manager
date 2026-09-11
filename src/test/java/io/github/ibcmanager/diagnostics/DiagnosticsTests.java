@@ -65,8 +65,11 @@ public final class DiagnosticsTests implements TestSuite {
                     new ArrayList<>(entries.keySet()), "bundle entry order must be stable");
             Assertions.contains(entries.get("manifest.txt"), "Manager version: " + Version.VERSION,
                     "manifest must identify manager version");
-            Assertions.contains(entries.get("manifest.txt"), "IBC baseline: " + Version.IBC_BASELINE,
-                    "manifest must identify IBC baseline");
+            Assertions.contains(entries.get("manifest.txt"), "IBC release channel: " + Version.IBC_RELEASE_CHANNEL,
+                    "manifest must identify the IBC release channel");
+            Assertions.contains(entries.get("manifest.txt"),
+                    "IBC compatibility floor: " + Version.IBC_MINIMUM_SUPPORTED_VERSION,
+                    "manifest must identify the IBC compatibility floor");
             Assertions.contains(entries.get("manifest.txt"), "Generated UTC: " + NOW,
                     "manifest must use supplied UTC clock");
             Assertions.contains(entries.get("profile.txt"), "Target: IB Gateway", "profile summary must include target");

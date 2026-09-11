@@ -1,6 +1,5 @@
 package io.github.ibcmanager.ui;
 
-import io.github.ibcmanager.app.Version;
 import io.github.ibcmanager.install.IbcInstallResult;
 import io.github.ibcmanager.install.IbcInstallerService;
 
@@ -40,17 +39,13 @@ final class IbcInstallerDialog {
         }
 
         Path destination = IbcInstallerService.DEFAULT_WINDOWS_DIRECTORY;
-        boolean existing = IbcInstallerService.isValidInstallation(destination);
-        String message = existing
-                ? "A valid IBC " + Version.IBC_BASELINE + " installation already exists in:\n\n"
-                        + destination + "\n\nUse this installation for the profile?"
-                : "Download the supported official IBC " + Version.IBC_BASELINE
-                        + " Windows release from GitHub and install it in:\n\n"
-                        + destination + "\n\n"
-                        + "A non-empty existing folder will not be overwritten. IB Gateway/TWS is not included.\n\n"
-                        + "Continue?";
+        String message = "Resolve GitHub's latest published official IBC release and install it in:\n\n"
+                + destination + "\n\n"
+                + "If this folder already contains that exact compatible release, it will be reused. "
+                + "A different non-empty installation will not be overwritten.\n\n"
+                + "IB Gateway/TWS is not included. Continue?";
         int confirmation = JOptionPane.showConfirmDialog(parent, message,
-                existing ? "Use existing IBC installation" : "Download and install IBC",
+                "Install latest official IBC",
                 JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
         if (confirmation != JOptionPane.YES_OPTION) return Optional.empty();
 

@@ -179,7 +179,7 @@ public final class UiModelTests implements TestSuite {
 
     private void installationButtons() {
         javax.swing.JButton detect = new javax.swing.JButton("Detect common installations...");
-        javax.swing.JButton install = new javax.swing.JButton("Install IBC 3.24.1 from GitHub...");
+        javax.swing.JButton install = new javax.swing.JButton("Install latest IBC from GitHub...");
         java.awt.Dimension detectPreferred = detect.getPreferredSize();
         java.awt.Dimension installPreferred = install.getPreferredSize();
         JPanel panel = ProfileEditorDialog.installationActions(detect, install);

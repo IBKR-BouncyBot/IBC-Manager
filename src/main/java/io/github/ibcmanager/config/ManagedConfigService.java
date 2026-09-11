@@ -252,7 +252,7 @@ public final class ManagedConfigService {
                 ? Integer.toString(profile.apiPort()) : "");
         document.set("ReloginAfterSecondFactorAuthenticationTimeout",
                 profile.reloginAfterSecondFactorTimeout() ? "yes" : "no");
-        // IBC 3.24.1 consults the deprecated ExitAfter... key only when the current
+        // Supported IBC releases consult the deprecated ExitAfter... key only when the current
         // ReloginAfter... key is blank. Always clear the legacy key so one imported
         // configuration cannot silently override the explicit profile policy.
         document.set("ExitAfterSecondFactorAuthenticationTimeout", "");

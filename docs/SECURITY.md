@@ -150,29 +150,37 @@ and does not write credentials.
 
 Controls include:
 
-- a fixed GitHub release URI derived from the tested `IBC_BASELINE` rather than
-  an unbounded `latest` redirect;
+- the exact GitHub REST endpoint
+  `https://api.github.com/repos/IbcAlpha/IBC/releases/latest`, with no generic
+  website scraping or mutable browser redirect used for version selection;
+- rejection of draft, prerelease, malformed, below-floor, duplicate-asset, and
+  unexpected-URL metadata;
+- selection of exactly `IBCWin-<resolved-version>.zip`;
 - HTTPS on the standard port only;
 - redirect hosts restricted to `github.com` and GitHub-controlled
   `*.githubusercontent.com` release hosts;
-- bounded connection/read timeouts and a 64 MiB compressed archive limit;
-- a transfer-computed SHA-256 plus enforcement of the SHA-256 published by
-  GitHub for the exact supported Windows asset and pinned in this release;
+- bounded metadata, connection/read, transfer, and archive sizes;
+- a transfer-computed SHA-256 plus enforcement of the size and SHA-256 digest
+  published in GitHub's release-asset metadata;
 - unique staging beside the destination and cleanup after failure/cancellation;
 - ZIP traversal, absolute-path, NUL, control-character, Windows reserved-name,
   trailing-dot/space, duplicate-path, entry-count, per-entry, and total-expansion
   protections;
-- validation of the exact IBC version, required distribution files,
-  `scripts\StartIBC.bat`, and expected classes inside `IBC.jar`;
-- rejection of symbolic-link, non-empty invalid, and concurrently changed
-  destinations;
-- no merge, overwrite, or automatic removal of an existing invalid `C:\IBC`;
+- validation that the external version and embedded JAR version match, are at or
+  above the compatibility floor, and expose the required distribution files,
+  `scripts\StartIBC.bat` switches, helper scripts, and classes inside `IBC.jar`;
+- extraction of the selected IBC JAR's Java class-file requirement, followed by
+  launch-time rejection when `StartIBC.bat` would use an older Java runtime;
+- rejection of symbolic-link, non-empty invalid, differently versioned, and
+  concurrently changed destinations;
+- no merge, overwrite, or automatic removal of an existing `C:\IBC`;
 - no modification of the downloaded IBC files or JAR.
 
-The GitHub release metadata publishes a SHA-256 digest for the supported Windows
-asset. IBC Manager pins and enforces that value before extraction. This is an
-independent check against an unexpected archive at the permitted release URL,
-but it is not a code-signing certificate or detached maintainer signature. A user
+The dynamically obtained SHA-256 protects against transfer corruption and an
+unexpected asset at the selected URL, but it is metadata from the same GitHub
+release account rather than an independent maintainer signature or a checksum
+reviewed and embedded in IBC Manager. Consequently, the dynamic channel trusts
+the current official IbcAlpha/IBC GitHub release. A user
 requiring stronger provenance should still verify IBC independently before
 selecting the folder.
 
@@ -223,8 +231,7 @@ a fresh passive listener snapshot before credentials are loaded and fails closed
 when the socket table is unavailable. Explicit user-requested IBC commands still
 create one local command connection.
 
-After an explicit GUI confirmation, the optional IBC installer contacts the
-fixed GitHub release and GitHub-controlled redirect hosts. The prerequisite
+After an explicit GUI confirmation, the optional IBC installer contacts GitHub's official latest-release API, selected release asset, and GitHub-controlled redirect hosts. The prerequisite
 bootstrap contacts official Microsoft endpoints and WinGet only after its own
 explicit consent. The manager does not contact IBKR directly.
 

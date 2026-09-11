@@ -1,4 +1,4 @@
-IBC Manager 1.0.13
+IBC Manager 1.0.21
 
 Copyright (C) 2026 IBC Manager contributors.
 Licensed under the GNU General Public License, version 3.
@@ -8,8 +8,10 @@ endorsed by, or supported by Interactive Brokers LLC or its affiliates.
 
 IBC Manager is designed to launch and supervise the separately installed IBC
 project. IBC itself is not included in this distribution. IBC is licensed under
-the GNU General Public License, version 3. The retained IBC 3.24.1 configuration
-template and license notice are stored under third_party/ibc-3.24.1.
+the GNU General Public License, version 3. The retained IBC 3.24.2 configuration template and license notice are stored
+under third_party/ibc-3.24.2 as the reviewed compatibility-floor reference. The
+runtime installer may download a newer latest official IBC release from GitHub;
+IBC itself remains separately licensed and is not included in this distribution.
 
 Interactive Brokers, IBKR, Trader Workstation, TWS, and IB Gateway are
 trademarks or service marks of their respective owners.

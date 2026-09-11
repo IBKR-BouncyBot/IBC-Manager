@@ -1,6 +1,5 @@
 package io.github.ibcmanager.ui;
 
-import io.github.ibcmanager.app.Version;
 import io.github.ibcmanager.discovery.DetectedInstallation;
 import io.github.ibcmanager.config.ManagedConfigService;
 import io.github.ibcmanager.discovery.InstallationDiscoveryService;
@@ -136,12 +135,12 @@ public final class ProfileEditorDialog extends JDialog {
                 : "Automatic discovery is available on Windows");
         detectButton.addActionListener(event -> detectInstallations());
 
-        JButton installButton = new JButton("Install IBC " + Version.IBC_BASELINE + " from GitHub...");
+        JButton installButton = new JButton("Install latest IBC from GitHub...");
         installButton.setName("installIbcButton");
         installButton.setEnabled(ibcInstallerService.isAvailable());
         installButton.setToolTipText(ibcInstallerService.isAvailable()
-                ? "Download the official Windows IBC " + Version.IBC_BASELINE
-                        + " release from GitHub and install it in C:\\IBC"
+                ? "Resolve and download GitHub's latest published official Windows IBC release, "
+                        + "then install it in C:\\IBC"
                 : "Automatic IBC installation is available on Windows");
         installButton.addActionListener(event -> downloadAndInstallIbc());
         UiUtil.addRow(panel, row++, "Installation", installationActions(detectButton, installButton));

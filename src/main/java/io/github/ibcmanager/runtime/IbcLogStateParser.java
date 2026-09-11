@@ -6,7 +6,7 @@ import java.time.Instant;
 import java.util.Locale;
 import java.util.Optional;
 
-/** Interprets the lifecycle messages emitted by IBC 3.24.1 and StartIBC.bat. */
+/** Interprets the lifecycle messages emitted by supported IBC releases and StartIBC.bat. */
 public final class IbcLogStateParser {
     public enum CommandServerState {
         UNKNOWN,
@@ -144,7 +144,7 @@ public final class IbcLogStateParser {
 
     /**
      * IBC emits "Login has completed" only after its LoginManager reaches LOGGED_IN. For the
-     * supported IBC 3.24.1 baseline this is the command-safety boundary used for operations that
+     * supported IBC integration surface this is the command-safety boundary used for operations that
      * dereference the TWS/Gateway main window, such as RECONNECTDATA.
      */
     public synchronized boolean mainWindowReady() { return loginCompleted; }

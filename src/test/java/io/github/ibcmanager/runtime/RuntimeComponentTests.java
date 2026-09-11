@@ -742,7 +742,7 @@ public final class RuntimeComponentTests implements TestSuite {
 
     private void stateParserNormal() {
         IbcLogStateParser parser = new IbcLogStateParser();
-        assertHint(parser, "Starting IBC version 3.24.1", RuntimeState.STARTING);
+        assertHint(parser, "Starting IBC version 3.24.2", RuntimeState.STARTING);
         assertHint(parser, "Login dialog WINDOW_OPENED", RuntimeState.WAITING_FOR_LOGIN);
         assertHint(parser, "Second factor authentication initiated", RuntimeState.WAITING_FOR_SECOND_FACTOR);
         assertHint(parser, "Login has completed", RuntimeState.RUNNING);
@@ -767,7 +767,7 @@ public final class RuntimeComponentTests implements TestSuite {
         parser.reset();
         assertHint(parser, "Exiting after error with exit code=4", RuntimeState.UNKNOWN);
         Assertions.isTrue(parser.errorExitConfirmed(),
-                "the exact IBC 3.24.1 error-exit wording must be recognized");
+                "the exact IBC 3.24.2 error-exit wording must be recognized");
         parser.reset();
         Assertions.isTrue(parser.latest().isEmpty(), "reset must clear stale state");
     }
@@ -1047,7 +1047,28 @@ public final class RuntimeComponentTests implements TestSuite {
             IOException incompatible = Assertions.throwsType(IOException.class,
                     () -> java8.resolve(automatic), "Java 8 must be rejected before StartIBC is launched");
             Assertions.contains(incompatible.getMessage(), "requires Java 17",
-                    "the rejected runtime must explain the IBC baseline requirement");
+                    "the rejected runtime must explain the supported-IBC Java requirement");
+
+            TestSupport.writeIbcJar(base.ibcPath().resolve("IBC.jar"),
+                    io.github.ibcmanager.app.Version.IBC_MINIMUM_SUPPORTED_VERSION, 65);
+            IbcJavaRuntimeResolver java17ForJava21Ibc = new IbcJavaRuntimeResolver(
+                    OperatingSystem.WINDOWS, Map.of("PROGRAMDATA", programData.toString()),
+                    (command, input, timeout) -> new CommandResult(
+                            0, "", "openjdk version \"17.0.12\"", false),
+                    new OfflineApplicationLayoutResolver());
+            IOException newerIbcNeedsNewerJava = Assertions.throwsType(IOException.class,
+                    () -> java17ForJava21Ibc.resolve(automatic),
+                    "a dynamically resolved IBC release must not start on an older Java runtime");
+            Assertions.contains(newerIbcNeedsNewerJava.getMessage(), "requires Java 21",
+                    "the error must report the Java requirement embedded in the selected IBC release");
+
+            IbcJavaRuntimeResolver java21 = new IbcJavaRuntimeResolver(
+                    OperatingSystem.WINDOWS, Map.of("PROGRAMDATA", programData.toString()),
+                    (command, input, timeout) -> new CommandResult(
+                            0, "", "openjdk version \"21.0.7\"", false),
+                    new OfflineApplicationLayoutResolver());
+            Assertions.equals(21, java21.resolve(automatic).major(),
+                    "a runtime satisfying a future IBC class-file requirement must be accepted");
         } finally {
             TestSupport.deleteTree(root);
         }

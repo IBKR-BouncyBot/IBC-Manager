@@ -93,7 +93,7 @@ public final class ControllerTests implements TestSuite {
                 new NamedTest("unexpected process exit cleans state and reports an error", this::unexpectedExit),
                 new NamedTest("normal and scheduled wrapper exits finish stopped rather than error",
                         this::normalScheduledExit),
-                new NamedTest("exact IBC 3.24.1 error-exit marker survives to final failure state",
+                new NamedTest("exact IBC 3.24.2 error-exit marker survives to final failure state",
                         this::reportedErrorExit),
                 new NamedTest("IBC error marker outranks StartIBC's generic normal-exit footer",
                         this::reportedErrorWithNormalFooter),

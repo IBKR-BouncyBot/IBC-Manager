@@ -41,7 +41,8 @@ public final class IbcManagerApp {
         }
         if (parsed.version) {
             System.out.println(Version.APPLICATION_NAME + " " + Version.VERSION
-                    + " (IBC baseline " + Version.IBC_BASELINE + ")");
+                    + " (IBC installer: " + Version.IBC_RELEASE_CHANNEL
+                    + "; compatibility floor " + Version.IBC_MINIMUM_SUPPORTED_VERSION + ")");
             return 0;
         }
         AppPaths paths = parsed.dataDirectory == null

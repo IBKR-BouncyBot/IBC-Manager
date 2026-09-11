@@ -66,7 +66,7 @@ verified Java installation.
 
 1. discovers all plausible Java homes instead of trusting the first executable
    on `PATH`;
-2. runs `java -version` and enforces Java 17 or newer;
+2. runs `java -version` and enforces Java 17 or newer for IBC Manager itself;
 3. verifies JDK tools, `jpackage`, and WiX only when the selected mode needs
    them;
 4. requests explicit user permission before installing anything;
@@ -132,19 +132,21 @@ locking semantics on POSIX systems.
 
 ## Official IBC installation
 
-The profile editor can invoke `IbcInstallerService` to install the tested IBC
-compatibility baseline. This service does not modify IBC and is separate from the
-Java prerequisite bootstrap.
+The profile editor can invoke `IbcInstallerService` to resolve and install the
+latest published official IBC release. This service does not modify IBC and is
+separate from the Java prerequisite bootstrap.
 
 ```text
 User confirmation
   │
-Official GitHub release URI
+GitHub /repos/IbcAlpha/IBC/releases/latest metadata
+  │ exact repository + release/asset schema + published size/SHA-256
+Official browser_download_url
   │ HTTPS + restricted redirect hosts + bounded download
 Temporary ZIP
-  │ transfer SHA-256 + pinned official SHA-256
+  │ transfer SHA-256 + GitHub metadata SHA-256
 Unique staging directory beside C:\IBC
-  │ safe extraction and validation
+  │ safe extraction + version/JAR/launcher capability validation
 Atomic move where supported
   │
 C:\IBC
@@ -152,10 +154,14 @@ C:\IBC
 
 The installer:
 
-- targets the explicit `IBC_BASELINE` and corresponding `IBCWin-<version>.zip`;
-- requires the complete archive to match the SHA-256 published by GitHub for the
-  supported asset and pinned in the application;
-- reuses a valid existing baseline installation without a network request;
+- resolves the latest published non-draft, non-prerelease GitHub release at
+  installation time;
+- selects exactly `IBCWin-<resolved-version>.zip` and requires the version to be
+  at or above `IBC_MINIMUM_SUPPORTED_VERSION`;
+- requires the complete archive to match the size and SHA-256 digest published
+  in GitHub's release-asset metadata;
+- reuses an existing installation only when it is already that resolved latest
+  version, and never silently upgrades a non-empty installation;
 - rejects non-empty invalid or symbolic-link destinations;
 - enforces download, entry-count, per-entry, and total-expansion limits;
 - rejects path traversal, absolute paths, Windows reserved/ambiguous names, and
@@ -165,6 +171,8 @@ The installer:
 - validates `IBC.jar`, `version`, `config.ini`, `LICENSE.txt`, and
   `scripts\StartIBC.bat`;
 - verifies the expected IBC TWS and Gateway classes are present in the JAR;
+- records the Java feature level encoded by the IBC JAR's `IbcVersionInfo`
+  class so profile launch can require Java 17 or that higher level;
 - checks the destination again immediately before activation;
 - cleans staging and temporary files after success, failure, or cancellation.
 
@@ -173,7 +181,7 @@ is an explicit user action and retrieves the official release unchanged.
 
 ## IBC configuration semantics
 
-IBC 3.24.1 reads `config.ini` with one full-file Java
+Compatible IBC releases read `config.ini` with one full-file Java
 `Properties.load(InputStream)` operation. `IbcConfigDocument` therefore keeps two
 separate representations:
 

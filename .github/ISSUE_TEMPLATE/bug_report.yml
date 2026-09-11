@@ -10,7 +10,7 @@ body:
     id: version
     attributes:
       label: IBC Manager version
-      placeholder: 1.0.15
+      placeholder: 1.0.21
     validations:
       required: true
   - type: input
