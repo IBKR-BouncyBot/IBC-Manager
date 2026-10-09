@@ -34,6 +34,14 @@ enum ProfileSessionAction {
             new Color(160, 35, 35),
             "Stop the running IBC-managed session gracefully",
             "IBC Manager will request a graceful shutdown of the running IBC-managed session. API and market-data connectivity will stop. If the timeout expires, no process is killed automatically; Force Stop remains a separate recovery action."),
+    FORCE_STOP(
+            "Force Stop",
+            "forceStopProfileButton",
+            "Confirm force stop",
+            "Force Stop",
+            new Color(118, 19, 19),
+            "Terminate the exact process tree owned by this profile",
+            "This cancels any in-progress automatic recovery and forcibly terminates the exact process tree owned by this profile. Use it only when normal Stop cannot complete. Unsaved Gateway/TWS state may be lost."),
     RESTART(
             "Restart",
             "restartProfileButton",

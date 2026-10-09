@@ -13,6 +13,8 @@ import io.github.ibcmanager.runtime.ProcessIdentityStore;
 import io.github.ibcmanager.runtime.ProcessTreeTerminator;
 import io.github.ibcmanager.runtime.OfflineApplicationLayoutResolver;
 import io.github.ibcmanager.runtime.ProfileRuntimeController;
+import io.github.ibcmanager.runtime.RecoveryHistoryStore;
+import io.github.ibcmanager.runtime.RecoverySleeper;
 import io.github.ibcmanager.runtime.PortProbe;
 import io.github.ibcmanager.runtime.RuntimeRegistry;
 import io.github.ibcmanager.security.CredentialStore;
@@ -30,6 +32,10 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.util.Objects;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 
 public final class AppServices implements AutoCloseable {
     private final AppPaths paths;
@@ -43,13 +49,14 @@ public final class AppServices implements AutoCloseable {
     private final RuntimeRegistry runtimeRegistry;
     private final DiagnosticBundleService diagnosticBundleService;
     private final TaskSchedulerService taskSchedulerService;
+    private final ExecutorService automaticRecoveryExecutor;
 
     private AppServices(AppPaths paths, CredentialStore credentialStore,
             ProfileRepository profileRepository, ManagedConfigService managedConfigService,
             ProfileSaveService profileSaveService, ProfileDeletionService profileDeletionService,
             ProfileValidator profileValidator, ProfileSetValidator profileSetValidator,
             RuntimeRegistry runtimeRegistry, DiagnosticBundleService diagnosticBundleService,
-            TaskSchedulerService taskSchedulerService) {
+            TaskSchedulerService taskSchedulerService, ExecutorService automaticRecoveryExecutor) {
         this.paths = paths;
         this.credentialStore = credentialStore;
         this.profileRepository = profileRepository;
@@ -61,6 +68,7 @@ public final class AppServices implements AutoCloseable {
         this.runtimeRegistry = runtimeRegistry;
         this.diagnosticBundleService = diagnosticBundleService;
         this.taskSchedulerService = taskSchedulerService;
+        this.automaticRecoveryExecutor = automaticRecoveryExecutor;
     }
 
     public static AppServices create(AppPaths paths) throws IOException {
@@ -82,6 +90,9 @@ public final class AppServices implements AutoCloseable {
         ProfileSaveService saveService = new ProfileSaveService(repository, credentialStore, configService);
         ProfileDeletionService deletionService = new ProfileDeletionService(paths, repository, credentialStore);
         deletionService.cleanupStaleTransactions();
+        // Restore any older prepared deletion before converting the surviving profiles.
+        new LegacyUpgradeService(paths).migrate();
+        new ProfileConfigurationUpgradeService(paths, credentialStore).migrate();
         ProfileValidator validator = new ProfileValidator(credentialStore);
         ProfileSetValidator setValidator = new ProfileSetValidator();
         RuntimeConfigFactory runtimeConfigFactory = new RuntimeConfigFactory(paths, configService);
@@ -92,6 +103,14 @@ public final class AppServices implements AutoCloseable {
         ApplicationStartCoordinator startCoordinator = new ApplicationStartCoordinator(
                 Path.of(System.getProperty("java.io.tmpdir"), "IBCManager", "application-start-locks"),
                 new OfflineApplicationLayoutResolver());
+        DiagnosticBundleService diagnostics = new DiagnosticBundleService(paths, configService, validator, clock);
+        RecoveryHistoryStore recoveryHistoryStore = new RecoveryHistoryStore(paths);
+        ThreadFactory recoveryThreadFactory = runnable -> {
+            Thread thread = new Thread(runnable, "ibc-manager-auto-recovery");
+            thread.setDaemon(true);
+            return thread;
+        };
+        ExecutorService automaticRecoveryExecutor = Executors.newCachedThreadPool(recoveryThreadFactory);
         RuntimeRegistry registry = new RuntimeRegistry((Profile profile) -> new ProfileRuntimeController(
                 profile,
                 paths,
@@ -105,11 +124,14 @@ public final class AppServices implements AutoCloseable {
                 identityStore,
                 new ProcessTreeTerminator(),
                 clock,
-                startCoordinator));
-        DiagnosticBundleService diagnostics = new DiagnosticBundleService(paths, configService, validator, clock);
+                startCoordinator,
+                automaticRecoveryExecutor,
+                recoveryHistoryStore,
+                diagnostics::create,
+                RecoverySleeper.system()));
         TaskSchedulerService scheduler = new WindowsTaskSchedulerService();
         return new AppServices(paths, credentialStore, repository, configService, saveService, deletionService, validator,
-                setValidator, registry, diagnostics, scheduler);
+                setValidator, registry, diagnostics, scheduler, automaticRecoveryExecutor);
     }
 
     public AppPaths paths() { return paths; }
@@ -127,5 +149,11 @@ public final class AppServices implements AutoCloseable {
     @Override
     public void close() {
         runtimeRegistry.close();
+        automaticRecoveryExecutor.shutdownNow();
+        try {
+            automaticRecoveryExecutor.awaitTermination(5, TimeUnit.SECONDS);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        }
     }
 }

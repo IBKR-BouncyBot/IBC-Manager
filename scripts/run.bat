@@ -1,9 +1,17 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
-cd /d "%~dp0.."
+rem Every user-facing exit returns here, including prerequisite and build failures.
+call :main %*
+set "IBC_MANAGER_ENTRY_RESULT=%ERRORLEVEL%"
+call "%~dp0pause-after-run.bat" "%IBC_MANAGER_ENTRY_RESULT%"
+exit /b %IBC_MANAGER_ENTRY_RESULT%
 
-set "JAR=dist\IBC-Manager-1.0.21.jar"
-if not exist "%JAR%" set "JAR=IBC-Manager-1.0.21.jar"
+:main
+cd /d "%~dp0.."
+if errorlevel 1 exit /b 2
+
+set "JAR=dist\IBC-Manager-2.0.3.jar"
+if not exist "%JAR%" set "JAR=IBC-Manager-2.0.3.jar"
 
 if exist "%JAR%" goto bootstrap_runtime
 
@@ -24,7 +32,7 @@ if not "%RESULT%"=="0" (
   echo [IBC Manager] The source build failed. Review the messages above.
   exit /b %RESULT%
 )
-set "JAR=dist\IBC-Manager-1.0.21.jar"
+set "JAR=dist\IBC-Manager-2.0.3.jar"
 if not exist "%JAR%" (
   echo [IBC Manager] The build completed without creating %JAR%.
   exit /b 2
@@ -45,15 +53,16 @@ if not "%RESULT%"=="0" (
   exit /b %RESULT%
 )
 
-start "IBC Manager" "%IBC_MANAGER_JAVAW_EXE%" -Dfile.encoding=UTF-8 -jar "%JAR%" %*
+rem Keep stdout/stderr visible and wait for GUI exit before the final pause.
+"%IBC_MANAGER_JAVA_EXE%" -Dfile.encoding=UTF-8 -jar "%JAR%" %*
 set "RESULT=%ERRORLEVEL%"
 if not "%RESULT%"=="0" (
-  echo [IBC Manager] Windows could not start IBC Manager.
+  echo [IBC Manager] IBC Manager exited with an error. Review the output above.
   exit /b %RESULT%
 )
 exit /b 0
 
 :jar_missing
-echo [IBC Manager] IBC-Manager-1.0.21.jar or its source build driver was not found.
+echo [IBC Manager] IBC-Manager-2.0.3.jar or its source build driver was not found.
 echo [IBC Manager] Extract the complete release archive, or run this launcher from the complete source tree.
 exit /b 2

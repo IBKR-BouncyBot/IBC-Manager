@@ -1,6 +1,7 @@
 package io.github.ibcmanager.runtime;
 
 import io.github.ibcmanager.app.AppPaths;
+import io.github.ibcmanager.engine.EmbeddedEngine;
 import io.github.ibcmanager.app.OperatingSystem;
 import io.github.ibcmanager.model.Profile;
 import io.github.ibcmanager.model.TargetType;
@@ -15,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 public final class LaunchScriptFactory implements LaunchSpecFactory {
     private final AppPaths paths;
@@ -26,7 +28,7 @@ public final class LaunchScriptFactory implements LaunchSpecFactory {
     }
 
     public LaunchScriptFactory(AppPaths paths, OperatingSystem operatingSystem) {
-        this(paths, operatingSystem, new IbcJavaRuntimeResolver(operatingSystem, System.getenv(),
+        this(paths, operatingSystem, new IbcJavaRuntimeResolver(operatingSystem,
                 new io.github.ibcmanager.security.DefaultCommandExecutor(),
                 new OfflineApplicationLayoutResolver()));
     }
@@ -42,9 +44,14 @@ public final class LaunchScriptFactory implements LaunchSpecFactory {
         Objects.requireNonNull(profile, "profile");
         Objects.requireNonNull(runtimeConfig, "runtimeConfig");
         if (operatingSystem != OperatingSystem.WINDOWS) {
-            throw new IOException("IBC Manager 1.0 launches IBC only on Windows");
+            throw new IOException("IBC Manager supports Windows only");
         }
-        IbcJavaRuntimeResolver.ResolvedJava resolvedJava = javaRuntimeResolver.resolve(profile);
+        if (profile.targetType() != TargetType.GATEWAY) {
+            throw new IOException("Only IB Gateway profiles can be launched; legacy TWS profiles are retained for reference");
+        }
+        WindowsCommandSafety.requireSafeExternalArgument(profile.twsSettingsPath().toString());
+        Path engineDirectory = EmbeddedEngine.ensureFor(profile);
+        Optional<IbcJavaRuntimeResolver.ResolvedJava> resolvedJava = javaRuntimeResolver.resolve(profile);
         Path runtimeDirectory = paths.runtimeDirectory(profile.id());
         FilePermissionHardener.hardenDirectory(runtimeDirectory);
         Path script = runtimeDirectory.resolve("launch.cmd");
@@ -54,16 +61,20 @@ public final class LaunchScriptFactory implements LaunchSpecFactory {
         if (profile.targetType() == TargetType.GATEWAY) arguments.add(new LaunchArgument("/Gateway", true));
         arguments.add(new LaunchArgument("/TwsPath:" + profile.twsPath(), true));
         arguments.add(new LaunchArgument("/TwsSettingsPath:" + profile.twsSettingsPath(), true));
-        arguments.add(new LaunchArgument("/IbcPath:" + profile.ibcPath(), true));
+        arguments.add(new LaunchArgument("/IbcPath:" + engineDirectory, true));
         // StartIBC.bat expands CONFIG through ordinary CMD variable contexts. The runtime
         // configuration is therefore located below the already validated TWS settings path and
         // must satisfy the same strict metacharacter policy as every other external argument.
         arguments.add(new LaunchArgument("/Config:" + runtimeConfig, true));
-        arguments.add(new LaunchArgument("/JavaPath:" + resolvedJava.directory(), true));
+        // When no override is configured, leave Java discovery to the official StartIBC.bat.
+        // Newer IBKR installers use a different bundled-runtime layout that only the matching
+        // launcher script is authoritative for.
+        resolvedJava.ifPresent(java -> arguments.add(
+                new LaunchArgument("/JavaPath:" + java.directory(), true)));
         arguments.add(new LaunchArgument("/Mode:" + profile.tradingMode().ibcValue(), true));
         arguments.add(new LaunchArgument("/On2FATimeout:" + profile.twoFactorTimeoutAction().ibcValue(), true));
 
-        Path officialLauncher = profile.ibcPath().resolve("scripts").resolve("StartIBC.bat");
+        Path officialLauncher = engineDirectory.resolve("scripts").resolve("StartIBC.bat");
         StringBuilder content = new StringBuilder();
         content.append("@echo off\r\n");
         content.append("chcp 65001 >nul\r\n");

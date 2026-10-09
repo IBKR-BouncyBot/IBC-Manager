@@ -42,9 +42,9 @@ public final class RuntimeConfigFactory implements RuntimeConfigProvider {
         if (profile.credentialMode() == CredentialMode.EXISTING_CONFIG) {
             ManagedConfigService.applyProfile(document, profile);
         } else {
-            // The managed config is the canonical source for advanced settings. Re-apply only
-            // structured profile fields so a raw managed-config edit cannot be overwritten by a
-            // stale profile-settings snapshot at launch time.
+            // Current profiles generate every value in memory from the profile.
+            // The legacy reader is retained solely for upgrade compatibility/tests.
+            // Re-apply structured fields; no current on-disk INI is read here.
             ManagedConfigService.applyProfileControlled(document, profile);
         }
 

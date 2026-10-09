@@ -24,6 +24,9 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.List;
 import java.util.Objects;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -47,8 +50,13 @@ public final class DiagnosticBundleService {
     }
 
     public Path create(Profile profile, ProfileStatus status) throws IOException {
+        return create(profile, status, List.of());
+    }
+
+    public Path create(Profile profile, ProfileStatus status, List<String> liveRuntimeLog) throws IOException {
         Objects.requireNonNull(profile, "profile");
         Objects.requireNonNull(status, "status");
+        Objects.requireNonNull(liveRuntimeLog, "liveRuntimeLog");
         FilePermissionHardener.hardenDirectory(paths.diagnostics());
         Instant generated = clock.instant();
         String stem = "IBC-Manager-Diagnostics-" + safeName(profile.name()) + "-" + FILE_TIME.format(generated);
@@ -76,6 +84,7 @@ public final class DiagnosticBundleService {
                             + SecretRedactor.redact(ex.getMessage()) + "\n");
                 }
                 addTail(zip, paths.profileLog(profile.id()), "profile-log-tail.txt");
+                addLiveRuntimeLog(zip, liveRuntimeLog);
                 addTail(zip, paths.appLog(), "manager-log-tail.txt");
             }
 
@@ -113,6 +122,7 @@ public final class DiagnosticBundleService {
                 + "Generated UTC: " + generated + "\n"
                 + "Manager version: " + Version.VERSION + "\n"
                 + "IBC release channel: " + Version.IBC_RELEASE_CHANNEL + "\n"
+                + "Integrated engine revision: " + Version.ENGINE_VERSION + "\n"
                 + "IBC compatibility floor: " + Version.IBC_MINIMUM_SUPPORTED_VERSION + "\n"
                 + "Java: " + System.getProperty("java.version", "unknown") + "\n"
                 + "OS: " + System.getProperty("os.name", "unknown") + " "
@@ -131,22 +141,67 @@ public final class DiagnosticBundleService {
                 + "Enabled: " + profile.enabled() + "\n"
                 + "Target: " + profile.targetType() + "\n"
                 + "Trading mode: " + profile.tradingMode() + "\n"
-                + "TWS/Gateway version: " + profile.twsMajorVersion() + "\n"
-                + "IBC path: " + profile.ibcPath() + "\n"
-                + "TWS path: " + profile.twsPath() + "\n"
+                + "IB Gateway version: " + profile.twsMajorVersion() + "\n"
+                + "Ignored legacy IBC path: " + profile.ibcPath() + "\n"
+                + "Gateway program path: " + profile.twsPath() + "\n"
                 + "Settings path: " + profile.twsSettingsPath() + "\n"
                 + "API port: " + profile.apiPort() + "\n"
                 + "Command-server port: " + profile.commandServerPort() + "\n"
                 + "Bind address: " + profile.bindAddress() + "\n"
                 + "Username: " + redactUsername(profile.username()) + "\n"
                 + "Credential mode: " + profile.credentialMode() + "\n"
-                + "Auto-start: " + profile.autoStart() + "\n";
+                + "Auto-start: " + profile.autoStart() + "\n"
+                + "Automatic stalled-start recovery: " + profile.autoRecoverStartupStall() + "\n";
     }
 
     private static String redactUsername(String username) {
         if (username == null || username.isBlank()) return "";
         if (username.length() <= 2) return "**";
         return username.charAt(0) + "***" + username.charAt(username.length() - 1);
+    }
+
+
+    private static void addLiveRuntimeLog(ZipOutputStream zip, List<String> lines) throws IOException {
+        if (lines.isEmpty()) {
+            putText(zip, "live-runtime-log.txt", "No in-memory runtime log lines were available.\n");
+            return;
+        }
+        String marker = "[earlier in-memory lines omitted to enforce the diagnostic size limit]";
+        long markerBytes = marker.getBytes(StandardCharsets.UTF_8).length + 1L;
+        long payloadLimit = Math.max(0, MAX_LOG_BYTES - markerBytes);
+        Deque<String> retained = new ArrayDeque<>();
+        long retainedBytes = 0;
+        boolean omitted = false;
+        int first = Math.max(0, lines.size() - 5000);
+        for (int index = lines.size() - 1; index >= first; index--) {
+            String line = SecretRedactor.redact(Objects.requireNonNullElse(lines.get(index), ""));
+            long lineBytes = line.getBytes(StandardCharsets.UTF_8).length + 1L;
+            if (lineBytes > payloadLimit) {
+                line = utf8Tail(line, (int) Math.max(0, payloadLimit - 1));
+                lineBytes = line.getBytes(StandardCharsets.UTF_8).length + 1L;
+                omitted = true;
+            }
+            if (retainedBytes + lineBytes > payloadLimit) {
+                omitted = true;
+                break;
+            }
+            retained.addFirst(line);
+            retainedBytes += lineBytes;
+        }
+        if (first > 0) omitted = true;
+        StringBuilder text = new StringBuilder();
+        if (omitted) text.append(marker).append('\n');
+        for (String line : retained) text.append(line).append('\n');
+        putText(zip, "live-runtime-log.txt", text.toString());
+    }
+
+    private static String utf8Tail(String value, int maximumBytes) {
+        if (maximumBytes <= 0 || value.isEmpty()) return "";
+        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length <= maximumBytes) return value;
+        int start = bytes.length - maximumBytes;
+        while (start < bytes.length && (bytes[start] & 0xC0) == 0x80) start++;
+        return new String(bytes, start, bytes.length - start, StandardCharsets.UTF_8);
     }
 
     private static void addTail(ZipOutputStream zip, Path file, String entryName) throws IOException {

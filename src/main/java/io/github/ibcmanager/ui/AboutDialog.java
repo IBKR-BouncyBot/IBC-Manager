@@ -16,6 +16,11 @@ public final class AboutDialog {
     private AboutDialog() { }
 
     public static void show(Frame owner) {
+        create(owner).setVisible(true);
+    }
+
+    /** Creates the real dialog separately so its contents and Close action can be tested. */
+    public static JDialog create(Frame owner) {
         JDialog dialog = new JDialog(owner, "About IBC Manager", true);
         JPanel body = new JPanel(new GridLayout(0, 1, 0, 7));
         body.setBorder(new EmptyBorder(18, 24, 18, 24));
@@ -23,11 +28,14 @@ public final class AboutDialog {
         title.setFont(title.getFont().deriveFont(Font.BOLD, 24f));
         body.add(title);
         body.add(new JLabel("Version " + Version.VERSION));
-        body.add(new JLabel("Installs the latest official IBC release from GitHub"));
-        body.add(new JLabel("IBC compatibility floor " + Version.IBC_MINIMUM_SUPPORTED_VERSION
-                + "; Java 17+"));
-        body.add(new JLabel("Windows-first profile, configuration, process, and diagnostics manager."));
-        body.add(new JLabel("IBC remains the unmodified automation engine and is licensed under GPLv3."));
+        body.add(new JLabel("Included engine " + Version.ENGINE_VERSION));
+        body.add(new JLabel("Based on IBC " + Version.IBC_MINIMUM_SUPPORTED_VERSION + "; Manager requires Java 17+"));
+        body.add(new JLabel("Windows-only; IB Gateway profiles, configuration, recovery, and diagnostics."));
+        body.add(new JLabel("Maintained IBC-derived engine included; GPLv3-or-later source supplied."));
+        JLabel thanks = new JLabel("Thank you to Richard L King (rlktradewright), author and long-time maintainer of IBC.");
+        thanks.setName("ibcAuthorAcknowledgement");
+        body.add(thanks);
+        body.add(new JLabel("With thanks also to Steven M. Kearns and all upstream contributors."));
         body.add(new JLabel("This is an unofficial project and is not affiliated with Interactive Brokers."));
         dialog.add(body, BorderLayout.CENTER);
         JPanel buttons = new JPanel();
@@ -37,6 +45,6 @@ public final class AboutDialog {
         dialog.add(buttons, BorderLayout.SOUTH);
         dialog.pack();
         dialog.setLocationRelativeTo(owner);
-        dialog.setVisible(true);
+        return dialog;
     }
 }

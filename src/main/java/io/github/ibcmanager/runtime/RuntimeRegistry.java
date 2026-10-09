@@ -48,7 +48,8 @@ public final class RuntimeRegistry implements AutoCloseable {
         for (Profile profile : profiles) upsert(profile);
         Set<UUID> retained = profiles.stream().map(Profile::id).collect(java.util.stream.Collectors.toUnmodifiableSet());
         controllers.entrySet().removeIf(entry -> !retained.contains(entry.getKey())
-                && !entry.getValue().status().processAlive());
+                && !entry.getValue().status().processAlive()
+                && !entry.getValue().automaticRecoveryInProgress());
     }
 
     public ProfileRuntimeController upsert(Profile profile) {
@@ -58,7 +59,11 @@ public final class RuntimeRegistry implements AutoCloseable {
                 created.addStatusListener(this::publish);
                 return created;
             }
-            if (!existing.profile().equals(profile) && !existing.status().processAlive()) existing.updateProfile(profile);
+            if (!existing.profile().equals(profile)
+                    && !existing.status().processAlive()
+                    && !existing.automaticRecoveryInProgress()) {
+                existing.updateProfile(profile);
+            }
             return existing;
         });
     }
@@ -83,7 +88,10 @@ public final class RuntimeRegistry implements AutoCloseable {
 
     public void startAutoStartProfiles() {
         for (ProfileRuntimeController controller : controllers()) {
-            if (controller.profile().enabled() && controller.profile().autoStart() && !controller.status().processAlive()) {
+            if (controller.profile().enabled() && controller.profile().autoStart()
+                    && !controller.status().processAlive()
+                    && !controller.automaticRecoveryInProgress()
+                    && !controller.recoveryRequiresManualIntervention()) {
                 scheduler.execute(() -> {
                     try { controller.start(); }
                     catch (RuntimeControllerException ex) { controller.logs().append("IBC Manager auto-start failed: " + ex.getMessage()); }

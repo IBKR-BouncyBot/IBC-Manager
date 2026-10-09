@@ -30,6 +30,6 @@ public record DetectedInstallation(
 
     @Override
     public String toString() {
-        return targetType + " " + version + "  |  IBC " + ibcPath + "  |  " + twsRoot;
+        return targetType + " " + version + "  |  integrated engine  |  " + twsRoot;
     }
 }

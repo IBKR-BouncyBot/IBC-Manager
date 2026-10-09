@@ -34,8 +34,14 @@ public final class ProfileCodecTests implements TestSuite {
         tests.add(new NamedTest("preserves unknown escape sequences", this::unknownEscape));
         tests.add(new NamedTest("rejects duplicate core keys", this::duplicateCore));
         tests.add(new NamedTest("rejects duplicate setting keys", this::duplicateSetting));
+        tests.add(new NamedTest("reports the encoded source format using full structural validation",
+                this::sourceFormatVersion));
         tests.add(new NamedTest("rejects unsupported format versions", this::unsupportedVersion));
         tests.add(new NamedTest("migrates version 1 compatibility defaults", this::migrateVersionOne));
+        tests.add(new NamedTest("migrates version 2 automatic-recovery default", this::migrateVersionTwo));
+        tests.add(new NamedTest("migrates version 3 to unattended 2FA retry defaults", this::migrateVersionThree));
+        tests.add(new NamedTest("new profiles enable unattended 2FA retry defaults", this::defaultSecondFactorPolicy));
+        tests.add(new NamedTest("format 4 preserves an explicit disabled 2FA retry", this::preserveDisabledSecondFactorPolicy));
         tests.add(new NamedTest("rejects missing required keys", this::missingKey));
         tests.add(new NamedTest("rejects invalid integers", this::invalidInteger));
         tests.add(new NamedTest("rejects invalid booleans", this::invalidBoolean));
@@ -75,6 +81,7 @@ public final class ProfileCodecTests implements TestSuite {
                 .twoFactorTimeoutAction(TwoFactorTimeoutAction.RESTART)
                 .reloginAfterSecondFactorTimeout(true)
                 .forceApiPortAtLaunch(false)
+                .autoRecoverStartupStall(false)
                 .autoStart(true)
                 .minimizeMainWindow(false)
                 .gracefulStopTimeoutSeconds(45)
@@ -83,7 +90,7 @@ public final class ProfileCodecTests implements TestSuite {
         String encoded = codec.encode(profile);
         Assertions.equals(profile, codec.decode(encoded), "complete profile must round-trip");
         Assertions.isTrue(encoded.endsWith("\n"), "encoded profile must end with one newline");
-        Assertions.contains(encoded, "formatVersion=2", "format version must be emitted");
+        Assertions.contains(encoded, "formatVersion=5", "format version must be emitted");
     }
 
     private void deterministicOrdering() {
@@ -129,8 +136,20 @@ public final class ProfileCodecTests implements TestSuite {
                 () -> codec.decode(codec.encode(profile) + line), "duplicate setting must fail");
     }
 
+    private void sourceFormatVersion() {
+        String current = codec.encode(base().build());
+        Assertions.equals(5, codec.sourceFormatVersion(current),
+                "the current encoded format must be reported");
+        String legacy = current.replace("formatVersion=5", "formatVersion=3");
+        Assertions.equals(3, codec.sourceFormatVersion(legacy),
+                "the legacy encoded format must be reported without decoding migration");
+        Assertions.throwsType(IllegalArgumentException.class,
+                () -> codec.sourceFormatVersion(legacy + "formatVersion=3\n"),
+                "format inspection must reject duplicate core keys");
+    }
+
     private void unsupportedVersion() {
-        String text = codec.encode(base().build()).replace("formatVersion=2", "formatVersion=999");
+        String text = codec.encode(base().build()).replace("formatVersion=5", "formatVersion=999");
         Assertions.throwsType(IllegalArgumentException.class, () -> codec.decode(text),
                 "unsupported format must fail");
     }
@@ -143,10 +162,11 @@ public final class ProfileCodecTests implements TestSuite {
                 .reloginAfterSecondFactorTimeout(false)
                 .build();
         String legacy = codec.encode(current)
-                .replace("formatVersion=2", "formatVersion=1")
+                .replace("formatVersion=5", "formatVersion=1")
                 .replaceAll("(?m)^ibcJavaPath=.*\n", "")
                 .replaceAll("(?m)^reloginAfterSecondFactorTimeout=.*\n", "")
-                .replaceAll("(?m)^forceApiPortAtLaunch=.*\n", "");
+                .replaceAll("(?m)^forceApiPortAtLaunch=.*\n", "")
+                .replaceAll("(?m)^autoRecoverStartupStall=.*\n", "");
         Profile migrated = codec.decode(legacy);
         Assertions.isTrue(migrated.reloginAfterSecondFactorTimeout(),
                 "version 1 restart policy must preserve the old internal-relogin behavior");
@@ -154,6 +174,49 @@ public final class ProfileCodecTests implements TestSuite {
                 "version 1 profiles must preserve the old forced API-port behavior");
         Assertions.equals(Path.of(""), migrated.ibcJavaPath(),
                 "version 1 profiles must leave the Java override unset");
+    }
+
+    private void migrateVersionTwo() {
+        Profile current = base().autoRecoverStartupStall(false).build();
+        String legacy = codec.encode(current)
+                .replace("formatVersion=5", "formatVersion=2")
+                .replaceAll("(?m)^autoRecoverStartupStall=.*\n", "");
+        Profile migrated = codec.decode(legacy);
+        Assertions.isTrue(migrated.autoRecoverStartupStall(),
+                "version 2 profiles must enable the unattended startup-stall recovery default");
+    }
+
+    private void migrateVersionThree() {
+        Profile current = base()
+                .twoFactorTimeoutAction(TwoFactorTimeoutAction.EXIT)
+                .reloginAfterSecondFactorTimeout(false)
+                .build();
+        String legacy = codec.encode(current).replace("formatVersion=5", "formatVersion=3");
+        Profile migrated = codec.decode(legacy);
+        Assertions.equals(TwoFactorTimeoutAction.RESTART, migrated.twoFactorTimeoutAction(),
+                "version 3 profiles must adopt the unattended wrapper restart fallback");
+        Assertions.isTrue(migrated.reloginAfterSecondFactorTimeout(),
+                "version 3 profiles must adopt repeated five-minute 2FA notification retries");
+    }
+
+    private void defaultSecondFactorPolicy() {
+        Profile profile = Profile.builder().build();
+        Assertions.equals(TwoFactorTimeoutAction.RESTART, profile.twoFactorTimeoutAction(),
+                "new profiles must restart the login path after an unresolved 2FA timeout");
+        Assertions.isTrue(profile.reloginAfterSecondFactorTimeout(),
+                "new profiles must repeat an uncompleted second-factor notification");
+    }
+
+    private void preserveDisabledSecondFactorPolicy() {
+        Profile disabled = base()
+                .twoFactorTimeoutAction(TwoFactorTimeoutAction.EXIT)
+                .reloginAfterSecondFactorTimeout(false)
+                .build();
+        Profile decoded = codec.decode(codec.encode(disabled));
+        Assertions.equals(TwoFactorTimeoutAction.EXIT, decoded.twoFactorTimeoutAction(),
+                "format 4 must preserve an explicit wrapper exit policy");
+        Assertions.isFalse(decoded.reloginAfterSecondFactorTimeout(),
+                "format 4 must preserve an explicit disabled notification retry");
     }
 
     private void missingKey() {
@@ -205,6 +268,8 @@ public final class ProfileCodecTests implements TestSuite {
         Profile second = first.toBuilder().setting("a", "2").build();
         Assertions.notEquals(first, second, "settings must participate in equality");
         Assertions.notEquals(first.hashCode(), second.hashCode(), "hash should normally change with settings");
+        Profile third = first.toBuilder().autoRecoverStartupStall(!first.autoRecoverStartupStall()).build();
+        Assertions.notEquals(first, third, "automatic recovery must participate in equality");
     }
 
     private void randomizedRoundTrip(long seed, int index) {
@@ -225,6 +290,7 @@ public final class ProfileCodecTests implements TestSuite {
                 .credentialMode(CredentialMode.values()[random.nextInt(CredentialMode.values().length)])
                 .reloginAfterSecondFactorTimeout(random.nextBoolean())
                 .forceApiPortAtLaunch(random.nextBoolean())
+                .autoRecoverStartupStall(random.nextBoolean())
                 .autoStart(random.nextBoolean())
                 .minimizeMainWindow(random.nextBoolean())
                 .gracefulStopTimeoutSeconds(30 + random.nextInt(271))

@@ -40,6 +40,9 @@ public final class DiagnosticsTests implements TestSuite {
                 new NamedTest("creates a complete deterministic diagnostic bundle", this::completeBundle),
                 new NamedTest("sanitizes unsafe profile names in the bundle filename", this::safeFilename),
                 new NamedTest("redacts configuration status and log secrets", this::redactsSecrets),
+                new NamedTest("captures and redacts the live in-memory runtime log", this::liveRuntimeLog),
+                new NamedTest("bounds the live in-memory runtime log while retaining its newest lines",
+                        this::liveRuntimeLogLimit),
                 new NamedTest("masks usernames without losing diagnostic context", this::masksUsername),
                 new NamedTest("reports missing logs without failing export", this::missingLogs),
                 new NamedTest("limits each log tail to two MiB", this::logTailLimit),
@@ -61,7 +64,7 @@ public final class DiagnosticsTests implements TestSuite {
                     bundle.getFileName().toString(), "filename must use safe name and fixed UTC timestamp");
             Map<String, String> entries = readTextEntries(bundle);
             Assertions.equals(List.of("manifest.txt", "profile.txt", "validation.txt", "config-redacted.ini",
-                            "profile-log-tail.txt", "manager-log-tail.txt"),
+                            "profile-log-tail.txt", "live-runtime-log.txt", "manager-log-tail.txt"),
                     new ArrayList<>(entries.keySet()), "bundle entry order must be stable");
             Assertions.contains(entries.get("manifest.txt"), "Manager version: " + Version.VERSION,
                     "manifest must identify manager version");
@@ -74,7 +77,11 @@ public final class DiagnosticsTests implements TestSuite {
                     "manifest must use supplied UTC clock");
             Assertions.contains(entries.get("profile.txt"), "Target: IB Gateway", "profile summary must include target");
             Assertions.contains(entries.get("profile-log-tail.txt"), "profile line", "profile log must be included");
+            Assertions.contains(entries.get("live-runtime-log.txt"), "No in-memory runtime log lines",
+                    "ordinary diagnostic export must identify an empty live runtime buffer");
             Assertions.contains(entries.get("manager-log-tail.txt"), "manager line", "manager log must be included");
+            Assertions.contains(entries.get("profile.txt"), "Automatic stalled-start recovery: true",
+                    "profile summary must include the unattended recovery policy");
             try (ZipFile zip = new ZipFile(bundle.toFile(), StandardCharsets.UTF_8)) {
                 var enumeration = zip.entries();
                 while (enumeration.hasMoreElements()) {
@@ -117,6 +124,45 @@ public final class DiagnosticsTests implements TestSuite {
             Assertions.contains(all, "[REDACTED]", "redaction markers must make sanitization visible");
             Assertions.contains(entries.get("config-redacted.ini"), "IbPassword=",
                     "managed persistent config must retain an explicitly blank password setting");
+        }
+    }
+
+    private void liveRuntimeLog() throws Exception {
+        try (Fixture fixture = new Fixture("Live Runtime")) {
+            Path bundle = fixture.service.create(fixture.profile,
+                    fixture.status("StartIBC /PW:StatusSecret /Mode:paper"),
+                    List.of("ordinary runtime line", "IbPassword=LiveRuntimeSecret",
+                            "StartIBC /PW:LiveCommandSecret /Mode:paper"));
+            String exported = readTextEntries(bundle).get("live-runtime-log.txt");
+            Assertions.contains(exported, "ordinary runtime line",
+                    "live runtime diagnostics must include the newest in-memory output");
+            Assertions.notContains(exported, "LiveRuntimeSecret",
+                    "live runtime password assignments must be redacted");
+            Assertions.notContains(exported, "LiveCommandSecret",
+                    "live runtime launcher arguments must be redacted");
+            Assertions.contains(exported, "[REDACTED]",
+                    "live runtime redaction must remain visible");
+        }
+    }
+
+    private void liveRuntimeLogLimit() throws Exception {
+        try (Fixture fixture = new Fixture("Large Live Runtime")) {
+            List<String> lines = new ArrayList<>();
+            lines.add("OLDEST-MUST-BE-OMITTED-" + "x".repeat(2000));
+            for (int index = 0; index < 3000; index++) {
+                lines.add("runtime-" + index + "-" + "y".repeat(900));
+            }
+            lines.add("NEWEST-MUST-REMAIN");
+            String exported = readTextEntries(fixture.service.create(
+                    fixture.profile, fixture.status("OK"), lines)).get("live-runtime-log.txt");
+            Assertions.isTrue(exported.getBytes(StandardCharsets.UTF_8).length <= 2 * 1024 * 1024,
+                    "live in-memory diagnostic output must remain bounded to two MiB");
+            Assertions.contains(exported, "NEWEST-MUST-REMAIN",
+                    "the newest live runtime line must survive truncation");
+            Assertions.notContains(exported, "OLDEST-MUST-BE-OMITTED",
+                    "old live runtime lines beyond the bound must be omitted");
+            Assertions.contains(exported, "earlier in-memory lines omitted",
+                    "bounded live output must state that earlier lines were omitted");
         }
     }
 

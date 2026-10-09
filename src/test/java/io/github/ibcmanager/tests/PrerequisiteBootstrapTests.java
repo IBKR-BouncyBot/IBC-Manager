@@ -28,7 +28,10 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
                 new NamedTest("all Windows entry points use the shared bootstrap", this::entryPointsUseBootstrap),
                 new NamedTest("Java 8 is rejected before the application is launched", this::javaEightRejected),
                 new NamedTest("source run launcher builds a missing JAR on demand", this::sourceRunBuildsOnDemand),
-                new NamedTest("run launcher preflights the JAR before starting javaw", this::runPreflightsJar),
+                new NamedTest("run launcher preflights then keeps the GUI output in the console", this::runPreflightsJar),
+                new NamedTest("public batch scripts funnel all exits through one completion pause", this::completionPause),
+                new NamedTest("completion pause preserves status and has an automation opt-out", this::pauseStatus),
+                new NamedTest("unattended Gateway scripts never use the user completion pause", this::noEnginePause),
                 new NamedTest("installation requires explicit user consent", this::installationRequiresConsent),
                 new NamedTest("declining installation is non-destructive", this::declineIsNonDestructive),
                 new NamedTest("managed Java installation is isolated from system Java", this::javaInstallIsIsolated),
@@ -99,8 +102,8 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
                 "incompatible Java must be rejected during discovery");
         Assertions.contains(run, "call \"%~dp0bootstrap.bat\" Run",
                 "run must check Java before starting the release JAR");
-        Assertions.contains(run, "%IBC_MANAGER_JAVAW_EXE%",
-                "run must use the verified javaw executable");
+        Assertions.contains(run, "%IBC_MANAGER_JAVA_EXE%",
+                "console run must use the verified Java executable");
         Assertions.notContains(run, "start \"IBC Manager\" javaw",
                 "run must not trust the first javaw on PATH");
     }
@@ -129,11 +132,125 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
     private void runPreflightsJar() throws Exception {
         String run = read("scripts/run.bat");
         int preflight = run.indexOf("\"%IBC_MANAGER_JAVA_EXE%\" -Dfile.encoding=UTF-8 -jar \"%JAR%\" --version");
-        int graphicalStart = run.indexOf("start \"IBC Manager\" \"%IBC_MANAGER_JAVAW_EXE%\"");
+        int graphicalStart = run.indexOf("\"%IBC_MANAGER_JAVA_EXE%\" -Dfile.encoding=UTF-8 -jar \"%JAR%\" %*");
         Assertions.isTrue(preflight >= 0, "run must verify the selected Java can load the JAR");
-        Assertions.isTrue(graphicalStart > preflight, "JAR preflight must happen before the console is detached");
+        Assertions.isTrue(graphicalStart > preflight, "JAR preflight must happen before the blocking console launch");
         Assertions.contains(run, "The Java runtime could not load %JAR%.",
                 "JAR or bytecode failures must remain visible in the console");
+    }
+
+    private void completionPause() throws Exception {
+        for (String name : List.of("run", "build", "test", "validate-windows", "package-windows")) {
+            String canonical = read("scripts/" + name + ".bat").replace("\r\n", "\n");
+            int main = canonical.indexOf(":main\n");
+            Assertions.isTrue(main > 0, name + " main body isolated as a subroutine");
+            String completion = canonical.substring(0, main);
+            Assertions.contains(completion, "call :main %*", name + " arguments forwarded");
+            Assertions.contains(completion, "set \"IBC_MANAGER_ENTRY_RESULT=%ERRORLEVEL%\"",
+                    name + " save operation status before pause");
+            Assertions.contains(completion, "call \"%~dp0pause-after-run.bat\" \"%IBC_MANAGER_ENTRY_RESULT%\"",
+                    name + " every subroutine return reaches pause");
+            Assertions.contains(completion, "exit /b %IBC_MANAGER_ENTRY_RESULT%",
+                    name + " original status survives helper");
+            Assertions.equals(1, count(canonical, "pause-after-run.bat"), name + " one completion helper");
+            Assertions.notContains(read(name + ".bat"), "pause", name + " root does not double-pause");
+        }
+        String run = read("scripts/run.bat");
+        Assertions.notContains(run, "%IBC_MANAGER_JAVAW_EXE%", "interactive launch keeps stdout/stderr");
+        Assertions.contains(run, "-jar \"%JAR%\" %*", "runtime arguments still forwarded");
+        if (isWindowsHost()) nativeEarlyExitSmoke();
+    }
+
+    private void pauseStatus() throws Exception {
+        String helper = read("scripts/pause-after-run.bat").replace("\r\n", "\n");
+        int pause = helper.indexOf("\npause\n");
+        Assertions.isTrue(pause > 0, "real console PAUSE command present");
+        int optOut = helper.indexOf("if \"%IBC_MANAGER_NO_PAUSE%\"==\"1\"");
+        int ci = helper.indexOf("if defined CI");
+        Assertions.isTrue(optOut >= 0 && optOut < pause, "explicit opt-out before pause");
+        Assertions.isTrue(ci >= 0 && ci < pause, "CI does not hang");
+        Assertions.contains(helper, "exit /b %IBC_MANAGER_PAUSE_RESULT%", "original result retained");
+        Assertions.equals(1, count(helper, "\npause\n"), "exactly one native pause");
+        Assertions.contains(helper, "Review the output above", "purpose visible");
+        if (isWindowsHost()) {
+            Path helperPath = ROOT.resolve("scripts/pause-after-run.bat");
+            BatchResult interactive = batchResult(helperPath, "19", false, false);
+            Assertions.equals(19, interactive.exitCode(), "PAUSE preserves a failing command exit code");
+            Assertions.contains(interactive.output(), "Finished with exit code 19", "interactive result shown");
+            BatchResult optedOut = batchResult(helperPath, "0", true, false);
+            Assertions.equals(0, optedOut.exitCode(), "explicit noninteractive success");
+            Assertions.notContains(optedOut.output(), "Review the output above", "opt-out never pauses");
+            BatchResult ciResult = batchResult(helperPath, "7", false, true);
+            Assertions.equals(7, ciResult.exitCode(), "CI preserves failure status");
+            Assertions.notContains(ciResult.output(), "Review the output above", "CI never pauses");
+        }
+    }
+
+    private static boolean isWindowsHost() {
+        return io.github.ibcmanager.app.OperatingSystem.current()
+                == io.github.ibcmanager.app.OperatingSystem.WINDOWS;
+    }
+
+    /** Native CMD checks execute only on Windows; no Java install or real build is attempted. */
+    private void nativeEarlyExitSmoke() throws Exception {
+        Path fixture = TestSupport.tempDirectory("console pause with spaces");
+        try {
+            Path scripts = Files.createDirectories(fixture.resolve("scripts"));
+            Files.copy(ROOT.resolve("scripts/pause-after-run.bat"), scripts.resolve("pause-after-run.bat"));
+            Files.writeString(scripts.resolve("bootstrap.bat"), "@echo off\r\nexit /b 23\r\n");
+            for (String name : List.of("run", "build", "test", "validate-windows", "package-windows")) {
+                Files.copy(ROOT.resolve(name + ".bat"), fixture.resolve(name + ".bat"));
+                Files.copy(ROOT.resolve("scripts/" + name + ".bat"), scripts.resolve(name + ".bat"));
+                int expected = name.equals("run") ? 2 : 23;
+                for (Path entry : List.of(fixture.resolve(name + ".bat"), scripts.resolve(name + ".bat"))) {
+                    BatchResult result = batchResult(entry, "", true, false);
+                    Assertions.equals(expected, result.exitCode(), "root/direct entry preserves early failure: " + entry);
+                    Assertions.notContains(result.output(), "Review the output above", "noninteractive fixture cannot pause");
+                }
+            }
+        } finally {
+            TestSupport.deleteTree(fixture);
+        }
+    }
+
+    private static BatchResult batchResult(Path file, String argument, boolean optOut, boolean ci) throws Exception {
+        Path cmd = Path.of(System.getenv("SystemRoot"), "System32", "cmd.exe");
+        ProcessBuilder builder = new ProcessBuilder(cmd.toString(), "/d", "/c",
+                "call \"" + file + "\" " + argument).redirectErrorStream(true);
+        builder.environment().remove("CI");
+        builder.environment().remove("IBC_MANAGER_NO_PAUSE");
+        if (optOut) builder.environment().put("IBC_MANAGER_NO_PAUSE", "1");
+        if (ci) builder.environment().put("CI", "true");
+        Process process = builder.start();
+        try {
+            // Supply a key for the interactive branch; the completion output proves it was reached.
+            if (!optOut && !ci) {
+                process.getOutputStream().write("\r\n".getBytes(StandardCharsets.US_ASCII));
+                process.getOutputStream().flush();
+            }
+            Assertions.isTrue(process.waitFor(10, TimeUnit.SECONDS), "batch completion is bounded");
+            return new BatchResult(process.exitValue(), new String(process.getInputStream().readAllBytes(),
+                    StandardCharsets.UTF_8));
+        } finally {
+            if (process.isAlive()) {
+                process.destroyForcibly();
+                process.waitFor(5, TimeUnit.SECONDS);
+            }
+            process.getOutputStream().close();
+            process.getInputStream().close();
+        }
+    }
+
+    private record BatchResult(int exitCode, String output) { }
+
+    private void noEnginePause() throws Exception {
+        Assertions.notContains(read("scripts/bootstrap.bat"), "pause-after-run", "bootstrap remains nonblocking");
+        Assertions.notContains(read("engine/resources/scripts/StartIBC.bat"), "pause-after-run",
+                "supervised Gateway wrapper cannot wait for keyboard");
+        Assertions.notContains(read("src/main/java/io/github/ibcmanager/runtime/LaunchScriptFactory.java"),
+                "pause-after-run", "generated unattended launcher unaffected");
+        Assertions.notContains(read("src/main/java/io/github/ibcmanager/task/WindowsTaskSchedulerService.java"),
+                "pause-after-run", "startup task unaffected");
     }
 
     private void installationRequiresConsent() throws Exception {
@@ -284,7 +401,8 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
         Assertions.notContains(combined.toLowerCase(), "where ant", "entry points must not inspect PATH Ant");
         Assertions.notContains(combined.toLowerCase(), "where jpackage", "entry points must not trust PATH jpackage");
         Assertions.contains(combined, "%IBC_MANAGER_JAVA_EXE%", "build and validation must use selected Java");
-        Assertions.contains(combined, "%IBC_MANAGER_JAVAW_EXE%", "GUI launch must use selected javaw");
+        Assertions.notContains(read("scripts/run.bat"), "start \"IBC Manager\"",
+                "interactive run must not detach before runtime errors can be reviewed");
         Assertions.contains(combined, BUILD_DRIVER, "build entry points must use the JDK-native build driver");
         Assertions.contains(combined, "%IBC_MANAGER_JPACKAGE_EXE%", "packaging must use selected jpackage");
         Assertions.notContains(combined, "IBC_MANAGER_ANT_BAT", "scripts must not use an Ant environment path");
@@ -399,7 +517,7 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
         }
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         Assertions.equals(0, process.exitValue(), "build-driver self-test failed: " + output);
-        Assertions.contains(output, "Build-driver self-test passed for version 1.0.21",
+        Assertions.contains(output, "Build-driver self-test passed for version 2.0.3",
                 "build-driver self-test must report the current release version");
     }
 
@@ -569,7 +687,7 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
                 "optional Ant compatibility must not maintain a second JAR implementation");
         Assertions.contains(nativeBuild, "RELEASE_SCRIPT_FILES = List.of(",
                 "native release builder must declare its runtime scripts");
-        for (String script : List.of("run.bat", "bootstrap.bat", "ensure-prerequisites.ps1")) {
+        for (String script : List.of("run.bat", "bootstrap.bat", "ensure-prerequisites.ps1", "pause-after-run.bat")) {
             Assertions.contains(nativeBuild, '"' + script + '"',
                     "native release archive must include " + script);
         }
@@ -592,7 +710,7 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
         Assertions.contains(pack, "runtime\\bin\\java.exe",
                 "package-windows.bat must fail before release assembly when the Java launcher is absent");
         Assertions.contains(pack,
-                "set \"WINDOWS_RELEASE_ZIP=dist\\IBC_Manager_1.0.21_Release_windows.zip\"",
+                "set \"WINDOWS_RELEASE_ZIP=dist\\IBC_Manager_2.0.3_Release_windows.zip\"",
                 "Windows release ZIP filename must equal the normal release name plus _windows");
         Assertions.contains(driver,
                 "IBC_Manager_\" + releaseVersion + \"_Release_windows.zip",
@@ -612,14 +730,14 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
         String build = read("build.xml");
         String run = read("scripts/run.bat");
         String pack = read("scripts/package-windows.bat");
-        Assertions.contains(version, "VERSION = \"1.0.21\"", "application version must be 1.0.21");
-        Assertions.contains(build, "name=\"app.version\" value=\"1.0.21\"",
-                "optional Ant release version must be 1.0.21");
-        Assertions.contains(run, "IBC-Manager-1.0.21.jar", "run JAR must be version 1.0.21");
-        Assertions.contains(pack, "--app-version 1.0.21", "Windows package version must be 1.0.21");
-        Assertions.contains(pack, "IBC-Manager-1.0.21.jar", "packaged JAR must be version 1.0.21");
-        Assertions.contains(pack, "IBC_Manager_1.0.21_Release_windows.zip",
-                "Windows release ZIP must be version 1.0.21");
+        Assertions.contains(version, "VERSION = \"2.0.3\"", "application version must be 2.0.3");
+        Assertions.contains(build, "name=\"app.version\" value=\"2.0.3\"",
+                "optional Ant release version must be 2.0.3");
+        Assertions.contains(run, "IBC-Manager-2.0.3.jar", "run JAR must be version 2.0.3");
+        Assertions.contains(pack, "--app-version 2.0.3", "Windows package version must be 2.0.3");
+        Assertions.contains(pack, "IBC-Manager-2.0.3.jar", "packaged JAR must be version 2.0.3");
+        Assertions.contains(pack, "IBC_Manager_2.0.3_Release_windows.zip",
+                "Windows release ZIP must be version 2.0.3");
     }
 
     private static int count(String source, String token) {

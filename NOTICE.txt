@@ -1,17 +1,22 @@
-IBC Manager 1.0.21
-
+IBC Manager 2.0.3
 Copyright (C) 2026 IBC Manager contributors.
-Licensed under the GNU General Public License, version 3.
+Manager is distributed under the GNU General Public License, version 3.
 
-IBC Manager is an unofficial independent project. It is not affiliated with,
-endorsed by, or supported by Interactive Brokers LLC or its affiliates.
+This distribution includes a maintained engine derived from IbcAlpha/IBC 3.24.2,
+upstream commit 2be2ecd05d7707f97479fda9ad098fdcc15ab807.
+The upstream engine carries copyright notices for Steven M. Kearns, Richard L King,
+and other credited contributors. Those notices are retained in the supplied source.
+IBC source files are licensed under GPL version 3 or, at your option, any later
+version, as specified in those files. See engine/LICENSE.txt in the source package
+and legal/IBC-LICENSE.txt inside the Manager JAR.
 
-IBC Manager is designed to launch and supervise the separately installed IBC
-project. IBC itself is not included in this distribution. IBC is licensed under
-the GNU General Public License, version 3. The retained IBC 3.24.2 configuration template and license notice are stored
-under third_party/ibc-3.24.2 as the reviewed compatibility-floor reference. The
-runtime installer may download a newer latest official IBC release from GitHub;
-IBC itself remains separately licensed and is not included in this distribution.
+The complete source ZIP supplied with this release contains the maintained engine,
+its upstream snapshot, integration patch, tests and all Manager build scripts.
+No official IBC release JAR is copied into the product: the engine is compiled from
+source. Original Windows launcher scripts are included as engine resources.
+No IB Gateway or proprietary IBKR class is redistributed or supplied as a stub.
 
-Interactive Brokers, IBKR, Trader Workstation, TWS, and IB Gateway are
-trademarks or service marks of their respective owners.
+IBC Manager is not affiliated with, endorsed by, or supported by Interactive Brokers
+or the upstream IBC authors. Changes made for this integration are documented in
+engine/patches/0001-manager-integration.patch and docs/ENGINE_INTEGRATION.md.
+IBKR and IB Gateway names belong to their respective owners.

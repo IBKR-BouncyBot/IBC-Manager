@@ -20,6 +20,7 @@ public final class SettingsTable extends JTable {
         getColumnModel().getColumn(0).setPreferredWidth(110);
         getColumnModel().getColumn(1).setPreferredWidth(330);
         getColumnModel().getColumn(2).setPreferredWidth(180);
+        getColumnModel().getColumn(3).setPreferredWidth(120);
     }
 
     @Override
@@ -31,8 +32,9 @@ public final class SettingsTable extends JTable {
         int modelRow = convertRowIndexToModel(viewRow);
         SettingDefinition definition = settingsModel.definitionAt(modelRow);
         return "<html><b>" + escape(definition.key()) + "</b><br>"
-                + escape(definition.description()) + "<br>Default: "
-                + escape(definition.defaultValue().isBlank() ? "blank" : definition.defaultValue()) + "</html>";
+                + escape(definition.description()) + "<br>Included configuration default: "
+                + escape(settingsModel.includedDefaultAt(modelRow).isBlank() ? "blank" : settingsModel.includedDefaultAt(modelRow))
+                + "<br>Blank uses the engine fallback or preserves Gateway's setting; it is not a factory reset.</html>";
     }
 
     @Override
@@ -40,7 +42,9 @@ public final class SettingsTable extends JTable {
         if (convertColumnIndexToModel(column) == 2) {
             SettingDefinition definition = settingsModel.definitionAt(convertRowIndexToModel(row));
             if (!definition.allowedValues().isEmpty()) {
-                JComboBox<String> combo = new JComboBox<>(definition.allowedValues().toArray(String[]::new));
+                java.util.List<String> choices = new java.util.ArrayList<>(definition.allowedValues());
+                if (!choices.contains("")) choices.add(0, "");
+                JComboBox<String> combo = new JComboBox<>(choices.toArray(String[]::new));
                 combo.setEditable(false);
                 return new DefaultCellEditor(combo);
             }

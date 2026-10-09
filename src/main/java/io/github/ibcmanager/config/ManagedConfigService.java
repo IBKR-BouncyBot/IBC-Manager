@@ -9,16 +9,19 @@ import io.github.ibcmanager.security.BoundedFileReader;
 import io.github.ibcmanager.security.FilePermissionHardener;
 import io.github.ibcmanager.security.SecureFileOperations;
 import io.github.ibcmanager.storage.AtomicFileWriter;
+import io.github.ibcmanager.storage.ProfileCodec;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+/** Generates current profile projections; legacy INI readers exist for one-time import only. */
 public final class ManagedConfigService {
     public static final String SECOND_FACTOR_DEVICE_KEY = "SecondFactorDevice";
     public static final int MAX_CONFIG_BYTES = 8 * 1024 * 1024;
@@ -28,9 +31,11 @@ public final class ManagedConfigService {
             "IbLoginId", "IbPassword", "TradingMode", "MinimizeMainWindow",
             "OverrideTwsApiPort", "CommandServerPort", "BindAddress", "IbDir",
             "ReloginAfterSecondFactorAuthenticationTimeout",
+            "SecondFactorAuthenticationTimeout",
             "ExitAfterSecondFactorAuthenticationTimeout", SECOND_FACTOR_DEVICE_KEY);
     private final AppPaths paths;
     private final ConfigValueValidator configValueValidator = new ConfigValueValidator();
+    private final ProfileCodec profileCodec = new ProfileCodec();
 
     public ManagedConfigService(AppPaths paths) {
         this.paths = Objects.requireNonNull(paths, "paths");
@@ -44,6 +49,10 @@ public final class ManagedConfigService {
     public Path ensureManagedConfig(Profile profile) throws IOException {
         Objects.requireNonNull(profile, "profile");
         Path target = managedConfigPath(profile);
+        if (profile.profileOnlyConfiguration()) {
+            writeManagedConfig(profile, ProfileConfiguration.document(profile));
+            return target;
+        }
         if (SecureFileOperations.isRegularFile(target)) return target;
         if (SecureFileOperations.exists(target)) {
             throw new IOException("Managed configuration is not a regular file: " + target);
@@ -58,12 +67,14 @@ public final class ManagedConfigService {
     }
 
     public IbcConfigDocument loadManagedConfig(Profile profile) throws IOException {
+        if (profile.profileOnlyConfiguration()) return ProfileConfiguration.document(profile);
         Path path = ensureManagedConfig(profile);
         return readManagedConfig(path, "Managed IBC configuration");
     }
 
     public IbcConfigDocument loadRuntimeBase(Profile profile) throws IOException {
         Objects.requireNonNull(profile, "profile");
+        if (profile.profileOnlyConfiguration()) return ProfileConfiguration.document(profile);
         if (profile.credentialMode() == CredentialMode.EXISTING_CONFIG) {
             if (isEmpty(profile.baseConfigPath()) || !SecureFileOperations.isRegularFile(profile.baseConfigPath())) {
                 throw new IOException("The profile is configured to use an existing IBC config, but no readable config file is selected");
@@ -80,6 +91,7 @@ public final class ManagedConfigService {
     public void saveManagedConfig(Profile profile, IbcConfigDocument document) throws IOException {
         Objects.requireNonNull(profile, "profile");
         Objects.requireNonNull(document, "document");
+        if (profile.profileOnlyConfiguration()) throw new IOException("Edit configuration only through the Profile editor");
         requireUnambiguousFormatting(document, "Managed IBC configuration");
         if (document.hasPlaintextSecret()) {
             throw new IOException("Manager-owned persistent configuration must not contain plaintext passwords, "
@@ -94,6 +106,10 @@ public final class ManagedConfigService {
 
     /** Re-applies structured profile fields and rebuilds known advanced settings from the base plus overrides. */
     public void refreshManagedSettings(Profile profile) throws IOException {
+        if (profile.profileOnlyConfiguration()) {
+            writeManagedConfig(profile, ProfileConfiguration.document(profile));
+            return;
+        }
         IbcConfigDocument document = loadManagedConfig(profile);
         IbcConfigDocument baseline = loadInitialDocument(profile);
         requireUnambiguousFormatting(document, "Managed IBC configuration");
@@ -118,7 +134,7 @@ public final class ManagedConfigService {
      */
     public Profile synchronizeEditableProfile(Profile profile) throws IOException {
         Objects.requireNonNull(profile, "profile");
-        if (profile.credentialMode() == CredentialMode.EXISTING_CONFIG) return profile;
+        if (profile.profileOnlyConfiguration() || profile.credentialMode() == CredentialMode.EXISTING_CONFIG) return profile;
         return synchronizeEditableProfile(profile, loadManagedConfig(profile));
     }
 
@@ -126,7 +142,7 @@ public final class ManagedConfigService {
     public Profile synchronizeEditableProfile(Profile profile, IbcConfigDocument document) throws IOException {
         Objects.requireNonNull(profile, "profile");
         Objects.requireNonNull(document, "document");
-        if (profile.credentialMode() == CredentialMode.EXISTING_CONFIG) return profile;
+        if (profile.profileOnlyConfiguration() || profile.credentialMode() == CredentialMode.EXISTING_CONFIG) return profile;
         requireUnambiguousFormatting(document, "Managed IBC configuration");
         IbcConfigDocument baseline = loadInitialDocument(profile);
         requireUnambiguousFormatting(baseline, "Base IBC configuration");
@@ -172,8 +188,11 @@ public final class ManagedConfigService {
         builder.tradingMode(parseTradingMode(document.get("TradingMode")
                 .orElse(profile.tradingMode().ibcValue())));
         builder.minimizeMainWindow(parseBoolean(document, "MinimizeMainWindow", profile.minimizeMainWindow()));
-        builder.reloginAfterSecondFactorTimeout(parseBoolean(document,
-                "ReloginAfterSecondFactorAuthenticationTimeout", profile.reloginAfterSecondFactorTimeout()));
+        boolean migratingSecondFactorPolicy = storedProfileNeedsSecondFactorMigration(profile);
+        builder.reloginAfterSecondFactorTimeout(migratingSecondFactorPolicy
+                ? profile.reloginAfterSecondFactorTimeout()
+                : parseBoolean(document, "ReloginAfterSecondFactorAuthenticationTimeout",
+                        profile.reloginAfterSecondFactorTimeout()));
         builder.bindAddress(document.get("BindAddress").orElse(profile.bindAddress()));
 
         String commandPort = document.get("CommandServerPort").orElse("");
@@ -190,6 +209,24 @@ public final class ManagedConfigService {
             builder.forceApiPortAtLaunch(true);
         }
         return builder.build();
+    }
+
+    /**
+     * A pre-2.0.0 profile is migrated in memory before its older managed config is rewritten.
+     * Preserve that one-time compatibility migration so opening Profile Edit cannot restore the
+     * stale pre-migration 2FA policy from config.ini. Once the profile is saved as format 4, raw
+     * managed-config edits become authoritative again.
+     */
+    private boolean storedProfileNeedsSecondFactorMigration(Profile profile) throws IOException {
+        Path storedProfile = paths.profileFile(profile.id());
+        if (!SecureFileOperations.isRegularFile(storedProfile)) return false;
+        try {
+            String encoded = BoundedFileReader.readString(storedProfile, StandardCharsets.UTF_8,
+                    ProfileCodec.MAX_ENCODED_BYTES, "Profile file");
+            return profileCodec.sourceFormatVersion(encoded) < 4;
+        } catch (IllegalArgumentException ex) {
+            throw new IOException("Could not inspect the stored profile format for 2FA policy migration", ex);
+        }
     }
 
     private static TradingMode parseTradingMode(String value) throws IOException {
@@ -252,6 +289,8 @@ public final class ManagedConfigService {
                 ? Integer.toString(profile.apiPort()) : "");
         document.set("ReloginAfterSecondFactorAuthenticationTimeout",
                 profile.reloginAfterSecondFactorTimeout() ? "yes" : "no");
+        document.set("SecondFactorAuthenticationTimeout",
+                SecondFactorPolicy.configuredTimeout(profile.reloginAfterSecondFactorTimeout()));
         // Supported IBC releases consult the deprecated ExitAfter... key only when the current
         // ReloginAfter... key is blank. Always clear the legacy key so one imported
         // configuration cannot silently override the explicit profile policy.
@@ -330,7 +369,7 @@ public final class ManagedConfigService {
         if (!document.formattingMatchesIbcSemantics()) {
             throw new IOException(description + " contains malformed or ambiguous Java Properties syntax. "
                     + "IBC's full-file parser and the formatting-preservation scanner disagree; "
-                    + "correct the raw syntax or explicitly canonicalize it in Managed Config.");
+                    + "correct the legacy input syntax before retrying its one-time import.");
         }
     }
 

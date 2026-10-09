@@ -41,13 +41,17 @@ public final class IbcManagerApp {
         }
         if (parsed.version) {
             System.out.println(Version.APPLICATION_NAME + " " + Version.VERSION
-                    + " (IBC installer: " + Version.IBC_RELEASE_CHANNEL
-                    + "; compatibility floor " + Version.IBC_MINIMUM_SUPPORTED_VERSION + ")");
+                    + " (Engine: " + Version.IBC_RELEASE_CHANNEL
+                    + "; upstream " + Version.IBC_MINIMUM_SUPPORTED_VERSION + ")");
             return 0;
         }
         AppPaths paths = parsed.dataDirectory == null
                 ? AppPaths.systemDefault() : new AppPaths(parsed.dataDirectory);
         if (parsed.headlessSmoke) return headlessSmoke(paths);
+        if (OperatingSystem.current() != OperatingSystem.WINDOWS) {
+            System.err.println("IBC Manager 2.0 supports Windows only; non-Windows hosts may run --headless-smoke for build validation.");
+            return 3;
+        }
         if (GraphicsEnvironment.isHeadless()) {
             System.err.println("A graphical desktop session is required. Use --headless-smoke for non-GUI validation.");
             return 3;
@@ -55,8 +59,14 @@ public final class IbcManagerApp {
 
         try {
             SingleInstanceLock lock = SingleInstanceLock.acquire(paths.lockFile());
-            AppLog appLog = AppLog.initialize(paths);
-            AppServices services = AppServices.create(paths);
+            AppLog appLog;
+            try {
+                appLog = AppLog.initialize(paths);
+            } catch (IOException | RuntimeException failure) {
+                try { lock.close(); } catch (IOException cleanup) { failure.addSuppressed(cleanup); }
+                throw failure;
+            }
+            AppServices services = initializeServices(paths, appLog, lock);
             AtomicBoolean closed = new AtomicBoolean();
             SwingUtilities.invokeLater(() -> {
                 try {
@@ -85,9 +95,20 @@ public final class IbcManagerApp {
                 }
             });
             return 0;
-        } catch (IOException ex) {
+        } catch (IOException | RuntimeException ex) {
             System.err.println("IBC Manager could not start: " + ex.getMessage());
             return 4;
+        }
+    }
+
+    static AppServices initializeServices(AppPaths paths, AppLog appLog, SingleInstanceLock lock)
+            throws IOException {
+        try {
+            return AppServices.create(paths);
+        } catch (IOException | RuntimeException failure) {
+            try { appLog.close(); } catch (RuntimeException cleanup) { failure.addSuppressed(cleanup); }
+            try { lock.close(); } catch (IOException cleanup) { failure.addSuppressed(cleanup); }
+            throw failure;
         }
     }
 

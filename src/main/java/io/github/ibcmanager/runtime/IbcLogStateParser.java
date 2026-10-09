@@ -5,6 +5,9 @@ import io.github.ibcmanager.model.RuntimeState;
 import java.time.Instant;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.UUID;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /** Interprets the lifecycle messages emitted by supported IBC releases and StartIBC.bat. */
 public final class IbcLogStateParser {
@@ -20,14 +23,26 @@ public final class IbcLogStateParser {
     private boolean loginCompleted;
     private boolean pauseConfirmed;
     private boolean launchCommandObserved;
+    private boolean applicationLaunchObserved;
     private boolean childExitObserved;
     private boolean restartPending;
     private boolean normalExitConfirmed;
     private boolean errorExitConfirmed;
     private long sessionGeneration;
+    private String engineGeneration;
+    private long engineSequence;
+    private boolean mainWindowObserved;
+    private final Set<String> retiredEngineGenerations = new LinkedHashSet<>();
+    private static final String EVENT_PREFIX = "IBC_MANAGER_EVENT|1|";
+    private static final Set<String> EVENTS = Set.of("ENGINE_STARTED", "GATEWAY_STARTING", "MAIN_WINDOW_READY",
+            "LOGIN_LOGGED_OUT", "LOGIN_LOGGING_IN", "LOGIN_AWAITING_CREDENTIALS", "LOGIN_TWO_FA_IN_PROGRESS",
+            "LOGIN_LOGGED_IN", "LOGIN_LOGIN_FAILED", "COMMAND_SERVER_READY", "COMMAND_SERVER_CLOSED",
+            "SECOND_FACTOR_RETRY_ARMED", "SECOND_FACTOR_RETRY_DUE",
+            "SECOND_FACTOR_RETRY_STARTED", "SECOND_FACTOR_RETRY_BLOCKED");
 
     public synchronized Optional<StateHint> accept(String line) {
         if (line == null) return Optional.empty();
+        if (line.startsWith("IBC_MANAGER_EVENT|")) return acceptEngineEvent(line);
         String lower = line.toLowerCase(Locale.ROOT);
         if (lower.contains("===== ibc manager session ")) {
             reset();
@@ -63,9 +78,12 @@ public final class IbcLogStateParser {
                 "login dialog window_opened", "setting user name", "login attempt:")) {
             hint = hint(RuntimeState.WAITING_FOR_LOGIN, "IBC is processing the login window");
         } else if (containsAny(lower,
-                "starting ibc version", "ibc: starting gateway", "ibc: starting tws",
+                "ibc: starting gateway", "ibc: starting tws",
                 "starting gateway with this command", "starting tws with this command")) {
+            applicationLaunchObserved = true;
             hint = hint(RuntimeState.STARTING, "Starting IBC and IBKR application");
+        } else if (lower.contains("starting ibc version")) {
+            hint = hint(RuntimeState.STARTING, "Starting IBC");
         } else if (lower.contains("ibc is paused")) {
             pauseConfirmed = true;
             hint = hint(RuntimeState.PAUSED, "IBC session paused");
@@ -147,10 +165,13 @@ public final class IbcLogStateParser {
      * supported IBC integration surface this is the command-safety boundary used for operations that
      * dereference the TWS/Gateway main window, such as RECONNECTDATA.
      */
-    public synchronized boolean mainWindowReady() { return loginCompleted; }
+    public synchronized boolean mainWindowReady() {
+        return loginCompleted && (engineGeneration == null || mainWindowObserved);
+    }
 
     public synchronized boolean pauseConfirmed() { return pauseConfirmed; }
     public synchronized boolean launchCommandObserved() { return launchCommandObserved; }
+    public synchronized boolean applicationLaunchObserved() { return applicationLaunchObserved; }
     public synchronized boolean childExitObserved() { return childExitObserved; }
     public synchronized boolean restartPending() { return restartPending; }
     public synchronized boolean normalExitConfirmed() { return normalExitConfirmed; }
@@ -158,10 +179,12 @@ public final class IbcLogStateParser {
     public synchronized long sessionGeneration() { return sessionGeneration; }
 
     public synchronized void resetSessionState() {
+        retireEngineGeneration();
         latest = null;
         loginCompleted = false;
         pauseConfirmed = false;
         launchCommandObserved = false;
+        applicationLaunchObserved = false;
         childExitObserved = false;
         restartPending = false;
         normalExitConfirmed = false;
@@ -169,11 +192,16 @@ public final class IbcLogStateParser {
     }
 
     public synchronized void reset() {
+        engineGeneration = null;
+        engineSequence = 0;
+        mainWindowObserved = false;
+        retiredEngineGenerations.clear();
         latest = null;
         commandServerState = CommandServerState.UNKNOWN;
         loginCompleted = false;
         pauseConfirmed = false;
         launchCommandObserved = false;
+        applicationLaunchObserved = false;
         childExitObserved = false;
         restartPending = false;
         normalExitConfirmed = false;
@@ -182,14 +210,93 @@ public final class IbcLogStateParser {
     }
 
     private void clearChildSessionForLaunch() {
+        retireEngineGeneration();
         latest = null;
         commandServerState = CommandServerState.UNKNOWN;
         loginCompleted = false;
         pauseConfirmed = false;
+        applicationLaunchObserved = false;
         childExitObserved = false;
         restartPending = false;
         normalExitConfirmed = false;
         errorExitConfirmed = false;
+    }
+
+    private void retireEngineGeneration() {
+        if (engineGeneration != null) retiredEngineGenerations.add(engineGeneration);
+        if (retiredEngineGenerations.size() > 128) {
+            retiredEngineGenerations.remove(retiredEngineGenerations.iterator().next());
+        }
+        engineGeneration = null;
+        engineSequence = 0;
+        mainWindowObserved = false;
+    }
+
+    private Optional<StateHint> acceptEngineEvent(String line) {
+        if (!line.startsWith(EVENT_PREFIX) || line.length() > 192) return Optional.empty();
+        String[] fields = line.substring(EVENT_PREFIX.length()).split("\\|", -1);
+        if (fields.length != 3 || !EVENTS.contains(fields[2])) return Optional.empty();
+        try {
+            if (!UUID.fromString(fields[0]).toString().equals(fields[0])) return Optional.empty();
+            long sequence = Long.parseLong(fields[1]);
+            if (sequence <= 0 || retiredEngineGenerations.contains(fields[0])) return Optional.empty();
+            if (fields[2].equals("ENGINE_STARTED")) {
+                if (engineGeneration != null || sequence != 1) return Optional.empty();
+                engineGeneration = fields[0];
+                if (!launchCommandObserved) sessionGeneration++;
+                launchCommandObserved = true;
+            } else if (!fields[0].equals(engineGeneration)) {
+                return Optional.empty();
+            }
+            if (sequence <= engineSequence) return Optional.empty();
+            engineSequence = sequence;
+        } catch (IllegalArgumentException ignored) { return Optional.empty(); }
+        StateHint state = switch (fields[2]) {
+            case "ENGINE_STARTED" -> hint(RuntimeState.STARTING, "Integrated IBC engine started");
+            case "GATEWAY_STARTING" -> {
+                applicationLaunchObserved = true;
+                yield hint(RuntimeState.STARTING, "Starting IB Gateway");
+            }
+            case "MAIN_WINDOW_READY" -> {
+                mainWindowObserved = true;
+                yield null;
+            }
+            case "LOGIN_LOGGING_IN", "LOGIN_AWAITING_CREDENTIALS", "LOGIN_LOGGED_OUT" -> {
+                loginCompleted = false;
+                yield hint(RuntimeState.WAITING_FOR_LOGIN, "Gateway login in progress");
+            }
+            case "LOGIN_TWO_FA_IN_PROGRESS" -> hint(RuntimeState.WAITING_FOR_SECOND_FACTOR,
+                    "Waiting for second-factor authentication");
+            case "SECOND_FACTOR_RETRY_ARMED" -> loginCompleted ? null
+                    : hint(RuntimeState.WAITING_FOR_SECOND_FACTOR, "Waiting for 2FA; independent retry timer is armed");
+            case "SECOND_FACTOR_RETRY_DUE" -> loginCompleted ? null
+                    : hint(RuntimeState.WAITING_FOR_SECOND_FACTOR, "2FA deadline reached; retrying login inside Gateway");
+            case "SECOND_FACTOR_RETRY_BLOCKED" -> loginCompleted ? null
+                    : hint(RuntimeState.WAITING_FOR_SECOND_FACTOR,
+                            "Automatic 2FA retry blocked: check stored credentials and the Gateway login/Cancel controls");
+            // The actual login-state transitions remain authoritative after submission.
+            case "SECOND_FACTOR_RETRY_STARTED" -> null;
+            case "LOGIN_LOGGED_IN" -> {
+                loginCompleted = true;
+                yield hint(RuntimeState.RUNNING, "Integrated engine reports login completed");
+            }
+            case "LOGIN_LOGIN_FAILED" -> {
+                loginCompleted = false;
+                errorExitConfirmed = true;
+                yield hint(RuntimeState.UNKNOWN, "Gateway login failed; waiting for wrapper decision");
+            }
+            case "COMMAND_SERVER_READY" -> {
+                commandServerState = CommandServerState.OPEN;
+                yield null;
+            }
+            case "COMMAND_SERVER_CLOSED" -> {
+                commandServerState = CommandServerState.CLOSED;
+                yield null;
+            }
+            default -> null;
+        };
+        if (state != null) latest = state;
+        return Optional.ofNullable(state);
     }
 
     private void updateCommandServerState(String lower) {

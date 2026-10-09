@@ -137,6 +137,10 @@ public final class ConfigValueValidator {
     private static void validate(SettingDefinition definition, String value, List<ValidationIssue> issues) {
         String raw = value == null ? "" : value;
         String trimmed = raw.trim();
+        // DefaultSettings treats an exactly empty property like an absent key for
+        // every typed getter. This preserves sparse legacy configs during import.
+        // Nonempty whitespace still follows the existing strict validation below.
+        if (raw.isEmpty()) return;
         if (requiresUntrimmedIbcValue(definition) && !raw.equals(trimmed)) {
             issues.add(new ValidationIssue(Severity.ERROR, definition.key(),
                     "IBC does not preserve surrounding whitespace for this setting; remove leading or trailing whitespace"));
