@@ -18,19 +18,29 @@ import java.util.TreeMap;
 import java.util.UUID;
 
 public final class ProfileCodec {
-    public static final int FORMAT_VERSION = 2;
+    public static final int FORMAT_VERSION = 6;
+    public static final int INTEGRATED_LEGACY_FORMAT = 5;
+    public static final int MAX_ENCODED_BYTES = 1024 * 1024;
 
     public String encode(Profile profile) {
         Objects.requireNonNull(profile, "profile");
         List<String> lines = new ArrayList<>();
-        lines.add("formatVersion=" + FORMAT_VERSION);
+        lines.add("formatVersion=" + (profile.profileOnlyConfiguration() ? FORMAT_VERSION : INTEGRATED_LEGACY_FORMAT));
+        if (profile.profileOnlyConfiguration()) {
+            if (profile.credentialMode() == CredentialMode.EXISTING_CONFIG
+                    || !profile.baseConfigPath().toString().isBlank()) {
+                throw new IllegalArgumentException("Profile-owned configuration cannot depend on an external config file");
+            }
+            lines.add("configuration=profile");
+        }
         lines.add("id=" + profile.id());
         lines.add("name=" + escape(profile.name()));
         lines.add("enabled=" + profile.enabled());
         lines.add("targetType=" + profile.targetType().name());
         lines.add("tradingMode=" + profile.tradingMode().name());
         lines.add("twsMajorVersion=" + escape(profile.twsMajorVersion()));
-        lines.add("ibcPath=" + escape(profile.ibcPath().toString()));
+        lines.add("legacyIbcPath=" + escape(profile.ibcPath().toString()));
+        lines.add("engine=integrated");
         lines.add("twsPath=" + escape(profile.twsPath().toString()));
         lines.add("twsSettingsPath=" + escape(profile.twsSettingsPath().toString()));
         lines.add("baseConfigPath=" + escape(profile.baseConfigPath().toString()));
@@ -44,6 +54,7 @@ public final class ProfileCodec {
         lines.add("reloginAfterSecondFactorTimeout=" + profile.reloginAfterSecondFactorTimeout());
         lines.add("forceApiPortAtLaunch=" + profile.forceApiPortAtLaunch());
         lines.add("autoStart=" + profile.autoStart());
+        lines.add("autoRecoverStartupStall=" + profile.autoRecoverStartupStall());
         lines.add("minimizeMainWindow=" + profile.minimizeMainWindow());
         lines.add("gracefulStopTimeoutSeconds=" + profile.gracefulStopTimeoutSeconds());
         new TreeMap<>(profile.settings()).forEach((key, value) ->
@@ -52,6 +63,81 @@ public final class ProfileCodec {
     }
 
     public Profile decode(String text) {
+        ParsedProfile parsed = parse(text);
+        Map<String, String> values = parsed.values();
+        Map<String, String> settings = parsed.settings();
+        int version = sourceFormatVersion(parsed);
+        TwoFactorTimeoutAction timeoutAction = TwoFactorTimeoutAction.valueOf(required(values,
+                "twoFactorTimeoutAction"));
+        boolean reloginAfterTimeout = version >= 2
+                ? parseBoolean(required(values, "reloginAfterSecondFactorTimeout"),
+                        "reloginAfterSecondFactorTimeout")
+                : timeoutAction == TwoFactorTimeoutAction.RESTART;
+        if (version < 4) {
+            // Version 2.0.0 makes unattended five-minute IBKR Mobile retries the
+            // compatibility default. Once re-encoded as format 4, an explicit user
+            // choice to disable the policy is preserved.
+            timeoutAction = TwoFactorTimeoutAction.RESTART;
+            reloginAfterTimeout = true;
+        }
+        boolean forceApiPort = version >= 2
+                ? parseBoolean(required(values, "forceApiPortAtLaunch"), "forceApiPortAtLaunch")
+                : true;
+        boolean autoRecoverStartupStall = version >= 3
+                ? parseBoolean(required(values, "autoRecoverStartupStall"), "autoRecoverStartupStall")
+                : true;
+
+        if (version >= 5 && !"integrated".equals(required(values, "engine"))) {
+            throw new IllegalArgumentException("Only the integrated engine is supported");
+        }
+        if (version >= 6 && (!"profile".equals(required(values, "configuration"))
+                || CredentialMode.EXISTING_CONFIG.name().equals(values.get("credentialMode"))
+                || !values.getOrDefault("baseConfigPath", "").isBlank())) {
+            throw new IllegalArgumentException("Current profiles must own their complete configuration");
+        }
+        return Profile.builder()
+                .profileOnlyConfiguration(version >= 6)
+                .id(UUID.fromString(required(values, "id")))
+                .name(required(values, "name"))
+                .enabled(parseBoolean(required(values, "enabled"), "enabled"))
+                .targetType(TargetType.valueOf(required(values, "targetType")))
+                .tradingMode(TradingMode.valueOf(required(values, "tradingMode")))
+                .twsMajorVersion(required(values, "twsMajorVersion"))
+                .ibcPath(path(values.get(version < 5 ? "ibcPath" : "legacyIbcPath")))
+                .twsPath(path(values.get("twsPath")))
+                .twsSettingsPath(path(values.get("twsSettingsPath")))
+                .baseConfigPath(path(values.get("baseConfigPath")))
+                .ibcJavaPath(version >= 2 ? path(values.get("ibcJavaPath")) : Path.of(""))
+                .apiPort(parseInt(required(values, "apiPort"), "apiPort"))
+                .commandServerPort(parseInt(required(values, "commandServerPort"), "commandServerPort"))
+                .bindAddress(required(values, "bindAddress"))
+                .username(required(values, "username"))
+                .credentialMode(CredentialMode.valueOf(required(values, "credentialMode")))
+                .twoFactorTimeoutAction(timeoutAction)
+                .reloginAfterSecondFactorTimeout(reloginAfterTimeout)
+                .forceApiPortAtLaunch(forceApiPort)
+                .autoStart(parseBoolean(required(values, "autoStart"), "autoStart"))
+                .autoRecoverStartupStall(autoRecoverStartupStall)
+                .minimizeMainWindow(parseBoolean(required(values, "minimizeMainWindow"), "minimizeMainWindow"))
+                .gracefulStopTimeoutSeconds(parseInt(required(values, "gracefulStopTimeoutSeconds"), "gracefulStopTimeoutSeconds"))
+                .settings(settings)
+                .build();
+    }
+
+    /** Returns the encoded profile format after applying the same structural parsing as decode. */
+    public int sourceFormatVersion(String text) {
+        return sourceFormatVersion(parse(text));
+    }
+
+    private static int sourceFormatVersion(ParsedProfile parsed) {
+        int version = parseInt(required(parsed.values(), "formatVersion"), "formatVersion");
+        if (version < 1 || version > FORMAT_VERSION) {
+            throw new IllegalArgumentException("Unsupported profile format version: " + version);
+        }
+        return version;
+    }
+
+    private static ParsedProfile parse(String text) {
         Objects.requireNonNull(text, "text");
         Map<String, String> values = new LinkedHashMap<>();
         Map<String, String> settings = new LinkedHashMap<>();
@@ -69,53 +155,14 @@ public final class ProfileCodec {
                 if (settings.put(settingKey, value) != null) {
                     throw new IllegalArgumentException("Duplicate profile setting: " + settingKey);
                 }
-            } else {
-                if (values.put(key, value) != null) {
-                    throw new IllegalArgumentException("Duplicate profile key: " + key);
-                }
+            } else if (values.put(key, value) != null) {
+                throw new IllegalArgumentException("Duplicate profile key: " + key);
             }
         }
-
-        int version = parseInt(required(values, "formatVersion"), "formatVersion");
-        if (version < 1 || version > FORMAT_VERSION) {
-            throw new IllegalArgumentException("Unsupported profile format version: " + version);
-        }
-        TwoFactorTimeoutAction timeoutAction = TwoFactorTimeoutAction.valueOf(required(values,
-                "twoFactorTimeoutAction"));
-        boolean reloginAfterTimeout = version >= 2
-                ? parseBoolean(required(values, "reloginAfterSecondFactorTimeout"),
-                        "reloginAfterSecondFactorTimeout")
-                : timeoutAction == TwoFactorTimeoutAction.RESTART;
-        boolean forceApiPort = version >= 2
-                ? parseBoolean(required(values, "forceApiPortAtLaunch"), "forceApiPortAtLaunch")
-                : true;
-
-        return Profile.builder()
-                .id(UUID.fromString(required(values, "id")))
-                .name(required(values, "name"))
-                .enabled(parseBoolean(required(values, "enabled"), "enabled"))
-                .targetType(TargetType.valueOf(required(values, "targetType")))
-                .tradingMode(TradingMode.valueOf(required(values, "tradingMode")))
-                .twsMajorVersion(required(values, "twsMajorVersion"))
-                .ibcPath(path(values.get("ibcPath")))
-                .twsPath(path(values.get("twsPath")))
-                .twsSettingsPath(path(values.get("twsSettingsPath")))
-                .baseConfigPath(path(values.get("baseConfigPath")))
-                .ibcJavaPath(version >= 2 ? path(values.get("ibcJavaPath")) : Path.of(""))
-                .apiPort(parseInt(required(values, "apiPort"), "apiPort"))
-                .commandServerPort(parseInt(required(values, "commandServerPort"), "commandServerPort"))
-                .bindAddress(required(values, "bindAddress"))
-                .username(required(values, "username"))
-                .credentialMode(CredentialMode.valueOf(required(values, "credentialMode")))
-                .twoFactorTimeoutAction(timeoutAction)
-                .reloginAfterSecondFactorTimeout(reloginAfterTimeout)
-                .forceApiPortAtLaunch(forceApiPort)
-                .autoStart(parseBoolean(required(values, "autoStart"), "autoStart"))
-                .minimizeMainWindow(parseBoolean(required(values, "minimizeMainWindow"), "minimizeMainWindow"))
-                .gracefulStopTimeoutSeconds(parseInt(required(values, "gracefulStopTimeoutSeconds"), "gracefulStopTimeoutSeconds"))
-                .settings(settings)
-                .build();
+        return new ParsedProfile(values, settings);
     }
+
+    private record ParsedProfile(Map<String, String> values, Map<String, String> settings) { }
 
     private static Path path(String value) {
         return Path.of(value == null ? "" : value);

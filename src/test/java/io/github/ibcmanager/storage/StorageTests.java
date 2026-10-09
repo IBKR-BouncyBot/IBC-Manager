@@ -40,6 +40,8 @@ public final class StorageTests implements TestSuite {
                 new NamedTest("atomic writer preserves the previous backup", this::atomicBackup),
                 new NamedTest("repository saves loads and sorts profiles", this::repositoryRoundTrip),
                 new NamedTest("repository recovers a corrupt profile from backup", this::repositoryRecovery),
+                new NamedTest("repository recovery preserves a legacy migration marker",
+                        this::repositoryRecoveryPreservesLegacyFormat),
                 new NamedTest("repository skips unrecoverable profiles", this::repositoryCorruptBoth),
                 new NamedTest("repository rejects a profile stored under the wrong ID", this::repositoryWrongDirectory),
                 new NamedTest("repository deletes only the selected profile", this::repositoryDelete),
@@ -55,6 +57,8 @@ public final class StorageTests implements TestSuite {
                 new NamedTest("managed config preserves imported CRLF layout", this::managedCrlf),
                 new NamedTest("raw managed-config edits synchronize into the Profile editor",
                         this::managedRawEditSynchronizesProfile),
+                new NamedTest("legacy profile migration overrides one stale managed 2FA policy",
+                        this::managedLegacySecondFactorMigration),
                 new NamedTest("structured setting reset restores the base configuration value",
                         this::managedStructuredResetRestoresBaseline),
                 new NamedTest("manager-owned runtime launch preserves raw managed-config edits",
@@ -146,6 +150,34 @@ public final class StorageTests implements TestSuite {
             Assertions.equals(original, new ProfileCodec().decode(Files.readString(paths.profileFile(original.id()))),
                     "recovered primary file must be rewritten");
         } finally { TestSupport.deleteTree(root); }
+    }
+
+    private void repositoryRecoveryPreservesLegacyFormat() throws Exception {
+        Path root = TestSupport.tempDirectory("repository-legacy-recovery");
+        try {
+            AppPaths paths = new AppPaths(root);
+            ProfileRepository repository = new ProfileRepository(paths);
+            Profile legacyProfile = TestSupport.validProfile(root.resolve("install")).toBuilder()
+                    .twoFactorTimeoutAction(io.github.ibcmanager.model.TwoFactorTimeoutAction.EXIT)
+                    .reloginAfterSecondFactorTimeout(false)
+                    .build();
+            repository.save(legacyProfile);
+            Path primary = paths.profileFile(legacyProfile.id());
+            Path backup = primary.resolveSibling(primary.getFileName() + ".bak");
+            String legacy = Files.readString(primary, StandardCharsets.UTF_8)
+                    .replace("formatVersion=5", "formatVersion=3");
+            Files.writeString(backup, legacy, StandardCharsets.UTF_8);
+            Files.writeString(primary, "broken", StandardCharsets.UTF_8);
+
+            ProfileRepository.LoadResult loaded = repository.loadAll();
+            Assertions.isTrue(loaded.profiles().get(0).reloginAfterSecondFactorTimeout(),
+                    "recovered legacy profile must receive the in-memory 2FA migration");
+            Assertions.equals(3, new ProfileCodec().sourceFormatVersion(
+                            Files.readString(primary, StandardCharsets.UTF_8)),
+                    "recovery must preserve the legacy source format until Managed Config is synchronized");
+        } finally {
+            TestSupport.deleteTree(root);
+        }
     }
 
     private void repositoryCorruptBoth() throws Exception {
@@ -292,8 +324,19 @@ public final class StorageTests implements TestSuite {
             IbcConfigDocument document = new ManagedConfigService(new AppPaths(root)).loadManagedConfig(profile);
             Assertions.equals("yes", document.get("ReloginAfterSecondFactorAuthenticationTimeout").orElseThrow(),
                     "current IBC internal 2FA policy must match the profile");
+            Assertions.equals("300", document.get("SecondFactorAuthenticationTimeout").orElseThrow(),
+                    "enabled 2FA retry must request another notification after five minutes");
             Assertions.equals("", document.get("ExitAfterSecondFactorAuthenticationTimeout").orElseThrow(),
                     "deprecated fallback must be blank so it cannot override the explicit current policy");
+
+            Profile disabled = profile.toBuilder().reloginAfterSecondFactorTimeout(false)
+                    .twoFactorTimeoutAction(io.github.ibcmanager.model.TwoFactorTimeoutAction.EXIT).build();
+            IbcConfigDocument disabledDocument = new ManagedConfigService(new AppPaths(root.resolve("disabled")))
+                    .loadManagedConfig(disabled);
+            Assertions.equals("no", disabledDocument.get("ReloginAfterSecondFactorAuthenticationTimeout")
+                    .orElseThrow(), "disabled 2FA retry must remain disabled");
+            Assertions.equals("180", disabledDocument.get("SecondFactorAuthenticationTimeout").orElseThrow(),
+                    "disabled 2FA retry must restore IBC's documented timeout value");
         } finally { TestSupport.deleteTree(root); }
     }
 
@@ -306,6 +349,7 @@ public final class StorageTests implements TestSuite {
                     .setting("TradingMode", "live").setting("IbPassword", "leak")
                     .setting("ibpassword", "case-variant-leak")
                     .setting("commandserverport", "9998")
+                    .setting("SecondFactorAuthenticationTimeout", "17")
                     .setting("SECONDFACTORDEVICE", "Primary device").build();
             IbcConfigDocument document = new ManagedConfigService(new AppPaths(root)).loadManagedConfig(profile);
             Assertions.equals("4002", document.get("OverrideTwsApiPort").orElseThrow(), "reserved API override must be ignored");
@@ -315,6 +359,8 @@ public final class StorageTests implements TestSuite {
                     "case-variant sensitive advanced setting must be ignored");
             Assertions.isTrue(document.get("commandserverport").isEmpty(),
                     "case-variant profile-controlled setting must be ignored");
+            Assertions.equals("300", document.get("SecondFactorAuthenticationTimeout").orElseThrow(),
+                    "advanced settings must not override the fixed unattended 2FA retry timeout");
             Assertions.equals("Primary device", document.get("SecondFactorDevice").orElseThrow(),
                     "case-insensitive direct setting lookup must use the profile value");
             Assertions.isTrue(document.get("SECONDFACTORDEVICE").isEmpty(),
@@ -376,6 +422,57 @@ public final class StorageTests implements TestSuite {
             Assertions.isFalse(synchronizedProfile.settings().containsKey("DismissPasswordExpiryWarning"),
                     "unchanged template defaults must not become persistent profile overrides");
         } finally { TestSupport.deleteTree(root); }
+    }
+
+    private void managedLegacySecondFactorMigration() throws Exception {
+        Path root = TestSupport.tempDirectory("managed-legacy-2fa-migration");
+        try {
+            AppPaths paths = new AppPaths(root);
+            ProfileRepository repository = new ProfileRepository(paths);
+            ManagedConfigService configs = new ManagedConfigService(paths);
+            Profile oldPolicy = TestSupport.validProfile(root.resolve("install")).toBuilder()
+                    .twoFactorTimeoutAction(io.github.ibcmanager.model.TwoFactorTimeoutAction.EXIT)
+                    .reloginAfterSecondFactorTimeout(false)
+                    .build();
+            repository.save(oldPolicy);
+            configs.ensureManagedConfig(oldPolicy);
+
+            Path profileFile = paths.profileFile(oldPolicy.id());
+            String legacy = Files.readString(profileFile, StandardCharsets.UTF_8)
+                    .replace("formatVersion=5", "formatVersion=3");
+            Files.writeString(profileFile, legacy, StandardCharsets.UTF_8);
+
+            Profile migrated = repository.loadAll().profiles().get(0);
+            Assertions.isTrue(migrated.reloginAfterSecondFactorTimeout(),
+                    "format 3 must migrate to the five-minute notification retry");
+            Assertions.equals("no", configs.loadManagedConfig(migrated)
+                            .get("ReloginAfterSecondFactorAuthenticationTimeout").orElseThrow(),
+                    "the pre-migration managed config fixture must still contain its old policy");
+
+            Profile synchronizedProfile = configs.synchronizeEditableProfile(migrated);
+            Assertions.isTrue(synchronizedProfile.reloginAfterSecondFactorTimeout(),
+                    "opening Profile Edit must not restore the stale pre-migration managed policy");
+
+            new ProfileSaveService(repository, new MemoryCredentialStore(), configs)
+                    .save(migrated, synchronizedProfile, new char[0]);
+            String upgraded = Files.readString(profileFile, StandardCharsets.UTF_8);
+            Assertions.contains(upgraded, "formatVersion=5",
+                    "the first profile save must persist the new profile format");
+            IbcConfigDocument refreshed = configs.loadManagedConfig(synchronizedProfile);
+            Assertions.equals("yes", refreshed.get("ReloginAfterSecondFactorAuthenticationTimeout")
+                            .orElseThrow(),
+                    "the first profile save must update the managed retry policy");
+            Assertions.equals("300", refreshed.get("SecondFactorAuthenticationTimeout").orElseThrow(),
+                    "the migrated retry policy must use the five-minute timeout");
+
+            IbcConfigDocument explicitlyDisabled = refreshed.copy();
+            explicitlyDisabled.set("ReloginAfterSecondFactorAuthenticationTimeout", "no");
+            Profile disabled = configs.synchronizeEditableProfile(synchronizedProfile, explicitlyDisabled);
+            Assertions.isFalse(disabled.reloginAfterSecondFactorTimeout(),
+                    "after format 4 is persisted, an explicit managed-config disable must be authoritative");
+        } finally {
+            TestSupport.deleteTree(root);
+        }
     }
 
     private void managedStructuredResetRestoresBaseline() throws Exception {
@@ -498,6 +595,7 @@ public final class StorageTests implements TestSuite {
             raw.set("CommandServerPort", "7562");
             raw.set("BindAddress", "127.0.0.1");
             raw.set("ReloginAfterSecondFactorAuthenticationTimeout", "yes");
+            raw.set("SecondFactorAuthenticationTimeout", "17");
             raw.set("SecondFactorDevice", "Primary device");
 
             Profile synchronizedProfile = new ProfileSaveService(repository,
@@ -522,6 +620,8 @@ public final class StorageTests implements TestSuite {
             IbcConfigDocument saved = configs.loadManagedConfig(synchronizedProfile);
             Assertions.equals("raw-user", saved.get("IbLoginId").orElseThrow(),
                     "canonical managed config must retain the synchronized username");
+            Assertions.equals("300", saved.get("SecondFactorAuthenticationTimeout").orElseThrow(),
+                    "raw timeout edits must be canonicalized to the five-minute profile policy");
             Assertions.equals("Primary device", saved.get("SecondFactorDevice").orElseThrow(),
                     "canonical managed config must retain the synchronized second-factor device");
         } finally { TestSupport.deleteTree(root); }

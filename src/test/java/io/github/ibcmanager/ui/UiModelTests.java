@@ -42,6 +42,9 @@ public final class UiModelTests implements TestSuite {
                 new NamedTest("session actions present explicit profile-specific confirmations", this::sessionActionPrompts),
                 new NamedTest("session action buttons are larger and visually distinct", this::sessionActionButtons),
                 new NamedTest("profile status indicator maps states to explicit traffic-light tones", this::statusIndicator),
+                new NamedTest("all runtime states have friendly labels without changing their meaning", this::statusWording),
+                new NamedTest("API monitoring qualification is in a tooltip, not an error", this::apiMonitoringTooltip),
+                new NamedTest("unavailable API observations are not worded as a closed listener", this::unknownListenerWording),
                 new NamedTest("settings table uses enumerated editors and escaped tooltips", this::settingsTable),
                 new NamedTest("profile edit result copies and clears password material", this::profileEditResult),
                 new NamedTest("UI layout helpers create predictable grid constraints", this::layoutHelpers),
@@ -52,7 +55,7 @@ public final class UiModelTests implements TestSuite {
     private void modelStructure() {
         ProfileSettingsTableModel model = new ProfileSettingsTableModel(Map.of());
         Assertions.isTrue(model.getRowCount() > 20, "the structured editor must expose a useful IBC schema");
-        Assertions.equals(3, model.getColumnCount(), "settings model column count changed");
+        Assertions.equals(4, model.getColumnCount(), "settings model column count changed");
         Assertions.equals("Category", model.getColumnName(0), "category column mismatch");
         Assertions.equals("Setting", model.getColumnName(1), "setting column mismatch");
         Assertions.equals("Value", model.getColumnName(2), "value column mismatch");
@@ -72,6 +75,7 @@ public final class UiModelTests implements TestSuite {
                 "TradingMode", "live",
                 "CommandServerPort", "7462",
                 "SecondFactorDevice", "IBKR Mobile",
+                "SecondFactorAuthenticationTimeout", "17",
                 "FIX", "yes",
                 "FIXLoginId", "fix-user",
                 "TrustedTwsApiClientIPs", "127.0.0.1",
@@ -80,7 +84,7 @@ public final class UiModelTests implements TestSuite {
         List<String> keys = definitions(model).stream().map(SettingDefinition::key).toList();
         for (String excluded : List.of("IbPassword", "IbLoginId", "TradingMode", "CommandServerPort",
                 "BindAddress", "OverrideTwsApiPort", "MinimizeMainWindow", "IbDir", "SecondFactorDevice",
-                "ReloginAfterSecondFactorAuthenticationTimeout",
+                "ReloginAfterSecondFactorAuthenticationTimeout", "SecondFactorAuthenticationTimeout",
                 "ExitAfterSecondFactorAuthenticationTimeout", "FIX", "FIXLoginId", "FIXPassword",
                 "TrustedTwsApiClientIPs")) {
             Assertions.isFalse(keys.contains(excluded), excluded + " must be controlled outside the settings table");
@@ -101,14 +105,14 @@ public final class UiModelTests implements TestSuite {
                 "edited values must be trimmed");
         Assertions.equals("accept", model.getValueAt(row, 2), "edited value must be shown");
         model.setValueAt(null, row, 2);
-        Assertions.isFalse(model.settings().containsKey("AcceptIncomingConnectionAction"),
-                "null edit must remove the override");
+        Assertions.equals("", model.settings().get("AcceptIncomingConnectionAction"),
+                "blank is an explicit engine value");
         model.setValueAt("reject", row, 1);
-        Assertions.isFalse(model.settings().containsKey("AcceptIncomingConnectionAction"),
+        Assertions.equals("", model.settings().get("AcceptIncomingConnectionAction"),
                 "edits to read-only columns must be ignored");
         model.setValueAt("reject", row, 2);
         model.reset(row);
-        Assertions.equals("", model.getValueAt(row, 2), "reset must restore blank override");
+        Assertions.equals("manual", model.getValueAt(row, 2), "reset must show the included default");
         model.reset(-1);
         model.reset(model.getRowCount());
         Assertions.equals(Map.of(), model.settings(), "out-of-range reset must be harmless");
@@ -229,7 +233,7 @@ public final class UiModelTests implements TestSuite {
         ProfileSessionAction.Prompt paperStart = ProfileSessionAction.START.prompt(paper);
         Assertions.equals(javax.swing.JOptionPane.QUESTION_MESSAGE, paperStart.messageType(),
                 "paper start may use an informational confirmation");
-        Assertions.contains(paperStart.message(), "Trader Workstation",
+        Assertions.contains(paperStart.message(), "Unsupported legacy TWS profile",
                 "paper start confirmation must identify TWS");
         Assertions.notContains(paperStart.message(), "LIVE trading profile",
                 "paper start must not display the live-mode warning");
@@ -243,6 +247,18 @@ public final class UiModelTests implements TestSuite {
                 "stop confirmation must explain the connectivity impact");
         Assertions.equals(javax.swing.JOptionPane.WARNING_MESSAGE, stop.messageType(),
                 "stop must use a warning confirmation");
+
+        ProfileSessionAction.Prompt forceStop = ProfileSessionAction.FORCE_STOP.prompt(live);
+        Assertions.equals("Confirm force stop", forceStop.title(),
+                "force-stop confirmation title mismatch");
+        Assertions.equals("Force Stop", forceStop.confirmationLabel(),
+                "force-stop confirmation label mismatch");
+        Assertions.contains(forceStop.message(), "forcibly terminates",
+                "force-stop confirmation must explain that termination is forced");
+        Assertions.contains(forceStop.message(), "Unsaved",
+                "force-stop confirmation must warn about unsaved state");
+        Assertions.equals(javax.swing.JOptionPane.WARNING_MESSAGE, forceStop.messageType(),
+                "force stop must use a warning confirmation");
 
         ProfileSessionAction.Prompt restart = ProfileSessionAction.RESTART.prompt(live);
         Assertions.equals("Confirm restart", restart.title(), "restart confirmation title mismatch");
@@ -265,14 +281,16 @@ public final class UiModelTests implements TestSuite {
     private void sessionActionButtons() {
         javax.swing.JButton start = new javax.swing.JButton();
         javax.swing.JButton stop = new javax.swing.JButton();
+        javax.swing.JButton forceStop = new javax.swing.JButton();
         javax.swing.JButton restart = new javax.swing.JButton();
         javax.swing.JButton pause = new javax.swing.JButton();
         ProfileSessionAction.START.configureButton(start);
         ProfileSessionAction.STOP.configureButton(stop);
+        ProfileSessionAction.FORCE_STOP.configureButton(forceStop);
         ProfileSessionAction.RESTART.configureButton(restart);
         ProfileSessionAction.PAUSE.configureButton(pause);
 
-        for (javax.swing.JButton button : List.of(start, stop, restart, pause)) {
+        for (javax.swing.JButton button : List.of(start, stop, forceStop, restart, pause)) {
             Assertions.isTrue(button.getPreferredSize().width >= ProfileSessionAction.MINIMUM_BUTTON_WIDTH,
                     button.getText() + " button is not wide enough");
             Assertions.isTrue(button.getPreferredSize().height >= ProfileSessionAction.MINIMUM_BUTTON_HEIGHT,
@@ -292,9 +310,11 @@ public final class UiModelTests implements TestSuite {
         }
         Assertions.equals("startProfileButton", start.getName(), "start component name mismatch");
         Assertions.equals("stopProfileButton", stop.getName(), "stop component name mismatch");
+        Assertions.equals("forceStopProfileButton", forceStop.getName(),
+                "force-stop component name mismatch");
         Assertions.equals("restartProfileButton", restart.getName(), "restart component name mismatch");
         Assertions.equals("pauseProfileButton", pause.getName(), "pause component name mismatch");
-        List<javax.swing.JButton> actions = List.of(start, stop, restart, pause);
+        List<javax.swing.JButton> actions = List.of(start, stop, forceStop, restart, pause);
         for (int first = 0; first < actions.size(); first++) {
             for (int second = first + 1; second < actions.size(); second++) {
                 Assertions.notEquals(actions.get(first).getForeground(), actions.get(second).getForeground(),
@@ -313,6 +333,10 @@ public final class UiModelTests implements TestSuite {
                 io.github.ibcmanager.model.RuntimeState.RUNNING,
                 io.github.ibcmanager.model.RuntimeState.VALIDATING,
                 io.github.ibcmanager.model.RuntimeState.STARTING,
+                io.github.ibcmanager.model.RuntimeState.AUTO_RECOVERY_STOPPING,
+                io.github.ibcmanager.model.RuntimeState.AUTO_RECOVERY_FORCE_CLEANUP,
+                io.github.ibcmanager.model.RuntimeState.AUTO_RECOVERY_COOLDOWN,
+                io.github.ibcmanager.model.RuntimeState.STARTING_FRESH,
                 io.github.ibcmanager.model.RuntimeState.RESTARTING,
                 io.github.ibcmanager.model.RuntimeState.WAITING_FOR_LOGIN,
                 io.github.ibcmanager.model.RuntimeState.WAITING_FOR_SECOND_FACTOR,
@@ -329,10 +353,19 @@ public final class UiModelTests implements TestSuite {
         Assertions.equals(StatusIndicator.Tone.RED,
                 StatusIndicator.presentationFor(io.github.ibcmanager.model.RuntimeState.ERROR).tone(),
                 "error state must use the red indicator");
-        Assertions.equals("API listener detected",
+        Assertions.equals(StatusIndicator.Tone.RED,
+                StatusIndicator.presentationFor(io.github.ibcmanager.model.RuntimeState.STARTUP_STALLED).tone(),
+                "stalled startup must use the red indicator");
+        Assertions.equals(StatusIndicator.Tone.RED,
+                StatusIndicator.presentationFor(io.github.ibcmanager.model.RuntimeState.RECOVERY_FAILED).tone(),
+                "failed unattended recovery must use the red indicator");
+        Assertions.equals("Gateway startup stalled",
+                StatusIndicator.presentationFor(io.github.ibcmanager.model.RuntimeState.STARTUP_STALLED).headline(),
+                "stalled startup must be stated explicitly");
+        Assertions.equals("Gateway running \u2014 API listener available",
                 StatusIndicator.presentationFor(io.github.ibcmanager.model.RuntimeState.API_LISTENER_DETECTED).headline(),
                 "green state must state exactly what was verified");
-        Assertions.equals("Logged in; API not confirmed",
+        Assertions.equals("Logged in \u2014 API listener unavailable",
                 StatusIndicator.presentationFor(io.github.ibcmanager.model.RuntimeState.RUNNING).headline(),
                 "login without a detected API listener must remain an attention state");
         StatusIndicator indicator = new StatusIndicator();
@@ -340,8 +373,58 @@ public final class UiModelTests implements TestSuite {
         Assertions.equals("profileStatusIndicator", indicator.getName(), "status component name mismatch");
         Assertions.equals(StatusIndicator.Tone.RED, indicator.presentation().tone(),
                 "component must update to the supplied state");
-        Assertions.isTrue(indicator.getAccessibleContext().getAccessibleDescription().contains("Stopped"),
+        Assertions.isTrue(indicator.getAccessibleContext().getAccessibleDescription().contains("stopped"),
                 "status indicator must expose non-color accessibility text");
+    }
+
+    private void statusWording() {
+        for (io.github.ibcmanager.model.RuntimeState state : io.github.ibcmanager.model.RuntimeState.values()) {
+            String headline = StatusIndicator.presentationFor(state).headline();
+            String compact = StatusIndicator.shortLabel(state);
+            Assertions.isFalse(headline.isBlank(), state + " needs a headline");
+            Assertions.isFalse(compact.isBlank(), state + " needs a compact label");
+            Assertions.notContains(headline, "_", "no raw diagnostic enum in the headline");
+            Assertions.notContains(compact, "_", "no raw diagnostic enum in the status row");
+            Assertions.notContains(headline.toLowerCase(java.util.Locale.ROOT), "trading ready",
+                    "listener monitoring must not claim trading readiness");
+        }
+        Assertions.equals("Running", StatusIndicator.shortLabel(
+                io.github.ibcmanager.model.RuntimeState.API_LISTENER_DETECTED), "compact success wording");
+        Assertions.equals("Waiting for 2FA approval", StatusIndicator.shortLabel(
+                io.github.ibcmanager.model.RuntimeState.WAITING_FOR_SECOND_FACTOR), "not a failure");
+        Assertions.equals("Recovery: waiting to restart", StatusIndicator.shortLabel(
+                io.github.ibcmanager.model.RuntimeState.AUTO_RECOVERY_COOLDOWN), "cooldown explained");
+    }
+
+    private void unknownListenerWording() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            StatusIndicator indicator = new StatusIndicator();
+            indicator.updateStatus(new io.github.ibcmanager.model.ProfileStatus(
+                    java.util.UUID.randomUUID(), io.github.ibcmanager.model.RuntimeState.RUNNING,
+                    true, true, io.github.ibcmanager.model.PortListenerState.UNKNOWN, 42024,
+                    java.time.Instant.EPOCH, null, "Listener inspection is temporarily unavailable", java.time.Instant.EPOCH));
+            Assertions.equals("Logged in \u2014 checking API listener", indicator.presentation().headline(),
+                    "unknown inspection does not assert a missing listener");
+            Assertions.equals(StatusIndicator.Tone.YELLOW, indicator.presentation().tone(),
+                    "uncertainty is not green");
+        });
+    }
+
+    private void apiMonitoringTooltip() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            StatusIndicator indicator = new StatusIndicator();
+            indicator.updateStatus(new io.github.ibcmanager.model.ProfileStatus(
+                    java.util.UUID.randomUUID(), io.github.ibcmanager.model.RuntimeState.API_LISTENER_DETECTED,
+                    true, true, io.github.ibcmanager.model.PortListenerState.LISTENING, 42024,
+                    java.time.Instant.EPOCH, null, "Gateway's API listener is available.", java.time.Instant.EPOCH));
+            Assertions.contains(indicator.getToolTipText(), "Your trading application verifies its own API connection",
+                    "API responsibility remains available on demand");
+            Assertions.notContains(indicator.getAccessibleContext().getAccessibleDescription(), "not verified",
+                    "normal success does not read as a failed check");
+            indicator.updateStatus(io.github.ibcmanager.model.ProfileStatus.stopped(java.util.UUID.randomUUID()));
+            Assertions.notContains(indicator.getToolTipText(), "Your trading application",
+                    "old success tooltip does not leak into the stopped state");
+        });
     }
 
     private void settingsTable() throws Exception {
@@ -355,6 +438,9 @@ public final class UiModelTests implements TestSuite {
                 int enumRow = rowFor(model, "AcceptIncomingConnectionAction");
                 Assertions.isTrue(table.getCellEditor(enumRow, 2) instanceof DefaultCellEditor,
                         "enumerated values must use a constrained editor");
+                DefaultCellEditor enumEditor = (DefaultCellEditor) table.getCellEditor(enumRow, 2);
+                javax.swing.JComboBox<?> choices = (javax.swing.JComboBox<?>) enumEditor.getComponent();
+                Assertions.equals("", choices.getItemAt(0), "empty imported fallback must remain selectable");
                 int textRow = rowFor(model, "CommandPrompt");
                 Assertions.isFalse(table.getCellEditor(textRow, 2) instanceof DefaultCellEditor
                                 && ((DefaultCellEditor) table.getCellEditor(textRow, 2)).getComponent()
@@ -367,7 +453,7 @@ public final class UiModelTests implements TestSuite {
                 String tooltip = table.getToolTipText(event);
                 Assertions.contains(tooltip, "AcceptIncomingConnectionAction",
                         "tooltip must identify the exact IBC key");
-                Assertions.contains(tooltip, "Default:", "tooltip must include default information");
+                Assertions.contains(tooltip, "Included configuration default", "tooltip must distinguish template and runtime fallback");
                 Assertions.equals(null, table.getToolTipText(new MouseEvent(table, MouseEvent.MOUSE_MOVED,
                         System.currentTimeMillis(), 0, -10, -10, 0, false)),
                         "points outside rows must not produce a tooltip");

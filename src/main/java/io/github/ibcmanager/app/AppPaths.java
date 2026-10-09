@@ -46,5 +46,6 @@ public final class AppPaths {
     public Path profileLog(java.util.UUID profileId) { return logs().resolve(profileId + ".log"); }
     public Path runtimeDirectory(java.util.UUID profileId) { return runtime().resolve(profileId.toString()); }
     public Path runtimeState(java.util.UUID profileId) { return runtimeDirectory(profileId).resolve("process.properties"); }
+    public Path recoveryHistory(java.util.UUID profileId) { return runtimeDirectory(profileId).resolve("recovery-history.properties"); }
     public Path credentialFile(java.util.UUID profileId) { return credentials().resolve(profileId + ".dpapi"); }
 }

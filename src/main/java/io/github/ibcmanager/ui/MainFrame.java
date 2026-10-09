@@ -8,7 +8,6 @@ import io.github.ibcmanager.model.Profile;
 import io.github.ibcmanager.model.ProfileStatus;
 import io.github.ibcmanager.model.RuntimeState;
 import io.github.ibcmanager.model.Severity;
-import io.github.ibcmanager.model.TargetType;
 import io.github.ibcmanager.model.ValidationIssue;
 import io.github.ibcmanager.runtime.IbcCommandResult;
 import io.github.ibcmanager.runtime.ProfileRuntimeController;
@@ -81,19 +80,19 @@ public final class MainFrame extends JFrame {
     private final JLabel startedValue = valueLabel();
     private final JLabel messageValue = valueLabel();
     private final JTextArea logArea = new JTextArea();
-    private final JLabel statusBar = new JLabel("Ready");
+    private final JLabel statusBar = new JLabel("Ready to manage Gateway");
     private final StatusIndicator profileStatusIndicator = new StatusIndicator();
     private final JButton startButton = new JButton("Start");
     private final JButton stopButton = new JButton("Stop");
+    private final JButton forceStopButton = new JButton("Force Stop");
     private final JButton restartButton = new JButton("Restart");
     private final JButton pauseButton = new JButton("Pause");
     private final JButton editButton = new JButton("Edit");
     private final JButton validateButton = new JButton("Validate");
-    private final JButton configButton = new JButton("Managed config");
+    private final JMenuItem editProfileMenu = new JMenuItem("Edit selected profile...");
     private final JButton diagnosticsButton = new JButton("Diagnostics");
     private final JButton reconnectDataButton = new JButton("Reconnect data");
     private final JButton reconnectAccountButton = new JButton("Reconnect account");
-    private final JButton enableApiButton = new JButton("Enable API");
     private final Timer uiTimer;
     private List<Profile> profiles = List.of();
     private boolean busy;
@@ -142,14 +141,13 @@ public final class MainFrame extends JFrame {
         JMenu file = new JMenu("File");
         JMenuItem newProfile = new JMenuItem("New profile...");
         newProfile.addActionListener(event -> editProfile(null));
-        JMenuItem editProfile = new JMenuItem("Edit selected profile...");
-        editProfile.addActionListener(event -> editSelected());
+        editProfileMenu.addActionListener(event -> editSelected());
         JMenuItem deleteProfile = new JMenuItem("Delete selected profile...");
         deleteProfile.addActionListener(event -> deleteSelected());
         JMenuItem exit = new JMenuItem("Exit");
         exit.addActionListener(event -> requestClose());
         file.add(newProfile);
-        file.add(editProfile);
+        file.add(editProfileMenu);
         file.add(deleteProfile);
         file.addSeparator();
         file.add(exit);
@@ -157,27 +155,17 @@ public final class MainFrame extends JFrame {
         JMenu tools = new JMenu("Tools");
         JMenuItem validate = new JMenuItem("Validate selected profile");
         validate.addActionListener(event -> validateSelected());
-        JMenuItem managedConfig = new JMenuItem("Edit managed config.ini...");
-        managedConfig.addActionListener(event -> editManagedConfig());
         JMenuItem diagnostics = new JMenuItem("Export diagnostic bundle...");
         diagnostics.addActionListener(event -> exportDiagnostics());
         JMenuItem forceStop = new JMenuItem("Force stop selected profile...");
         forceStop.addActionListener(event -> confirmForceStopSelected());
         JMenuItem openData = new JMenuItem("Open IBC Manager data folder");
         openData.addActionListener(event -> UiUtil.openPath(this, services.paths().root()));
-        JMenuItem installStartup = new JMenuItem("Install startup task");
-        installStartup.addActionListener(event -> installStartupTask());
-        JMenuItem removeStartup = new JMenuItem("Remove startup task");
-        removeStartup.addActionListener(event -> removeStartupTask());
         tools.add(validate);
-        tools.add(managedConfig);
         tools.add(diagnostics);
         tools.addSeparator();
         tools.add(forceStop);
         tools.add(openData);
-        tools.addSeparator();
-        tools.add(installStartup);
-        tools.add(removeStartup);
 
         JMenu help = new JMenu("Help");
         JMenuItem about = new JMenuItem("About");
@@ -198,22 +186,22 @@ public final class MainFrame extends JFrame {
         editButton.addActionListener(event -> editSelected());
         ProfileSessionAction.START.configureButton(startButton);
         ProfileSessionAction.STOP.configureButton(stopButton);
+        ProfileSessionAction.FORCE_STOP.configureButton(forceStopButton);
         ProfileSessionAction.RESTART.configureButton(restartButton);
         ProfileSessionAction.PAUSE.configureButton(pauseButton);
         startButton.addActionListener(event -> confirmStartSelected());
         stopButton.addActionListener(event -> confirmStopSelected());
+        forceStopButton.addActionListener(event -> confirmForceStopSelected());
         restartButton.addActionListener(event -> confirmCommand(
                 ProfileSessionAction.RESTART, "Restart", ProfileRuntimeController::restartSession));
         pauseButton.addActionListener(event -> confirmCommand(
                 ProfileSessionAction.PAUSE, "Pause", ProfileRuntimeController::pause));
         validateButton.addActionListener(event -> validateSelected());
-        configButton.addActionListener(event -> editManagedConfig());
         diagnosticsButton.addActionListener(event -> exportDiagnostics());
         profileToolbar.add(newButton);
         profileToolbar.add(editButton);
         profileToolbar.addSeparator();
         profileToolbar.add(validateButton);
-        profileToolbar.add(configButton);
         profileToolbar.add(diagnosticsButton);
 
         JLabel sessionLabel = new JLabel("Session:");
@@ -221,6 +209,7 @@ public final class MainFrame extends JFrame {
         sessionToolbar.add(sessionLabel);
         sessionToolbar.add(startButton);
         sessionToolbar.add(stopButton);
+        sessionToolbar.add(forceStopButton);
         sessionToolbar.add(restartButton);
         sessionToolbar.add(pauseButton);
 
@@ -272,16 +261,20 @@ public final class MainFrame extends JFrame {
     private JPanel createOverviewPanel() {
         JPanel outer = new JPanel(new BorderLayout());
         outer.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+        outer.setName("profileOverview");
+        stateValue.setName("profileStateValue");
+        apiValue.setName("profileApiValue");
+        commandValue.setName("profileControlValue");
         outer.add(profileStatusIndicator, BorderLayout.NORTH);
         JPanel form = new JPanel(new GridBagLayout());
         int row = 0;
         addDetailRow(form, row++, "Profile", nameValue);
-        addDetailRow(form, row++, "State", stateValue);
+        addDetailRow(form, row++, "Status", stateValue);
         addDetailRow(form, row++, "Application", targetValue);
         addDetailRow(form, row++, "Trading mode", modeValue);
-        addDetailRow(form, row++, "Process ID", pidValue);
-        addDetailRow(form, row++, "IBC command server", commandValue);
-        addDetailRow(form, row++, "API TCP listener", apiValue);
+        addDetailRow(form, row++, "Session process ID", pidValue);
+        addDetailRow(form, row++, "Engine control", commandValue);
+        addDetailRow(form, row++, "API listener", apiValue);
         addDetailRow(form, row++, "Started", startedValue);
         addDetailRow(form, row++, "Details", messageValue);
         GridBagConstraints filler = new GridBagConstraints();
@@ -293,11 +286,6 @@ public final class MainFrame extends JFrame {
         filler.fill = GridBagConstraints.BOTH;
         form.add(new JPanel(), filler);
         outer.add(form, BorderLayout.CENTER);
-        JLabel apiNotice = new JLabel("<html>API listener detected means the operating system reports a listening TCP socket. "
-                + "IBC Manager does not connect to the port for monitoring. This still does not prove that an IB API "
-                + "handshake or account validation completed.</html>");
-        apiNotice.setBorder(BorderFactory.createEmptyBorder(10, 4, 4, 4));
-        outer.add(apiNotice, BorderLayout.SOUTH);
         return outer;
     }
 
@@ -332,10 +320,8 @@ public final class MainFrame extends JFrame {
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 12));
         reconnectDataButton.addActionListener(event -> runCommand("Reconnect market data", ProfileRuntimeController::reconnectData));
         reconnectAccountButton.addActionListener(event -> runCommand("Reconnect account", ProfileRuntimeController::reconnectAccount));
-        enableApiButton.addActionListener(event -> runCommand("Enable API", ProfileRuntimeController::enableApi));
         buttons.add(reconnectDataButton);
         buttons.add(reconnectAccountButton);
-        buttons.add(enableApiButton);
         panel.add(buttons, BorderLayout.CENTER);
         return panel;
     }
@@ -359,21 +345,23 @@ public final class MainFrame extends JFrame {
     private void editSelected() {
         Profile profile = profilesList.getSelectedValue();
         if (profile == null) return;
-        if (selectedController().map(controller -> controller.status().processAlive()).orElse(false)) {
-            JOptionPane.showMessageDialog(this, "Stop the profile before editing it.",
-                    "Profile is running", JOptionPane.WARNING_MESSAGE);
+        if (selectedController().map(controller -> controller.status().processAlive()
+                || controller.automaticRecoveryInProgress()).orElse(false)) {
+            JOptionPane.showMessageDialog(this,
+                    "Stop the profile and wait for automatic recovery to finish before editing it.",
+                    "Profile is active", JOptionPane.WARNING_MESSAGE);
             return;
         }
         try {
             editProfile(services.managedConfigService().synchronizeEditableProfile(profile));
         } catch (IOException ex) {
-            UiUtil.showError(this, "Could not synchronize the Profile editor with managed config.ini", ex);
+            UiUtil.showError(this, "Could not load the Profile configuration", ex);
         }
     }
 
     private void editProfile(Profile current) {
         Optional<ProfileEditResult> edited = ProfileEditorDialog.showDialog(
-                this, current, services.credentialStore().isAvailable());
+                this, current, services.credentialStore().isAvailable(), this::installStartupTask, this::removeStartupTask);
         if (edited.isEmpty()) return;
         try (ProfileEditResult result = edited.get()) {
             Profile candidate = result.profile();
@@ -405,7 +393,13 @@ public final class MainFrame extends JFrame {
             }
             char[] password = result.passwordCopy();
             try {
-                services.profileSaveService().save(current, candidate, password);
+                Optional<ProfileRuntimeController> controller = services.runtimeRegistry().controller(candidate.id());
+                if (controller.isPresent()) {
+                    controller.get().editConfiguration(current, () -> {
+                        services.profileSaveService().save(current, candidate, password);
+                        controller.get().updateProfile(candidate);
+                    });
+                } else services.profileSaveService().save(current, candidate, password);
             } finally {
                 Arrays.fill(password, '\0');
             }
@@ -421,9 +415,11 @@ public final class MainFrame extends JFrame {
     private void deleteSelected() {
         Profile profile = profilesList.getSelectedValue();
         if (profile == null) return;
-        if (selectedController().map(controller -> controller.status().processAlive()).orElse(false)) {
-            JOptionPane.showMessageDialog(this, "Stop the profile before deleting it.",
-                    "Profile is running", JOptionPane.WARNING_MESSAGE);
+        if (selectedController().map(controller -> controller.status().processAlive()
+                || controller.automaticRecoveryInProgress()).orElse(false)) {
+            JOptionPane.showMessageDialog(this,
+                    "Stop the profile and wait for automatic recovery to finish before deleting it.",
+                    "Profile is active", JOptionPane.WARNING_MESSAGE);
             return;
         }
         int choice = JOptionPane.showConfirmDialog(this,
@@ -451,7 +447,7 @@ public final class MainFrame extends JFrame {
         runAsync("Starting profile", () -> {
             controller.start();
             return null;
-        }, ignored -> setStatus("Started '" + controller.profile().name() + "'"));
+        }, ignored -> setStatus("Startup requested for '" + controller.profile().name() + "'"));
     }
 
     private void confirmStopSelected() {
@@ -472,23 +468,21 @@ public final class MainFrame extends JFrame {
         runAsync(force ? "Force stopping profile" : "Stopping profile", () -> {
             if (force) controller.forceStop(); else controller.stop();
             return null;
-        }, ignored -> setStatus("Stopped '" + controller.profile().name() + "'"));
+        }, ignored -> setStatus((force ? "Force Stop completed for '" : "Stop requested for '")
+                + controller.profile().name() + "'"));
     }
 
     private void confirmForceStopSelected() {
         Profile profile = profilesList.getSelectedValue();
         Optional<ProfileRuntimeController> controller = selectedController();
-        if (profile == null || controller.isEmpty() || !controller.get().status().processAlive()) {
-            JOptionPane.showMessageDialog(this, "The selected profile is not running.",
+        if (profile == null || controller.isEmpty()
+                || (!controller.get().status().processAlive()
+                        && !controller.get().automaticRecoveryInProgress())) {
+            JOptionPane.showMessageDialog(this, "The selected profile is not running or recovering.",
                     "Force stop", JOptionPane.INFORMATION_MESSAGE);
             return;
         }
-        int choice = JOptionPane.showConfirmDialog(this,
-                "Force stop '" + profile.name() + "'?\n\n"
-                        + "This terminates only the process tree owned by this profile. "
-                        + "Use normal Stop first whenever possible.",
-                "Confirm force stop", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-        if (choice == JOptionPane.YES_OPTION) stopSelected(true);
+        if (ProfileSessionAction.FORCE_STOP.confirm(this, profile)) stopSelected(true);
     }
 
     private void runCommand(String label, ControllerCommand operation) {
@@ -518,27 +512,6 @@ public final class MainFrame extends JFrame {
         List<ValidationIssue> issues = new ArrayList<>(services.profileValidator().validate(profile, true).issues());
         issues.addAll(services.profileSetValidator().validate(profiles).issues());
         ValidationDialog.show(this, profile.name(), new ValidationResult(issues));
-    }
-
-    private void editManagedConfig() {
-        Profile profile = profilesList.getSelectedValue();
-        if (profile == null) return;
-        if (selectedController().map(controller -> controller.status().processAlive()).orElse(false)) {
-            JOptionPane.showMessageDialog(this, "Stop the profile before changing its managed config.ini.",
-                    "Profile is running", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-        var edited = ManagedConfigDialog.show(this, profile, services.managedConfigService());
-        if (edited.isEmpty()) return;
-        try {
-            Profile synchronizedProfile = services.profileSaveService().saveManagedConfig(profile, edited.get());
-            services.runtimeRegistry().upsert(synchronizedProfile);
-            loadProfiles();
-            selectProfile(synchronizedProfile.id());
-            statusBar.setText("Managed config.ini saved and synchronized with the Profile editor");
-        } catch (IOException ex) {
-            UiUtil.showError(this, "Managed configuration was not saved", ex);
-        }
     }
 
     private void exportDiagnostics() {
@@ -595,28 +568,28 @@ public final class MainFrame extends JFrame {
         profileStatusIndicator.updateStatus(status);
         nameValue.setText(profile.name());
         stateValue.setText(formatState(status.state()));
+        stateValue.setToolTipText("Diagnostic state: " + status.state().name());
         targetValue.setText(profile.targetType().toString() + " " + profile.twsMajorVersion());
         modeValue.setText(profile.tradingMode().toString());
         pidValue.setText(status.pid() > 0 ? Long.toString(status.pid()) : "-");
         commandValue.setText(status.commandPortOpen()
-                ? "Ready on " + profile.bindAddress() + ":" + profile.commandServerPort() + " (reported by IBC)"
-                : "Not ready (" + profile.bindAddress() + ":" + profile.commandServerPort() + ")");
-        commandValue.setToolTipText("IBC Manager derives command-server readiness from IBC lifecycle output "
-                + "and real commands; it does not open a monitoring connection every two seconds.");
+                ? "Available on " + profile.bindAddress() + ":" + profile.commandServerPort() + " (reported by engine)"
+                : "Unavailable (" + profile.bindAddress() + ":" + profile.commandServerPort() + ")");
+        commandValue.setToolTipText("Session control is reported by the included engine. It is separate from the trading API; "
+                + "IBC Manager does not open periodic command-port monitoring connections.");
         io.github.ibcmanager.runtime.ListenerObservation apiObservation =
                 controller.get().apiListenerObservation();
         apiValue.setText(switch (status.apiListenerState()) {
-            case LISTENING -> "Verified listener on "
+            case LISTENING -> "Available on "
                     + (apiObservation.localAddress().isBlank() ? "127.0.0.1" : apiObservation.localAddress())
                     + ":" + profile.apiPort() + " (PID " + apiObservation.owningPid() + ")";
-            case NOT_LISTENING -> "Not listening (127.0.0.1:" + profile.apiPort() + ")";
+            case NOT_LISTENING -> "Not available (127.0.0.1:" + profile.apiPort() + ")";
             case UNKNOWN -> apiObservation.state() == io.github.ibcmanager.model.PortListenerState.LISTENING
-                    ? "Listener detected but ownership is unverified"
+                    ? "Port in use; Gateway ownership not confirmed"
                             + (apiObservation.ownershipAvailable() ? " (PID " + apiObservation.owningPid() + ")" : "")
-                    : "Listener state unavailable (127.0.0.1:" + profile.apiPort() + ")";
+                    : "Unable to check listener (127.0.0.1:" + profile.apiPort() + ")";
         });
-        apiValue.setToolTipText("IBC Manager passively inspects the operating-system listener table; "
-                + "it does not open a raw API connection for health monitoring.");
+        apiValue.setToolTipText(StatusIndicator.API_MONITORING_TOOLTIP);
         startedValue.setText(status.startedAt() == null ? "-" : TIME_FORMAT.format(status.startedAt()));
         messageValue.setText("<html>" + html(status.message()) + "</html>");
         List<String> logLines = controller.get().logs().snapshot();
@@ -635,29 +608,26 @@ public final class MainFrame extends JFrame {
         boolean selected = status != null && selectedController.isPresent();
         boolean running = selected && status.processAlive();
         ProfileRuntimeController controller = selectedController.orElse(null);
-        startButton.setEnabled(!busy && selected && !running);
-        stopButton.setEnabled(!busy && running);
+        boolean recovering = controller != null && controller.automaticRecoveryInProgress();
+        startButton.setEnabled(!busy && selected && !running && !recovering);
+        stopButton.setEnabled(!busy && running && !recovering);
+        forceStopButton.setEnabled(!busy && (running || recovering));
         restartButton.setEnabled(!busy && controller != null && controller.canRestartSession());
         pauseButton.setEnabled(!busy && controller != null && controller.canExecute(io.github.ibcmanager.runtime.IbcCommand.PAUSE));
-        editButton.setEnabled(!busy && selected && !running);
-        validateButton.setEnabled(!busy && selected);
-        configButton.setEnabled(!busy && selected && !running);
+        editButton.setEnabled(!busy && selected && !running && !recovering);
+        validateButton.setEnabled(!busy && selected && !recovering);
+        editProfileMenu.setEnabled(editButton.isEnabled());
         diagnosticsButton.setEnabled(!busy && selected);
         reconnectDataButton.setEnabled(!busy && controller != null
                 && controller.canExecute(io.github.ibcmanager.runtime.IbcCommand.RECONNECTDATA));
         reconnectAccountButton.setEnabled(!busy && controller != null
                 && controller.canExecute(io.github.ibcmanager.runtime.IbcCommand.RECONNECTACCOUNT));
-        Profile selectedProfile = profilesList.getSelectedValue();
-        boolean twsSelected = selectedProfile != null && selectedProfile.targetType() == TargetType.TWS;
-        enableApiButton.setEnabled(!busy && controller != null
-                && controller.canExecute(io.github.ibcmanager.runtime.IbcCommand.ENABLEAPI));
-        enableApiButton.setToolTipText(twsSelected
-                ? "Enable API connections after IBC has confirmed login and main-window readiness"
-                : "IBC's ENABLEAPI command is supported by TWS, not IB Gateway");
+
     }
 
     private void clearDetails() {
         profileStatusIndicator.updateStatus(null);
+        stateValue.setToolTipText(null);
         for (JLabel label : List.of(nameValue, stateValue, targetValue, modeValue, pidValue,
                 commandValue, apiValue, startedValue, messageValue)) label.setText("-");
         logArea.setText("");
@@ -695,10 +665,12 @@ public final class MainFrame extends JFrame {
 
     private void requestClose() {
         long running = services.runtimeRegistry().controllers().stream()
-                .filter(controller -> controller.status().processAlive()).count();
+                .filter(controller -> controller.status().processAlive()
+                        || controller.automaticRecoveryInProgress()).count();
         if (running > 0) {
             int choice = JOptionPane.showConfirmDialog(this,
-                    running + " IBC profile(s) are still running. Closing IBC Manager will not terminate them. Continue?",
+                    running + " IBC profile(s) are still running or recovering. Closing IBC Manager will not "
+                            + "complete an in-progress automatic recovery. Continue?",
                     "Profiles still running", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
             if (choice != JOptionPane.YES_OPTION) return;
         }
@@ -747,7 +719,7 @@ public final class MainFrame extends JFrame {
     }
 
     private static String formatState(RuntimeState state) {
-        return state.name().replace('_', ' ');
+        return StatusIndicator.shortLabel(state);
     }
 
     private static String html(String value) {
@@ -762,13 +734,16 @@ public final class MainFrame extends JFrame {
                 boolean isSelected, boolean cellHasFocus) {
             JLabel label = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
             if (value instanceof Profile profile) {
-                RuntimeState state = services.runtimeRegistry().controller(profile.id())
-                        .map(controller -> controller.status().state()).orElse(RuntimeState.STOPPED);
-                StatusIndicator.Presentation presentation = StatusIndicator.presentationFor(state);
+                ProfileStatus status = services.runtimeRegistry().controller(profile.id())
+                        .map(ProfileRuntimeController::status).orElse(null);
+                RuntimeState state = status == null ? RuntimeState.STOPPED : status.state();
+                StatusIndicator.Presentation presentation = status == null
+                        ? StatusIndicator.presentationFor(state) : StatusIndicator.presentationForStatus(status);
                 label.setIcon(StatusIndicator.iconFor(state, 12));
                 label.setIconTextGap(7);
-                label.setText(profile.name() + "  -  " + profile.tradingMode()
-                        + "  [" + presentation.headline() + "]");
+                label.setText("<html>" + html(profile.name()) + "<br><small>"
+                        + html(profile.tradingMode().toString()) + " &#183; "
+                        + html(StatusIndicator.shortLabel(state)) + "</small></html>");
                 label.setToolTipText(presentation.headline() + "; " + profile.targetType()
                         + ", API " + profile.apiPort() + ", IBC command " + profile.commandServerPort());
                 label.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));

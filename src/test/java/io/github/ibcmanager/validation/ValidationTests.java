@@ -37,20 +37,26 @@ public final class ValidationTests implements TestSuite {
     public List<NamedTest> tests() {
         return List.of(
                 new NamedTest("accepts a structurally valid installed profile", this::validInstalled),
+                new NamedTest("Gateway 10.50 delegates bundled-Java selection to StartIBC",
+                        this::gateway1050BundledJava),
                 new NamedTest("edit validation can precede credential storage", this::editCredentialValidation),
                 new NamedTest("rejects blank and long names", this::names),
                 new NamedTest("rejects invalid version syntax", this::versions),
                 new NamedTest("rejects config-breaking profile text", this::unsafeText),
                 new NamedTest("requires all launch directories", this::requiredPaths),
                 new NamedTest("rejects unsafe batch path characters", this::unsafePathCharacters),
-                new NamedTest("detects missing IBC files", this::missingIbcFiles),
+                new NamedTest("external IBC file absence cannot affect integrated validation", this::missingIbcFiles),
                 new NamedTest("detects missing offline jars", this::missingJars),
                 new NamedTest("validates API and command ports", this::ports),
                 new NamedTest("warns about non-loopback command binding", this::remoteBinding),
                 new NamedTest("rejects invalid command binding", this::invalidBinding),
                 new NamedTest("validates graceful stop timeout", this::stopTimeout),
-                new NamedTest("validates coherent IBC and wrapper second-factor timeout policy",
+                new NamedTest("independent 2FA policy is not coupled to obsolete wrapper action",
                         this::secondFactorTimeoutPolicy),
+                new NamedTest("warns when automatic recovery cannot complete a manual login",
+                        this::manualRecoveryWarning),
+                new NamedTest("warns when repeated 2FA login still uses a manual password",
+                        this::manualSecondFactorRetryWarning),
                 new NamedTest("validates encrypted credentials", this::encryptedCredentials),
                 new NamedTest("validates existing config mode", this::existingConfig),
                 new NamedTest("warns that reserved advanced settings are ignored", this::reservedSettings),
@@ -87,6 +93,28 @@ public final class ValidationTests implements TestSuite {
             ValidationResult result = new ProfileValidator(new FakeStore(true)).validate(profile, true);
             Assertions.isTrue(result.isValid(), "valid profile must have no errors: " + result.issues());
             Assertions.equals(0L, result.errorCount(), "valid profile error count");
+        } finally { TestSupport.deleteTree(root); }
+    }
+
+    private void gateway1050BundledJava() throws Exception {
+        Path root = TestSupport.tempDirectory("validation-gateway-1050");
+        try {
+            Profile base = TestSupport.validProfile(root);
+            TestSupport.createOfflineGatewayInstallation(base.twsPath(), "1050");
+            Path install4j = base.twsPath().resolve("ibgateway/1050/.install4j");
+            Files.deleteIfExists(install4j.resolve("pref_jre.cfg"));
+            Files.deleteIfExists(install4j.resolve("inst_jre.cfg"));
+            Profile profile = base.toBuilder()
+                    .twsMajorVersion("1050")
+                    .ibcJavaPath(Path.of(""))
+                    .build();
+            ValidationResult result = new ProfileValidator(new FakeStore(true)).validate(profile, true);
+            Assertions.isTrue(result.isValid(),
+                    "a blank Java override must allow official StartIBC to select Gateway 10.50's bundled Java: "
+                            + result.issues());
+            Assertions.isFalse(result.issues().stream()
+                            .anyMatch(issue -> "ibcJavaPath".equals(issue.field())),
+                    "blank automatic Java selection must not produce an ibcJavaPath error");
         } finally { TestSupport.deleteTree(root); }
     }
 
@@ -145,7 +173,7 @@ public final class ValidationTests implements TestSuite {
         Path root = TestSupport.tempDirectory("validation-paths");
         try {
             Profile base = TestSupport.validProfile(root);
-            assertError(base.toBuilder().ibcPath(Path.of("")).build(), "ibcPath");
+            Assertions.isFalse(hasError(new ProfileValidator(new FakeStore(true)).validateForEdit(base.toBuilder().ibcPath(Path.of("")).build(), false), "ibcPath"), "external IBC directory is no longer required");
             assertError(base.toBuilder().twsPath(Path.of("")).build(), "twsPath");
             assertError(base.toBuilder().twsSettingsPath(Path.of("")).build(), "twsSettingsPath");
         } finally { TestSupport.deleteTree(root); }
@@ -162,8 +190,8 @@ public final class ValidationTests implements TestSuite {
                         "shared command-safety policy must reject the test value: " + value);
                 try {
                     ValidationResult result = new ProfileValidator(new FakeStore(true)).validateForEdit(
-                            base.toBuilder().ibcPath(Path.of(value)).build(), false);
-                    Assertions.isTrue(hasError(result, "ibcPath"), "unsafe path must fail: " + value);
+                            base.toBuilder().twsPath(Path.of(value)).build(), false);
+                    Assertions.isTrue(hasError(result, "twsPath"), "unsafe path must fail: " + value);
                 } catch (InvalidPathException ex) {
                     // Windows rejects several CMD metacharacters before ProfileValidator can receive
                     // a Path. The shared policy above proves that these values remain intentionally
@@ -173,9 +201,9 @@ public final class ValidationTests implements TestSuite {
 
             String programFiles = "C:/Program Files (x86)/Java";
             ValidationResult programFilesResult = new ProfileValidator(new FakeStore(true)).validateForEdit(
-                    base.toBuilder().ibcPath(Path.of(programFiles)).build(), false);
+                    base.toBuilder().twsPath(Path.of(programFiles)).build(), false);
             ValidationIssue pathIssue = programFilesResult.issues().stream()
-                    .filter(issue -> issue.field().equals("ibcPath")
+                    .filter(issue -> issue.field().equals("twsPath")
                             && issue.severity() == Severity.ERROR)
                     .findFirst().orElseThrow();
             Assertions.contains(pathIssue.message(), "unsupported character '('",
@@ -224,11 +252,11 @@ public final class ValidationTests implements TestSuite {
             Profile profile = TestSupport.validProfile(root);
             Files.delete(profile.ibcPath().resolve("IBC.jar"));
             ValidationResult missingJar = new ProfileValidator(new FakeStore(true)).validate(profile, true);
-            Assertions.isTrue(hasError(missingJar, "ibcPath"), "missing IBC.jar must fail");
+            Assertions.isTrue(missingJar.isValid(), "external IBC.jar is not used");
             TestSupport.writeIbcJar(profile.ibcPath().resolve("IBC.jar"));
             Files.delete(profile.ibcPath().resolve("scripts").resolve("StartIBC.bat"));
             ValidationResult missingScript = new ProfileValidator(new FakeStore(true)).validate(profile, true);
-            Assertions.isTrue(hasError(missingScript, "ibcPath"), "missing launcher must fail");
+            Assertions.isTrue(missingScript.isValid(), "external launcher is not used");
         } finally { TestSupport.deleteTree(root); }
     }
 
@@ -298,8 +326,8 @@ public final class ValidationTests implements TestSuite {
                     .build();
             ValidationResult rejected = new ProfileValidator(new FakeStore(true))
                     .validateForEdit(impossible, false);
-            Assertions.isTrue(hasError(rejected, "twoFactorTimeoutAction"),
-                    "wrapper restart must not be offered when IBC itself will not exit/relogin on timeout");
+            Assertions.isFalse(hasError(rejected, "twoFactorTimeoutAction"),
+                    "disabling independent retry must not require changing obsolete wrapper metadata");
 
             Profile coherent = impossible.toBuilder().reloginAfterSecondFactorTimeout(true).build();
             ValidationResult accepted = new ProfileValidator(new FakeStore(true))
@@ -307,6 +335,47 @@ public final class ValidationTests implements TestSuite {
             Assertions.isFalse(hasError(accepted, "twoFactorTimeoutAction"),
                     "coherent internal and wrapper restart policy must pass validation");
         } finally { TestSupport.deleteTree(root); }
+    }
+
+    private void manualRecoveryWarning() throws Exception {
+        Path root = TestSupport.tempDirectory("validation-manual-recovery");
+        try {
+            Profile enabled = TestSupport.validProfile(root).toBuilder()
+                    .credentialMode(CredentialMode.MANUAL)
+                    .autoRecoverStartupStall(true)
+                    .build();
+            ValidationResult warning = new ProfileValidator(new FakeStore(true)).validateForEdit(enabled, false);
+            Assertions.isTrue(hasWarning(warning, "autoRecoverStartupStall"),
+                    "manual credential mode must explain that fresh unattended login cannot complete");
+            Profile disabled = enabled.toBuilder().autoRecoverStartupStall(false).build();
+            ValidationResult quiet = new ProfileValidator(new FakeStore(true)).validateForEdit(disabled, false);
+            Assertions.isFalse(hasWarning(quiet, "autoRecoverStartupStall"),
+                    "disabling automatic recovery must remove the manual-login warning");
+        } finally {
+            TestSupport.deleteTree(root);
+        }
+    }
+
+    private void manualSecondFactorRetryWarning() throws Exception {
+        Path root = TestSupport.tempDirectory("validation-manual-2fa-retry");
+        try {
+            Profile enabled = TestSupport.validProfile(root).toBuilder()
+                    .credentialMode(CredentialMode.MANUAL)
+                    .reloginAfterSecondFactorTimeout(true)
+                    .build();
+            ValidationResult warning = new ProfileValidator(new FakeStore(true)).validateForEdit(enabled, false);
+            Assertions.isTrue(hasWarning(warning, "reloginAfterSecondFactorTimeout"),
+                    "manual password mode must explain that a warm 2FA retry may need the password again");
+            Profile disabled = enabled.toBuilder()
+                    .reloginAfterSecondFactorTimeout(false)
+                    .twoFactorTimeoutAction(TwoFactorTimeoutAction.EXIT)
+                    .build();
+            ValidationResult quiet = new ProfileValidator(new FakeStore(true)).validateForEdit(disabled, false);
+            Assertions.isFalse(hasWarning(quiet, "reloginAfterSecondFactorTimeout"),
+                    "disabling repeated 2FA login must remove the manual-password warning");
+        } finally {
+            TestSupport.deleteTree(root);
+        }
     }
 
     private void encryptedCredentials() throws Exception {
@@ -578,7 +647,7 @@ public final class ValidationTests implements TestSuite {
     private void fixOnlyTrustedApiAddresses() {
         ConfigValueValidator validator = new ConfigValueValidator();
         Assertions.isTrue(hasWarning(
-                        validator.validate(Map.of("TrustedTwsApiClientIPs", "192.0.2.10")),
+                        validator.validate(Map.of("TrustedTwsApiClientIPs", "192.0.3.10")),
                         "TrustedTwsApiClientIPs"),
                 "IBC's FIX-only trusted-address setting must warn in ordinary TWS/Gateway mode");
     }

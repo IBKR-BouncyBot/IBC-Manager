@@ -68,7 +68,7 @@ public final class BuildProject {
     private static final List<String> RELEASE_ROOT_FILES = List.of(
             "README.md", "LICENSE.txt", "NOTICE.txt", "CHANGELOG.md", "TEST_REPORT.md", "CODE_REVIEW.md");
     private static final List<String> RELEASE_SCRIPT_FILES = List.of(
-            "run.bat", "bootstrap.bat", "ensure-prerequisites.ps1");
+            "run.bat", "bootstrap.bat", "ensure-prerequisites.ps1", "pause-after-run.bat");
 
     private final Path root;
     private final Path buildDirectory;
@@ -130,7 +130,7 @@ public final class BuildProject {
 
     private void printUsage() {
         System.out.println("IBC Manager build driver " + version);
-        System.out.println("Targets: clean, compile, compile-tests, test, jar, smoke, gui-smoke, dist, "
+        System.out.println("Targets: clean, compile, compile-tests, test, jar, smoke, gui-smoke, gui-screenshot, dist, "
                 + "windows-release-zip, self-test, version");
     }
 
@@ -156,6 +156,11 @@ public final class BuildProject {
             case "smoke" -> {
                 execute("jar");
                 runSmokeTests();
+            }
+            case "gui-screenshot" -> {
+                execute("compile-tests");
+                runJava(List.of("-Djava.awt.headless=false", "-classpath", testClasspath(),
+                        "io.github.ibcmanager.tests.GuiSmokeRunner", "--screenshot", buildDirectory.resolve("GUI.png").toString()));
             }
             case "gui-smoke" -> {
                 execute("compile-tests");
@@ -184,17 +189,65 @@ public final class BuildProject {
         deleteTree(classesDirectory);
         deleteTree(testClassesDirectory);
         Files.createDirectories(classesDirectory);
+        compileEngine();
         List<Path> sources = javaSources(root.resolve("src/main/java"));
         compile(sources, classesDirectory, List.of());
         copyTree(root.resolve("src/main/resources"), classesDirectory);
+        Path legal = classesDirectory.resolve("legal");
+        Files.createDirectories(legal);
+        Files.copy(root.resolve("LICENSE.txt"), legal.resolve("LICENSE.txt"));
+        Files.copy(root.resolve("engine/LICENSE.txt"), legal.resolve("IBC-LICENSE.txt"));
+        Files.copy(root.resolve("NOTICE.txt"), legal.resolve("NOTICE.txt"));
+        Files.copy(root.resolve("engine/PROVENANCE.json"), legal.resolve("ENGINE_PROVENANCE.json"));
         System.out.println("[IBC Manager build] Compiled " + sources.size() + " production Java files.");
+    }
+
+    /** Build the maintained engine from source, then embed its exact payload in the application. */
+    private void compileEngine() throws IOException {
+        Path engineClasses = buildDirectory.resolve("engine-classes");
+        deleteTree(engineClasses);
+        Files.createDirectories(engineClasses);
+        List<Path> sources = javaSources(root.resolve("engine/src/main/java"));
+        compile(sources, engineClasses, List.of());
+        Path payload = buildDirectory.resolve("engine-payload");
+        deleteTree(payload);
+        copyTree(root.resolve("engine/resources"), payload);
+        Path engineJar = payload.resolve("IBC.jar");
+        try (OutputStream out = Files.newOutputStream(engineJar); JarOutputStream jar = new JarOutputStream(out)) {
+            for (Path file : regularFiles(engineClasses)) {
+                JarEntry entry = new JarEntry(zipName(engineClasses.relativize(file)));
+                entry.setTime(ARCHIVE_TIMESTAMP_MILLIS);
+                jar.putNextEntry(entry);
+                Files.copy(file, jar);
+                jar.closeEntry();
+            }
+        }
+        StringBuilder checksums = new StringBuilder();
+        for (Path file : regularFiles(payload)) {
+            checksums.append(HexFormat.of().formatHex(sha256(Files.readAllBytes(file))))
+                    .append("  ").append(zipName(payload.relativize(file))).append('\n');
+        }
+        Path resources = classesDirectory.resolve("integrated-engine");
+        Files.createDirectories(resources);
+        Files.writeString(resources.resolve("SHA256SUMS.txt"), checksums.toString(), StandardCharsets.UTF_8);
+        writeZip(payload, resources.resolve("payload.zip"), ignored -> true, "");
+        System.out.println("[IBC Manager build] Compiled " + sources.size()
+                + " maintained IBC engine Java files and embedded the verified payload.");
+    }
+
+    private static byte[] sha256(byte[] bytes) throws IOException {
+        try { return MessageDigest.getInstance("SHA-256").digest(bytes); }
+        catch (NoSuchAlgorithmException ex) { throw new IOException("SHA-256 unavailable", ex); }
     }
 
     private void compileTests() throws IOException {
         deleteTree(testClassesDirectory);
         Files.createDirectories(testClassesDirectory);
-        List<Path> sources = javaSources(root.resolve("src/test/java"));
-        compile(sources, testClassesDirectory, List.of("-classpath", classesDirectory.toString()));
+        List<Path> sources = new ArrayList<>(javaSources(root.resolve("src/test/java")));
+        Path engineTests = root.resolve("engine/src/test/java");
+        if (Files.isDirectory(engineTests)) sources.addAll(javaSources(engineTests));
+        compile(sources, testClassesDirectory, List.of("-classpath",
+                classesDirectory + System.getProperty("path.separator") + buildDirectory.resolve("engine-classes")));
         System.out.println("[IBC Manager build] Compiled " + sources.size() + " test Java files.");
     }
 
@@ -245,11 +298,16 @@ public final class BuildProject {
                 "-Djava.awt.headless=false",
                 "-classpath", testClasspath(),
                 "io.github.ibcmanager.tests.GuiSmokeRunner"));
+        runJava(List.of("-Djava.awt.headless=false", "-classpath", testClasspath(),
+                "ibcalpha.ibc.EngineGuiSmoke"));
+        runJava(List.of("-Djava.awt.headless=false", "-classpath", testClasspath(),
+                "ibcalpha.ibc.SecondFactorRetryGuiSmoke"));
     }
 
     private String testClasspath() {
         return String.join(System.getProperty("path.separator"),
                 classesDirectory.toString(), testClassesDirectory.toString(),
+                buildDirectory.resolve("engine-classes").toString(),
                 root.resolve("src/main/resources").toString());
     }
 

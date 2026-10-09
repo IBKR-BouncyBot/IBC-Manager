@@ -4,12 +4,15 @@ import io.github.ibcmanager.app.AppPaths;
 import io.github.ibcmanager.app.AppServices;
 import io.github.ibcmanager.model.Profile;
 import io.github.ibcmanager.ui.MainFrame;
+import io.github.ibcmanager.ui.AboutDialog;
 import io.github.ibcmanager.ui.ProfileEditorDialog;
 import io.github.ibcmanager.ui.UiTheme;
 
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JDialog;
 import javax.swing.JList;
+import javax.swing.JLabel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 import javax.swing.JMenu;
@@ -35,6 +38,10 @@ public final class GuiSmokeRunner {
         if (GraphicsEnvironment.isHeadless()) {
             throw new IllegalStateException("GUI smoke requires an interactive display or Xvfb");
         }
+        if (args.length != 0 && (args.length != 2 || !args[0].equals("--screenshot"))) {
+            throw new IllegalArgumentException("Usage: GuiSmokeRunner [--screenshot output.png]");
+        }
+        Path screenshot = args.length == 2 ? Path.of(args[1]) : null;
         Path root = TestSupport.tempDirectory("gui-smoke");
         String previous = System.getProperty("ibcmanager.suppressFirstRunWizard");
         System.setProperty("ibcmanager.suppressFirstRunWizard", "true");
@@ -70,7 +77,7 @@ public final class GuiSmokeRunner {
                         MainFrame frame = frameRef.get();
                         require(frame != null, "main frame was not created");
                         require(frame.isShowing(), "main frame is not visible");
-                        require(frame.getTitle().startsWith("IBC Manager 1.0.21"), "window title is incorrect");
+                        require(frame.getTitle().startsWith("IBC Manager 2.0.3"), "window title is incorrect");
                         require(frame.getJMenuBar() != null && frame.getJMenuBar().getMenuCount() == 3,
                                 "menu bar is incomplete");
                         JMenu tools = frame.getJMenuBar().getMenu(1);
@@ -81,8 +88,20 @@ public final class GuiSmokeRunner {
                                 forceStopPresent = true;
                             }
                         }
+                        for (int index = 0; index < tools.getItemCount(); index++) {
+                            if (tools.getItem(index) != null) require(!tools.getItem(index).getText().contains("managed config"),
+                                    "raw config menu must not exist");
+                        }
                         require(forceStopPresent, "force-stop recovery action is missing from Tools menu");
                         List<Component> components = descendants(frame);
+                        require(components.stream().filter(JLabel.class::isInstance).map(JLabel.class::cast)
+                                        .noneMatch(label -> label.getText() != null
+                                                && (label.getText().contains("API listener detected means")
+                                                || label.getText().contains("handshake is not verified"))),
+                                "permanent API disclaimer must not be displayed");
+                        JLabel apiValue = named(components, "profileApiValue", JLabel.class);
+                        require(apiValue.getToolTipText().contains("Your trading application verifies"),
+                                "API verification explanation remains available on hover");
                         JList<?> profileList = components.stream().filter(JList.class::isInstance)
                                 .map(JList.class::cast).findFirst().orElseThrow();
                         require(profileList.getModel().getSize() == 1, "saved profile was not loaded into dashboard");
@@ -98,21 +117,18 @@ public final class GuiSmokeRunner {
                                 .findFirst().orElseThrow();
                         require(statusIndicator.isVisible(), "profile status indicator is not visible");
                         require(statusIndicator.getAccessibleContext().getAccessibleDescription() != null
-                                        && statusIndicator.getAccessibleContext().getAccessibleDescription().contains("Stopped"),
+                                        && statusIndicator.getAccessibleContext().getAccessibleDescription().contains("stopped"),
                                 "profile status indicator lacks explicit state text");
-                        JButton enableApi = components.stream().filter(JButton.class::isInstance)
-                                .map(JButton.class::cast)
-                                .filter(button -> "Enable API".equals(button.getText()))
-                                .findFirst().orElseThrow();
-                        require(!enableApi.isEnabled(), "Enable API must stay disabled for an IB Gateway profile");
-                        require(enableApi.getToolTipText() != null
-                                        && enableApi.getToolTipText().contains("not IB Gateway"),
-                                "Gateway-specific ENABLEAPI limitation must be explained");
+                        require(components.stream().filter(JButton.class::isInstance)
+                                        .map(JButton.class::cast)
+                                        .noneMatch(button -> "Enable API".equals(button.getText())),
+                                "TWS-only ENABLEAPI action must not be offered by a Gateway-only product");
                         JButton start = named(components, "startProfileButton", JButton.class);
                         JButton stop = named(components, "stopProfileButton", JButton.class);
+                        JButton forceStop = named(components, "forceStopProfileButton", JButton.class);
                         JButton restart = named(components, "restartProfileButton", JButton.class);
                         JButton pause = named(components, "pauseProfileButton", JButton.class);
-                        for (JButton action : List.of(start, stop, restart, pause)) {
+                        for (JButton action : List.of(start, stop, forceStop, restart, pause)) {
                             require(action.getWidth() >= action.getPreferredSize().width,
                                     action.getText() + " button was compressed horizontally");
                             require(action.getHeight() >= action.getPreferredSize().height,
@@ -123,7 +139,7 @@ public final class GuiSmokeRunner {
                                     action.getText() + " button is not visibly tall enough");
                             require(action.getFont().isBold(), action.getText() + " button is not visually emphasized");
                         }
-                        List<JButton> actions = List.of(start, stop, restart, pause);
+                        List<JButton> actions = List.of(start, stop, forceStop, restart, pause);
                         for (int first = 0; first < actions.size(); first++) {
                             for (int second = first + 1; second < actions.size(); second++) {
                                 require(!actions.get(first).getForeground().equals(actions.get(second).getForeground()),
@@ -132,24 +148,70 @@ public final class GuiSmokeRunner {
                             }
                         }
 
+                        require(components.stream().filter(JButton.class::isInstance).map(JButton.class::cast)
+                                .noneMatch(b -> b.getText().equals("Managed config")), "no duplicate configuration toolbar");
                         JDialog profileDialog = profileDialogRef.get();
                         require(profileDialog != null && profileDialog.isShowing(),
                                 "profile editor was not created and displayed");
                         List<Component> profileComponents = descendants(profileDialog);
+                        require(profileComponents.stream().filter(JLabel.class::isInstance).map(JLabel.class::cast)
+                                .noneMatch(l -> l.getText().contains("Existing/base config")
+                                        || l.getText().contains("After IBC exits on 2FA")), "no hidden external or obsolete policy controls");
+                        javax.swing.JTable settings = profileComponents.stream().filter(javax.swing.JTable.class::isInstance)
+                                .map(javax.swing.JTable.class::cast).findFirst().orElseThrow();
+                        require(settings.getColumnCount() == 4, "effective values and their source are shown");
+                        JTabbedPane profileTabs = profileComponents.stream().filter(JTabbedPane.class::isInstance)
+                                .map(JTabbedPane.class::cast).findFirst().orElseThrow();
+                        require(profileTabs.indexOfTab("Windows startup") >= 0, "startup settings are inside Profile");
                         JButton detect = named(profileComponents, "detectInstallationsButton", JButton.class);
-                        JButton install = named(profileComponents, "installIbcButton", JButton.class);
+                        Component engine = profileComponents.stream()
+                                .filter(component -> "integratedEngineLabel".equals(component.getName()))
+                                .findFirst().orElseThrow();
+                        require(engine.isVisible(), "included-engine label is not visible");
+                        require(profileComponents.stream()
+                                        .noneMatch(component -> "installIbcButton".equals(component.getName())),
+                                "external IBC installer must not be offered");
                         JTextField secondFactor = named(profileComponents, "secondFactorDeviceField", JTextField.class);
+                        JCheckBox autoRecovery = named(profileComponents,
+                                "autoRecoverStartupStallBox", JCheckBox.class);
+                        JCheckBox secondFactorRetry = named(profileComponents,
+                                "secondFactorRetryBox", JCheckBox.class);
                         require(detect.getWidth() >= detect.getPreferredSize().width,
                                 "detect-installations button was compressed horizontally");
                         require(detect.getHeight() >= detect.getPreferredSize().height,
                                 "detect-installations button was compressed vertically");
-                        require(install.getWidth() >= install.getPreferredSize().width,
-                                "IBC install button was compressed horizontally");
-                        require(install.getHeight() >= install.getPreferredSize().height,
-                                "IBC install button was compressed vertically");
                         require(secondFactor.isVisible(), "SecondFactorDevice field is not visible on the profile tab");
+                        require(autoRecovery.isVisible(),
+                                "automatic stalled-start recovery control is not visible on the profile tab");
+                        require(autoRecovery.isSelected(),
+                                "new profiles must default to unattended stalled-start recovery");
+                        require(secondFactorRetry.isVisible(),
+                                "automatic five-minute 2FA retry control is not visible on the profile tab");
+                        require(secondFactorRetry.isSelected(),
+                                "new profiles must default to repeated 2FA phone notifications");
+                        require(secondFactorRetry.getText().contains("5 minutes"),
+                                "the 2FA retry control must state the configured threshold");
+                        require(secondFactorRetry.getToolTipText().contains("independent retry timer"),
+                                "2FA timing must describe the maintained engine timer");
                         require(profileComponents.stream().anyMatch(JScrollPane.class::isInstance),
                                 "profile editor must provide scrolling instead of compressing controls");
+                        profileTabs.setSelectedIndex(profileTabs.indexOfTab("Gateway settings"));
+                        io.github.ibcmanager.ui.ProfileSettingsTableModel tableModel =
+                                (io.github.ibcmanager.ui.ProfileSettingsTableModel) settings.getModel();
+                        int resetRow = -1;
+                        for (int row = 0; row < tableModel.getRowCount(); row++) {
+                            if (tableModel.definitionAt(row).key().equals("LoginDialogDisplayTimeout")) resetRow = row;
+                        }
+                        require(resetRow >= 0, "login timeout setting exists");
+                        int viewRow = settings.convertRowIndexToView(resetRow);
+                        settings.setRowSelectionInterval(viewRow, viewRow);
+                        require(settings.editCellAt(viewRow, 2), "editable timeout value");
+                        ((JTextField) settings.getEditorComponent()).setText("999");
+                        profileComponents.stream().filter(JButton.class::isInstance).map(JButton.class::cast)
+                                .filter(b -> b.getText().equals("Reset selected to included default"))
+                                .findFirst().orElseThrow().doClick();
+                        require(!settings.isEditing(), "reset cancels the stale cell editor");
+                        require("60".equals(tableModel.getValueAt(resetRow, 2)), "reset cannot be overwritten by an old cell value");
                         profileDialog.dispose();
                         require(!profileDialog.isDisplayable(), "profile editor did not dispose cleanly");
 
@@ -164,16 +226,39 @@ public final class GuiSmokeRunner {
                                         .map(controller -> !controller.status().processAlive()).orElse(false),
                                 "cancelling a session confirmation must not start or change the process");
 
-                        frame.dispatchEvent(new WindowEvent(frame, WindowEvent.WINDOW_CLOSING));
-                        require(!frame.isDisplayable(), "normal close path did not dispose the window");
+                        JDialog about = AboutDialog.create(frame);
+                        about.setModal(false);
+                        about.setVisible(true);
+                        require(about.isShowing(), "About window displayed");
+                        List<Component> aboutComponents = descendants(about);
+                        JLabel thanks = named(aboutComponents, "ibcAuthorAcknowledgement", JLabel.class);
+                        require(thanks.isShowing(), "IBC acknowledgement visible");
+                        require(thanks.getText().contains("Richard L King (rlktradewright)"),
+                                "About explicitly credits the upstream author");
+                        require(thanks.getText().contains("Thank you"), "About expresses thanks");
+                        require(aboutComponents.stream().filter(JLabel.class::isInstance).map(JLabel.class::cast)
+                                .anyMatch(label -> label.getText().contains("Steven M. Kearns")),
+                                "other upstream contributors also credited");
+                        aboutComponents.stream().filter(JButton.class::isInstance).map(JButton.class::cast)
+                                .filter(button -> "Close".equals(button.getText())).findFirst().orElseThrow().doClick();
+                        require(!about.isDisplayable(), "About Close disposes cleanly");
+
+                        if (screenshot == null) {
+                            frame.dispatchEvent(new WindowEvent(frame, WindowEvent.WINDOW_CLOSING));
+                            require(!frame.isDisplayable(), "normal close path did not dispose the window");
+                        }
                     } catch (Throwable throwable) {
                         failure.set(throwable);
                     }
                 });
                 if (failure.get() != null) throw new AssertionError("GUI smoke assertion failed", failure.get());
+                if (screenshot != null) GuiScreenshotFixture.capture(frameRef.get(), services, profile, screenshot);
             }
             System.out.println("GUI SMOKE PASSED");
         } finally {
+            SwingUtilities.invokeAndWait(() -> {
+                for (Window window : Window.getWindows()) window.dispose();
+            });
             if (previous == null) System.clearProperty("ibcmanager.suppressFirstRunWizard");
             else System.setProperty("ibcmanager.suppressFirstRunWizard", previous);
             TestSupport.deleteTree(root);

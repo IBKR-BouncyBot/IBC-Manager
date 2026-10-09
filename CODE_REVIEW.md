@@ -1,53 +1,32 @@
-# IBC Manager 1.0.21 dynamic latest-release review
+# IBC Manager 2.0.3 release review
 
-## Scope
+Scope: status wording, removal of the permanent Overview API notice, current GUI
+screenshot, GitHub README, supplied Thank me section, unchanged GPL licence.
 
-Version 1.0.21 changes the GUI IBC installer from a fixed 3.24.2 release asset to
-the latest published full release returned by the official IbcAlpha/IBC GitHub
-REST API. The application version changes from 1.0.20 to 1.0.21. No unrelated
-runtime supervision, profile, command, credential, logging, or trading-session
-behavior was intentionally changed.
+Baseline: supplied 2.0.2 source, independently rebuilt before modification; 639
+headless cases / 8,684 assertions passed on Linux/OpenJDK 21.0.12.1.
 
-## Reviewed implementation
+Runtime changes are string replacements in ProfileRuntimeController only. No
+condition, state assignment, timeout, process call, command, credential operation,
+profile codec or listener probe is modified. All maintained engine source,
+resources, patches and reference bytes remain identical to 2.0.2. The embedded
+engine payload is compared byte-for-byte at the final gate.
 
-- `GithubLatestIbcReleaseResolver` queries the exact repository
-  `/releases/latest` endpoint with the supported GitHub API version and bounded,
-  strict UTF-8 metadata handling.
-- A dependency-free strict JSON parser rejects malformed input, duplicate keys,
-  excessive nesting, invalid escapes, and unsafe numeric forms.
-- Drafts and prereleases are rejected even though GitHub's endpoint normally
-  excludes them.
-- The numeric release version must be at or above 3.24.2. Optional leading `v`
-  tags are supported.
-- Exactly one `IBCWin-<version>.zip` uploaded asset is required.
-- The download URL must be the expected HTTPS GitHub release path with no user
-  information, non-default port, query, fragment, or raw-path ambiguity.
-- GitHub's asset size and `sha256:` digest are required and independently
-  compared with the completed transfer and archive bytes.
-- The transactional installer validates the archive-reported version against the
-  resolved latest version before activation.
-- Installed trees are capability-validated rather than tied to one exact future
-  version: version/JAR consistency, required classes, launcher switches, and any
-  referenced helper scripts must all pass.
-- A different existing non-empty installation is never silently upgraded or
-  overwritten; the user must explicitly rename or remove it.
-- The installer contains no fixed 3.24.2 asset URL or release-specific checksum.
-- The selected IBC JAR's embedded class-file level is converted to its Java feature
-  requirement; a future release cannot be started with an older Java runtime merely
-  because it is above the 3.24.2 compatibility floor.
+StatusIndicator maps all existing states to readable labels while retaining colour
+semantics. Overview uses short labels and a diagnostic-code tooltip. The API
+qualification remains a tooltip, not a claim of a verified bot/account session.
+The sidebar uses escaped two-line text to avoid clipping long status headlines.
+The real GUI smoke checks the footer's absence and hover explanation's presence.
 
-## Security tradeoff
+README content is based on current code and the supplied BouncyBot README. The
+Thank me section is copied byte-for-byte as text; its referral offer is supplied
+wording, not a newly verified commercial offer. The BouncyBot noncommercial licence
+is not copied. All existing Manager/engine licence texts are retained unchanged.
 
-A dynamic latest channel necessarily trusts the current official GitHub release
-metadata and repository account. The published digest protects transfer and
-asset consistency but is not an independently pinned maintainer signature.
-Capability validation limits accidental interface breakage, and the installer
-fails closed when a future release changes required integration surfaces.
+The screenshot fixture uses the actual MainFrame and demo paper-profile snapshots.
+No Gateway launch, real account, credential retrieval or broker API call occurs.
+The capture is visibly labelled and documented, and fixture code is test-only.
 
-## Result
-
-The implementation and deterministic fixtures cover current/future versions,
-malformed metadata, asset ambiguity, URL restrictions, digest/size mismatch,
-archive mismatch, existing-version behavior, hostile ZIPs, and transactional
-cleanup. Final reproducibility and archive results are recorded in
-`TEST_REPORT.md` and the external final-validation record.
+See TEST_REPORT.md and actual validation logs for final measurements. Linux unit
+and GUI fixtures do not constitute native Windows/Gateway acceptance. No claim of
+resolved real-world phone notification delivery is made by this display-only release.

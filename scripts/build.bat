@@ -1,6 +1,14 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
+rem Every user-facing exit returns here, including prerequisite and build failures.
+call :main %*
+set "IBC_MANAGER_ENTRY_RESULT=%ERRORLEVEL%"
+call "%~dp0pause-after-run.bat" "%IBC_MANAGER_ENTRY_RESULT%"
+exit /b %IBC_MANAGER_ENTRY_RESULT%
+
+:main
 cd /d "%~dp0.."
+if errorlevel 1 exit /b 2
 
 call "%~dp0bootstrap.bat" Build
 set "RESULT=%ERRORLEVEL%"

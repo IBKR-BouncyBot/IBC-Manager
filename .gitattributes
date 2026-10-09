@@ -6,3 +6,5 @@
 *.zip binary
 *.exe binary
 *.dll binary
+# Archival upstream references retain the exact supplied bytes.
+engine/upstream/** -text

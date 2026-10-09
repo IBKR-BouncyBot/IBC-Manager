@@ -39,24 +39,32 @@ public final class ArchitectureTests implements TestSuite {
                 new NamedTest("profile persistence model has no password or secret field", this::profileHasNoSecret),
                 new NamedTest("launcher and startup task never pass credentials in arguments", this::noCredentialArguments),
                 new NamedTest("runtime supervision avoids global desktop and process automation", this::noGlobalAutomation),
+                new NamedTest("blank Java override leaves runtime discovery to official StartIBC",
+                        this::officialJavaDiscovery),
                 new NamedTest("command-server monitoring does not create periodic client connections",
                         this::quietCommandServerMonitoring),
                 new NamedTest("API listener monitoring never opens raw client connections",
                         this::passiveApiMonitoring),
-                new NamedTest("manual start stop restart and pause actions require confirmation", this::sessionActionConfirmationWiring),
+                new NamedTest("automatic stalled-start recovery is bounded and exact-tree scoped",
+                        this::boundedAutomaticRecovery),
+                new NamedTest("unattended 2FA retry uses IBC warm relogin instead of process cleanup",
+                        this::warmSecondFactorRetry),
+                new NamedTest("manual start stop force-stop restart and pause actions require confirmation", this::sessionActionConfirmationWiring),
                 new NamedTest("test subprocesses are platform-neutral", this::portableTestSubprocesses),
                 new NamedTest("no TOTP generator or cryptographic OTP implementation is present", this::noTotpImplementation),
                 new NamedTest("IBC compatibility-floor reference and GPL notices are retained", this::ibcNotices),
-                new NamedTest("IBC installer resolves latest official releases without a version pin",
+                new NamedTest("only the maintained integrated engine is available",
                         this::dynamicLatestIbcInstaller),
                 new NamedTest("release documentation and build scripts are present", this::releaseFiles),
+                new NamedTest("GitHub README retains supplied support details and the existing GPL licence", this::readmeSupportAndLicense),
+                new NamedTest("screenshot generation is test-only and the permanent API footer is absent", this::screenshotScope),
                 new NamedTest("application and process logs use 60-second disk batching", this::bufferedLogArchitecture),
                 new NamedTest("Windows packaging launchers enforce the complete release gates", this::windowsPackagingScripts),
                 new NamedTest("source directories contain no generated binary artifacts", this::noGeneratedArtifacts),
                 new NamedTest("compiled production classes target Java 17 bytecode", this::java17Bytecode),
                 new NamedTest("every concrete test suite is registered", this::allSuitesRegistered),
                 new NamedTest("default IBC configuration resource is present and parseable", this::defaultConfigResource),
-                new NamedTest("manager distribution does not bundle the IBC executable JAR", this::noBundledIbcJar),
+                new NamedTest("engine is compiled from source, never copied from external binaries", this::noBundledIbcJar),
                 new NamedTest("test cleanup retries transient Windows sharing violations",
                         this::transientCleanupRetry),
                 new NamedTest("asynchronous assertions count one logical assertion", this::eventuallyCountsOnce));
@@ -155,6 +163,23 @@ public final class ArchitectureTests implements TestSuite {
         Assertions.contains(all, "StartIBC.bat", "official IBC launcher delegation must remain present");
     }
 
+    private void officialJavaDiscovery() throws Exception {
+        String launcher = source("src/main/java/io/github/ibcmanager/runtime/LaunchScriptFactory.java");
+        String resolver = source("src/main/java/io/github/ibcmanager/runtime/IbcJavaRuntimeResolver.java");
+        Assertions.contains(launcher, "resolvedJava.ifPresent",
+                "the launcher must add /JavaPath only for an explicit validated override");
+        Assertions.contains(launcher, "leave Java discovery to the official StartIBC.bat",
+                "the compatibility reason for delegated runtime discovery must remain documented");
+        Assertions.contains(resolver, "return Optional.empty()",
+                "a blank override must not be converted into a legacy install4j runtime guess");
+        Assertions.notContains(resolver, "pref_jre.cfg",
+                "Manager must not duplicate obsolete pref_jre.cfg discovery logic");
+        Assertions.notContains(resolver, "inst_jre.cfg",
+                "Manager must not duplicate obsolete inst_jre.cfg discovery logic");
+        Assertions.contains(resolver, "JAVA_25_GATEWAY_TWS_VERSION = 1048",
+                "explicit overrides must retain the known Java 25 boundary for current IBKR releases");
+    }
+
     private void quietCommandServerMonitoring() throws Exception {
         String controller = source("src/main/java/io/github/ibcmanager/runtime/ProfileRuntimeController.java");
         String refresh = methodBody(controller, "public synchronized void refresh()",
@@ -202,6 +227,51 @@ public final class ArchitectureTests implements TestSuite {
                 "launch preflight must force a fresh passive listener snapshot");
     }
 
+    private void boundedAutomaticRecovery() throws Exception {
+        String controller = source("src/main/java/io/github/ibcmanager/runtime/ProfileRuntimeController.java");
+        Assertions.contains(controller, "MAX_AUTOMATIC_RECOVERIES_PER_HOUR = 2",
+                "automatic recovery must retain a hard rolling-hour limit");
+        Assertions.contains(controller, "STALLED_GRACEFUL_STOP_TIMEOUT = Duration.ofSeconds(15)",
+                "automatic recovery must try one bounded graceful STOP first");
+        Assertions.contains(controller, "RECOVERY_PORT_RELEASE_TIMEOUT = Duration.ofSeconds(30)",
+                "replacement startup must wait for old ports to be released");
+        Assertions.contains(controller, "RECOVERY_COOLDOWN = Duration.ofSeconds(10)",
+                "fresh startup must include a bounded cleanup cooldown");
+        Assertions.contains(controller, "terminator.terminate(target",
+                "automatic recovery must use the exact managed process-tree terminator");
+        Assertions.contains(controller, "startInternal(StartReason.AUTOMATIC_RECOVERY)",
+                "automatic recovery must create a completely fresh StartIBC wrapper");
+        Assertions.notContains(methodBody(controller, "private void runAutomaticRecovery(",
+                        "private void captureAutomaticRecoveryDiagnostics("),
+                "IbcCommand.RESTART",
+                "automatic recovery must never use IBC's schedule-mutating native RESTART command");
+        Assertions.contains(controller, "PREVIOUS_ATTEMPT_PENDING",
+                "a fresh recovery start that stalls must fail closed instead of looping");
+        String history = source("src/main/java/io/github/ibcmanager/runtime/RecoveryHistoryStore.java");
+        Assertions.contains(history, "WINDOW = Duration.ofHours(1)",
+                "the attempt limit must survive Manager restarts for a rolling hour");
+        Assertions.contains(history, "awaitingHealthy",
+                "the persisted state must prevent a second attempt before health is confirmed");
+    }
+
+    private void warmSecondFactorRetry() throws Exception {
+        Assertions.equals(300,
+                io.github.ibcmanager.config.SecondFactorPolicy.RETRY_TIMEOUT_SECONDS,
+                "uncompleted 2FA must be retried after five minutes");
+        Profile defaultProfile = Profile.builder().build();
+        Assertions.isTrue(defaultProfile.reloginAfterSecondFactorTimeout(),
+                "new profiles must enable IBC's in-process second-factor relogin");
+        Assertions.equals(io.github.ibcmanager.model.TwoFactorTimeoutAction.RESTART,
+                defaultProfile.twoFactorTimeoutAction(),
+                "new profiles must retain the StartIBC restart fallback");
+        String controller = Files.readString(ROOT.resolve(
+                "src/main/java/io/github/ibcmanager/runtime/ProfileRuntimeController.java"));
+        Assertions.contains(controller, "secondFactorWaitingMessage",
+                "the dashboard must describe the warm retry while waiting for 2FA");
+        Assertions.notContains(controller, "WAITING_FOR_SECOND_FACTOR) {\n            handleStartupStall",
+                "waiting for 2FA must never enter destructive stalled-start recovery");
+    }
+
     private void sessionActionConfirmationWiring() throws Exception {
         String mainFrame = source("src/main/java/io/github/ibcmanager/ui/MainFrame.java");
         Assertions.contains(mainFrame, "startButton.addActionListener(event -> confirmStartSelected())",
@@ -210,6 +280,15 @@ public final class ArchitectureTests implements TestSuite {
                 "Stop must use the same emphasized session-button presentation as the other actions");
         Assertions.contains(mainFrame, "stopButton.addActionListener(event -> confirmStopSelected())",
                 "manual Stop must pass through its confirmation handler");
+        Assertions.contains(mainFrame,
+                "ProfileSessionAction.FORCE_STOP.configureButton(forceStopButton)",
+                "Force Stop must be a prominent session-toolbar action");
+        Assertions.contains(mainFrame,
+                "forceStopButton.addActionListener(event -> confirmForceStopSelected())",
+                "manual Force Stop must pass through its confirmation handler");
+        Assertions.contains(mainFrame,
+                "if (ProfileSessionAction.FORCE_STOP.confirm(this, profile)) stopSelected(true);",
+                "Force Stop must stop immediately when confirmation is declined");
         Assertions.contains(mainFrame,
                 "if (!ProfileSessionAction.STOP.confirm(this, controller.profile())) return;",
                 "Stop must stop immediately when confirmation is declined");
@@ -236,6 +315,8 @@ public final class ArchitectureTests implements TestSuite {
                 "session confirmations must always provide an explicit Cancel option");
         Assertions.contains(policy, "options, options[1]",
                 "Cancel must be the initially selected session-confirmation option");
+        Assertions.contains(policy, "FORCE_STOP(",
+                "the shared confirmation policy must include Force Stop");
     }
 
     private void portableTestSubprocesses() throws Exception {
@@ -295,29 +376,21 @@ public final class ArchitectureTests implements TestSuite {
     }
 
     private void dynamicLatestIbcInstaller() throws Exception {
-        String resolver = source(
-                "src/main/java/io/github/ibcmanager/install/GithubLatestIbcReleaseResolver.java");
-        String service = source(
-                "src/main/java/io/github/ibcmanager/install/IbcInstallerService.java");
-        String version = source("src/main/java/io/github/ibcmanager/app/Version.java");
+        String launcher = source("src/main/java/io/github/ibcmanager/runtime/LaunchScriptFactory.java");
         String installerUi = source("src/main/java/io/github/ibcmanager/ui/ProfileEditorDialog.java");
-
-        Assertions.contains(resolver, "/repos/IbcAlpha/IBC/releases/latest",
-                "installer must query GitHub's latest-release endpoint");
-        Assertions.contains(resolver, "browser_download_url",
-                "latest-release metadata must select the published asset URL");
-        Assertions.contains(resolver, "sha256:",
-                "latest-release metadata must require GitHub's published SHA-256 digest");
-        Assertions.contains(version, "IBC_MINIMUM_SUPPORTED_VERSION",
-                "future releases must retain a reviewed compatibility floor");
-        Assertions.contains(installerUi, "Install latest IBC from GitHub...",
-                "profile UI must describe the dynamic latest-release behavior");
-        Assertions.notContains(service, "OFFICIAL_WINDOWS_ARCHIVE_SHA256",
-                "installer must not retain a release-specific checksum pin");
-        Assertions.notContains(service, "/releases/download/3.24.2/",
-                "installer service must not retain a fixed 3.24.2 asset URL");
-        Assertions.notContains(resolver, "/releases/download/3.24.2/",
-                "latest-release resolver must not retain a fixed release URL");
+        Assertions.contains(launcher, "EmbeddedEngine.ensureFor(profile)", "runtime source is embedded");
+        Assertions.notContains(launcher, "profile.ibcPath()", "legacy engine path cannot launch");
+        Assertions.notContains(installerUi, "Install latest IBC", "external downloader removed");
+        Assertions.notContains(installerUi, "ibcPathField", "external directory selector removed");
+        Assertions.isFalse(Files.exists(ROOT.resolve("src/main/java/io/github/ibcmanager/install/IbcInstallerService.java")),
+                "obsolete external installer removed from source");
+        Assertions.contains(installerUi, ".targetType(TargetType.GATEWAY)", "only Gateway offered");
+        String services = source("src/main/java/io/github/ibcmanager/app/AppServices.java");
+        Assertions.isTrue(services.indexOf("deletionService.cleanupStaleTransactions();")
+                        < services.indexOf("new LegacyUpgradeService(paths).migrate();"),
+                "restore old deletion transactions before upgrading surviving profiles");
+        Assertions.contains(source("src/main/java/io/github/ibcmanager/app/IbcManagerApp.java"),
+                "OperatingSystem.current() != OperatingSystem.WINDOWS", "GUI Windows-only guard");
     }
 
     private void releaseFiles() throws Exception {
@@ -353,6 +426,37 @@ public final class ArchitectureTests implements TestSuite {
         Assertions.notContains(windowsChecklist,
                 "Runtime config is removed after the second-factor/running state",
                 "Windows checklist must not require the incompatible early deletion behavior");
+    }
+
+    private void readmeSupportAndLicense() throws Exception {
+        String readme = source("README.md");
+        Assertions.contains(readme, "**Version " + Version.VERSION, "README matches the release");
+        Assertions.contains(readme, "simulated paper profiles", "screenshot provenance is explicit");
+        Assertions.contains(readme, "GNU General Public License, version 3", "GPL notice retained");
+        Assertions.notContains(readme, "PolyForm", "no noncommercial relicensing");
+        String support = readme.split("## Thank me\n", 2)[1].split("## License", 2)[0].strip();
+        String hash = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(support.getBytes(StandardCharsets.UTF_8)));
+        Assertions.equals("bc6ce8d66e7afc6f8fc3b02fb6a1022c17a2205e5ca1153fd367d8659ab27473", hash,
+                "supplied BouncyBot support addresses and link are copied exactly");
+        String license = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(Files.readAllBytes(ROOT.resolve("LICENSE.txt"))));
+        Assertions.equals("92aa86409e7f9896add7b91438e26eef27dfdc5e698c56df2d422a0f12b7c7de", license, "existing licence bytes retained");
+    }
+
+    private void screenshotScope() throws Exception {
+        String main = source("src/main/java/io/github/ibcmanager/ui/MainFrame.java");
+        Assertions.notContains(main, "JLabel apiNotice", "no persistent API footer");
+        Assertions.contains(main, "Startup requested for", "launch request must not imply completed login");
+        Assertions.contains(main, "Stop requested for", "graceful stop may still be pending");
+        Assertions.notContains(main, "API listener detected means", "no always-visible API disclaimer");
+        Assertions.contains(main, "StatusIndicator.API_MONITORING_TOOLTIP", "qualification is on demand");
+        Assertions.contains(source("src/test/java/io/github/ibcmanager/tests/GuiScreenshotFixture.java"),
+                "simulated paper profiles; no Gateway or broker connection", "fixture must label its artificial state");
+        Assertions.contains(source("src/build/java/io/github/ibcmanager/build/BuildProject.java"),
+                "case \"gui-screenshot\"", "reproducible screenshot entry point");
+        Assertions.isFalse(Files.exists(ROOT.resolve("src/main/java/io/github/ibcmanager/tests/GuiScreenshotFixture.java")),
+                "no demo process injection in production source");
     }
 
     private void bufferedLogArchitecture() throws Exception {
@@ -413,11 +517,11 @@ public final class ArchitectureTests implements TestSuite {
         int releaseArchive = canonical.indexOf("windows-release-zip");
         Assertions.isTrue(releaseArchive > exePackaging,
                 "the Windows release ZIP must be assembled only after EXE installer creation");
-        Assertions.contains(canonical, "IBC_Manager_1.0.21_Release_windows.zip",
+        Assertions.contains(canonical, "IBC_Manager_2.0.3_Release_windows.zip",
                 "Windows release ZIP must use the requested versioned filename");
         Assertions.contains(canonical, "--main-class io.github.ibcmanager.app.IbcManagerApp",
                 "packaging must use the production entry point");
-        Assertions.contains(canonical, "IBC-Manager-1.0.21.jar",
+        Assertions.contains(canonical, "IBC-Manager-2.0.3.jar",
                 "packaging must use the versioned release JAR");
         String driver = Files.readString(
                 ROOT.resolve("src/build/java/io/github/ibcmanager/build/BuildProject.java"),
@@ -503,13 +607,14 @@ public final class ArchitectureTests implements TestSuite {
     }
 
     private void noBundledIbcJar() throws Exception {
-        List<Path> matches = new ArrayList<>();
-        try (Stream<Path> stream = Files.walk(ROOT)) {
-            for (Path path : stream.filter(Files::isRegularFile).toList()) {
-                if (path.getFileName().toString().equalsIgnoreCase("IBC.jar")) matches.add(path);
-            }
+        String driver = source("src/build/java/io/github/ibcmanager/build/BuildProject.java");
+        Assertions.contains(driver, "engine/src/main/java", "engine must compile from supplied source");
+        Assertions.fileExists(ROOT.resolve("build/engine-payload/IBC.jar"), "compiled engine exists");
+        Assertions.fileExists(ROOT.resolve("engine/PROVENANCE.json"), "source provenance retained");
+        try (Stream<Path> paths = Files.walk(ROOT.resolve("engine"))) {
+            Assertions.isFalse(paths.anyMatch(p -> p.toString().endsWith(".jar")), "no binary engine/stubs in source module");
         }
-        Assertions.equals(List.of(), matches, "IBC binary must remain a separate user installation");
+        Assertions.fileExists(ROOT.resolve("build/classes/integrated-engine/payload.zip"), "payload is in app resources");
     }
 
     private void transientCleanupRetry() throws Exception {

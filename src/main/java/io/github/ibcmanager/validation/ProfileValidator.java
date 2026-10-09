@@ -1,15 +1,15 @@
 package io.github.ibcmanager.validation;
 
+import io.github.ibcmanager.engine.EmbeddedEngine;
+import io.github.ibcmanager.model.TargetType;
+
 import io.github.ibcmanager.config.ConfigValueValidator;
 import io.github.ibcmanager.config.IbcCompatibilityPolicy;
 import io.github.ibcmanager.config.IbcConfigDocument;
 import io.github.ibcmanager.config.ManagedConfigService;
-import io.github.ibcmanager.install.IbcInstallationException;
-import io.github.ibcmanager.install.IbcInstallationValidator;
 import io.github.ibcmanager.model.CredentialMode;
 import io.github.ibcmanager.model.Profile;
 import io.github.ibcmanager.model.Severity;
-import io.github.ibcmanager.model.TwoFactorTimeoutAction;
 import io.github.ibcmanager.model.ValidationIssue;
 import io.github.ibcmanager.runtime.IbcJavaRuntimeResolver;
 import io.github.ibcmanager.runtime.OfflineApplicationLayoutResolver;
@@ -31,35 +31,30 @@ import java.util.Objects;
 public final class ProfileValidator {
     private final CredentialStore credentialStore;
     private final ConfigValueValidator configValueValidator;
-    private final IbcInstallationValidator ibcInstallationValidator;
     private final IbcJavaRuntimeResolver javaRuntimeResolver;
     private final OfflineApplicationLayoutResolver layoutResolver;
 
     public ProfileValidator(CredentialStore credentialStore) {
-        this(credentialStore, new ConfigValueValidator(), new IbcInstallationValidator(),
+        this(credentialStore, new ConfigValueValidator(),
                 new IbcJavaRuntimeResolver(), new OfflineApplicationLayoutResolver());
     }
 
     public ProfileValidator(CredentialStore credentialStore, ConfigValueValidator configValueValidator) {
-        this(credentialStore, configValueValidator, new IbcInstallationValidator(),
+        this(credentialStore, configValueValidator,
                 new IbcJavaRuntimeResolver(), new OfflineApplicationLayoutResolver());
     }
 
     public ProfileValidator(CredentialStore credentialStore, ConfigValueValidator configValueValidator,
-            IbcInstallationValidator ibcInstallationValidator,
             IbcJavaRuntimeResolver javaRuntimeResolver) {
-        this(credentialStore, configValueValidator, ibcInstallationValidator, javaRuntimeResolver,
+        this(credentialStore, configValueValidator, javaRuntimeResolver,
                 new OfflineApplicationLayoutResolver());
     }
 
     public ProfileValidator(CredentialStore credentialStore, ConfigValueValidator configValueValidator,
-            IbcInstallationValidator ibcInstallationValidator,
             IbcJavaRuntimeResolver javaRuntimeResolver,
             OfflineApplicationLayoutResolver layoutResolver) {
         this.credentialStore = Objects.requireNonNull(credentialStore, "credentialStore");
         this.configValueValidator = Objects.requireNonNull(configValueValidator, "configValueValidator");
-        this.ibcInstallationValidator = Objects.requireNonNull(ibcInstallationValidator,
-                "ibcInstallationValidator");
         this.javaRuntimeResolver = Objects.requireNonNull(javaRuntimeResolver, "javaRuntimeResolver");
         this.layoutResolver = Objects.requireNonNull(layoutResolver, "layoutResolver");
     }
@@ -83,21 +78,20 @@ public final class ProfileValidator {
         rejectUnsafeControls(profile.bindAddress(), "bindAddress", issues);
         rejectUnsafeControls(profile.username(), "username", issues);
         if (!profile.twsMajorVersion().matches("[0-9]{3,5}")) {
-            error(issues, "twsMajorVersion", "Use the numeric offline TWS/Gateway major version, for example 1045");
+            error(issues, "twsMajorVersion", "Use the numeric offline IB Gateway major version, for example 1045");
         }
 
-        validatePath(profile.ibcPath(), "ibcPath", true, issues, requireInstalledFiles);
+        if (profile.targetType() != TargetType.GATEWAY) {
+            error(issues, "targetType", "TWS is no longer supported; this legacy profile cannot be started");
+        }
         validatePath(profile.twsPath(), "twsPath", true, issues, requireInstalledFiles);
         validatePath(profile.twsSettingsPath(), "twsSettingsPath", true, issues, requireInstalledFiles);
         validatePath(profile.baseConfigPath(), "baseConfigPath", false, issues, false);
         validatePath(profile.ibcJavaPath(), "ibcJavaPath", false, issues, requireInstalledFiles);
 
-        if (requireInstalledFiles && !isEmpty(profile.ibcPath())) {
-            try {
-                ibcInstallationValidator.validate(profile.ibcPath());
-            } catch (IOException | IbcInstallationException | SecurityException ex) {
-                error(issues, "ibcPath", safeMessage(ex));
-            }
+        if (requireInstalledFiles) {
+            try { EmbeddedEngine.verifyBundledPayload(); }
+            catch (IOException ex) { error(issues, "engine", safeMessage(ex)); }
         }
 
         if (requireInstalledFiles && profile.twsMajorVersion().matches("[0-9]{3,5}")
@@ -109,10 +103,11 @@ public final class ProfileValidator {
             }
             if (javaRuntimeResolver.isSupportedPlatform()) {
                 try {
-                    IbcJavaRuntimeResolver.ResolvedJava java = javaRuntimeResolver.resolve(profile);
-                    if (java.major() < 17) {
-                        error(issues, "ibcJavaPath", "IBC requires Java 17 or newer");
-                    }
+                    javaRuntimeResolver.resolve(profile).ifPresent(java -> {
+                        if (java.major() < 17) {
+                            error(issues, "ibcJavaPath", "IBC requires Java 17 or newer");
+                        }
+                    });
                 } catch (IOException | SecurityException ex) {
                     error(issues, "ibcJavaPath", safeMessage(ex));
                 }
@@ -122,7 +117,7 @@ public final class ProfileValidator {
         validatePort(profile.apiPort(), "apiPort", issues);
         validatePort(profile.commandServerPort(), "commandServerPort", issues);
         if (profile.apiPort() == profile.commandServerPort()) {
-            error(issues, "commandServerPort", "The IBC command-server port must differ from the TWS/Gateway API port");
+            error(issues, "commandServerPort", "The IBC command-server port must differ from the IB Gateway API port");
         }
 
         if (profile.bindAddress().isBlank()) {
@@ -143,14 +138,21 @@ public final class ProfileValidator {
         }
 
         if (profile.forceApiPortAtLaunch()) {
-            warning(issues, "forceApiPortAtLaunch", "IBC will open the Gateway/TWS configuration UI and force the API port on every launch");
+            warning(issues, "forceApiPortAtLaunch", "IBC will open the IB Gateway configuration UI and force the API port on every launch");
         }
 
-        if (profile.twoFactorTimeoutAction() == TwoFactorTimeoutAction.RESTART
-                && !profile.reloginAfterSecondFactorTimeout()) {
-            error(issues, "twoFactorTimeoutAction", "Restart after a 2FA timeout requires IBC's internal "
-                    + "2FA relogin policy to be enabled; otherwise the supported IBC integration does not exit with the "
-                    + "timeout code that StartIBC.bat can restart");
+        if (profile.profileOnlyConfiguration() && (profile.credentialMode() == CredentialMode.EXISTING_CONFIG
+                || !profile.baseConfigPath().toString().isBlank())) {
+            error(issues, "configuration", "All configuration and credentials must be owned by the Profile editor");
+        }
+
+        if (profile.autoRecoverStartupStall() && profile.credentialMode() == CredentialMode.MANUAL) {
+            warning(issues, "autoRecoverStartupStall", "Automatic stalled-start recovery can relaunch IBC, "
+                    + "but unattended login cannot complete while the password must be entered manually");
+        }
+        if (profile.reloginAfterSecondFactorTimeout() && profile.credentialMode() == CredentialMode.MANUAL) {
+            warning(issues, "reloginAfterSecondFactorTimeout", "The five-minute 2FA retry can request another "
+                    + "phone approval, but a repeated login may still require the password to be entered manually");
         }
 
         if (profile.credentialMode() == CredentialMode.ENCRYPTED) {

@@ -1,7 +1,6 @@
 package io.github.ibcmanager.discovery;
 
 import io.github.ibcmanager.app.OperatingSystem;
-import io.github.ibcmanager.install.IbcInstallationValidator;
 import io.github.ibcmanager.model.TargetType;
 import io.github.ibcmanager.security.SecureFileOperations;
 
@@ -46,34 +45,17 @@ public final class InstallationDiscoveryService {
 
     public List<DetectedInstallation> discover() {
         if (!isAvailable()) return List.of();
-        return discover(defaultIbcCandidates(environment, userHome), defaultTwsRoots(environment, userHome));
+        return discover(List.of(), defaultTwsRoots(environment, userHome));
     }
 
     public static List<DetectedInstallation> discover(List<Path> ibcCandidates, List<Path> twsRoots) {
         Objects.requireNonNull(ibcCandidates, "ibcCandidates");
         Objects.requireNonNull(twsRoots, "twsRoots");
-        List<Path> ibcDirectories = findIbcDirectories(ibcCandidates);
-        if (ibcDirectories.isEmpty()) return List.of();
-
-        List<AppInstallation> applications = findApplications(twsRoots);
         List<DetectedInstallation> result = new ArrayList<>();
-        for (Path ibc : ibcDirectories) {
-            for (AppInstallation app : applications) {
-                result.add(new DetectedInstallation(ibc, app.root(), app.root(), app.targetType(), app.version()));
-            }
+        for (AppInstallation app : findApplications(twsRoots)) {
+            result.add(new DetectedInstallation(Path.of(""), app.root(), app.root(), TargetType.GATEWAY, app.version()));
         }
         return result.stream().distinct().sorted(ORDER).toList();
-    }
-
-    static List<Path> defaultIbcCandidates(Map<String, String> environment, String userHome) {
-        Set<Path> result = new LinkedHashSet<>();
-        add(result, "C:\\IBC");
-        addChild(result, userHome, "IBC");
-        addChild(result, environment.get("PROGRAMDATA"), "IBC");
-        addChild(result, environment.get("LOCALAPPDATA"), "IBC");
-        addChild(result, environment.get("ProgramFiles"), "IBC");
-        addChild(result, environment.get("ProgramFiles(x86)"), "IBC");
-        return List.copyOf(result);
     }
 
     static List<Path> defaultTwsRoots(Map<String, String> environment, String userHome) {
@@ -85,22 +67,11 @@ public final class InstallationDiscoveryService {
         return List.copyOf(result);
     }
 
-    private static List<Path> findIbcDirectories(List<Path> candidates) {
-        Set<Path> result = new LinkedHashSet<>();
-        for (Path candidate : normalizeDistinct(candidates)) {
-            if (isIbcDirectory(candidate)) result.add(realOrNormalized(candidate));
-            for (Path child : children(candidate)) {
-                if (isIbcDirectory(child)) result.add(realOrNormalized(child));
-            }
-        }
-        return result.stream().sorted(Comparator.comparing(Path::toString, String.CASE_INSENSITIVE_ORDER)).toList();
-    }
-
     private static List<AppInstallation> findApplications(List<Path> roots) {
         Set<AppInstallation> result = new LinkedHashSet<>();
         for (Path root : normalizeDistinct(roots)) {
             Path normalizedRoot = realOrNormalized(root);
-            scanVersionChildren(normalizedRoot, normalizedRoot, TargetType.TWS, result);
+
             scanVersionChildren(normalizedRoot.resolve("ibgateway"), normalizedRoot, TargetType.GATEWAY, result);
         }
         return result.stream()
@@ -119,10 +90,6 @@ public final class InstallationDiscoveryService {
                 output.add(new AppInstallation(realOrNormalized(root), targetType, version));
             }
         }
-    }
-
-    private static boolean isIbcDirectory(Path directory) {
-        return new IbcInstallationValidator().isValid(directory);
     }
 
     private static boolean hasApplicationLayout(Path versionDirectory, TargetType targetType) {

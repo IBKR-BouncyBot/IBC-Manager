@@ -4,6 +4,7 @@ import io.github.ibcmanager.app.AppPaths;
 import io.github.ibcmanager.config.RuntimeConfigLease;
 import io.github.ibcmanager.config.RuntimeConfigLocation;
 import io.github.ibcmanager.config.RuntimeConfigProvider;
+import io.github.ibcmanager.config.SecondFactorPolicy;
 import io.github.ibcmanager.model.CredentialMode;
 import io.github.ibcmanager.model.Profile;
 import io.github.ibcmanager.model.ProfileStatus;
@@ -28,6 +29,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Consumer;
 
 public final class ProfileRuntimeController {
@@ -37,11 +40,22 @@ public final class ProfileRuntimeController {
     private static final Duration FORCE_TIMEOUT = Duration.ofSeconds(5);
     private static final Duration START_COORDINATION_TIMEOUT = Duration.ofSeconds(60);
     private static final Duration START_MILESTONE_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration STALLED_GRACEFUL_STOP_TIMEOUT = Duration.ofSeconds(15);
+    private static final Duration RECOVERY_PORT_RELEASE_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration RECOVERY_PORT_POLL_INTERVAL = Duration.ofMillis(250);
+    private static final Duration RECOVERY_COOLDOWN = Duration.ofSeconds(10);
+    private static final int MAX_AUTOMATIC_RECOVERIES_PER_HOUR = 2;
 
     private enum ExpectedTermination {
         NONE,
         STOP,
-        PAUSE
+        PAUSE,
+        AUTO_RECOVERY
+    }
+
+    private enum StartReason {
+        NORMAL,
+        AUTOMATIC_RECOVERY
     }
 
     private final AppPaths paths;
@@ -56,8 +70,13 @@ public final class ProfileRuntimeController {
     private final ProcessTreeTerminator terminator;
     private final Clock clock;
     private final StartCoordinator startCoordinator;
+    private final Executor automaticRecoveryExecutor;
+    private final RecoveryHistoryStore recoveryHistoryStore;
+    private final RecoveryDiagnosticCapture recoveryDiagnosticCapture;
+    private final RecoverySleeper recoverySleeper;
     private final RuntimeLogBuffer logBuffer = new RuntimeLogBuffer(5000);
     private final IbcLogStateParser stateParser = new IbcLogStateParser();
+    private final StartupStallDetector startupStallDetector;
     private final CopyOnWriteArrayList<Consumer<ProfileStatus>> listeners = new CopyOnWriteArrayList<>();
 
     // profile and status are read by the Swing event dispatch thread on every UI tick and on
@@ -71,6 +90,14 @@ public final class ProfileRuntimeController {
     private volatile ProfileStatus status;
     private ExpectedTermination expectedTermination = ExpectedTermination.NONE;
     private boolean commandProbeFallbackPending;
+    private boolean automaticRecoveryTaskActive;
+    private boolean automaticRecoveryCancelled;
+    private boolean freshRecoveryStartActive;
+    private boolean recoveryPendingHealth;
+    private boolean recoveryHistoryUnreadable;
+    private String recoveryHistoryError = "";
+    private volatile Thread automaticRecoveryThread;
+    private long automaticRecoveryGeneration = Long.MIN_VALUE;
     private volatile ListenerObservation apiListenerObservation = ListenerObservation.unknown(-1);
 
     public ProfileRuntimeController(
@@ -105,6 +132,30 @@ public final class ProfileRuntimeController {
             ProcessTreeTerminator terminator,
             Clock clock,
             StartCoordinator startCoordinator) {
+        this(profile, paths, validator, runtimeConfigProvider, credentialStore, launchSpecFactory,
+                processLauncher, portProbe, commandClient, identityStore, terminator, clock, startCoordinator,
+                defaultRecoveryExecutor(), new RecoveryHistoryStore(paths), RecoveryDiagnosticCapture.noop(),
+                RecoverySleeper.system());
+    }
+
+    public ProfileRuntimeController(
+            Profile profile,
+            AppPaths paths,
+            ProfileValidator validator,
+            RuntimeConfigProvider runtimeConfigProvider,
+            CredentialStore credentialStore,
+            LaunchSpecFactory launchSpecFactory,
+            ProcessLauncher processLauncher,
+            PortProbe portProbe,
+            CommandClient commandClient,
+            ProcessIdentityStore identityStore,
+            ProcessTreeTerminator terminator,
+            Clock clock,
+            StartCoordinator startCoordinator,
+            Executor automaticRecoveryExecutor,
+            RecoveryHistoryStore recoveryHistoryStore,
+            RecoveryDiagnosticCapture recoveryDiagnosticCapture,
+            RecoverySleeper recoverySleeper) {
         this.profile = Objects.requireNonNull(profile, "profile");
         this.paths = Objects.requireNonNull(paths, "paths");
         this.validator = Objects.requireNonNull(validator, "validator");
@@ -117,10 +168,35 @@ public final class ProfileRuntimeController {
         this.identityStore = Objects.requireNonNull(identityStore, "identityStore");
         this.terminator = Objects.requireNonNull(terminator, "terminator");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.startupStallDetector = new StartupStallDetector(clock);
         this.startCoordinator = Objects.requireNonNull(startCoordinator, "startCoordinator");
+        this.automaticRecoveryExecutor = Objects.requireNonNull(automaticRecoveryExecutor,
+                "automaticRecoveryExecutor");
+        this.recoveryHistoryStore = Objects.requireNonNull(recoveryHistoryStore, "recoveryHistoryStore");
+        this.recoveryDiagnosticCapture = Objects.requireNonNull(recoveryDiagnosticCapture,
+                "recoveryDiagnosticCapture");
+        this.recoverySleeper = Objects.requireNonNull(recoverySleeper, "recoverySleeper");
         this.status = ProfileStatus.stopped(profile.id());
         this.logTailer = new LogTailer(paths.profileLog(profile.id()));
+        loadInitialRecoveryState();
         reattachIfPossible();
+        if (process == null && recoveryRequiresManualIntervention()) {
+            String message = recoveryHistoryUnreadable
+                    ? "Automatic-recovery state could not be read: " + recoveryHistoryError
+                            + ". Use an explicit Start to clear the invalid state and retry."
+                    : "A previous automatic recovery did not reach completed login or a verified API listener. "
+                            + "Automatic startup is blocked; use an explicit Start to acknowledge and retry.";
+            setStatus(RuntimeState.RECOVERY_FAILED, false, false, PortListenerState.UNKNOWN,
+                    -1, null, null, message);
+        }
+    }
+
+    private static Executor defaultRecoveryExecutor() {
+        return command -> {
+            Thread thread = new Thread(command, "ibc-manager-auto-recovery");
+            thread.setDaemon(true);
+            thread.start();
+        };
     }
 
     public Profile profile() {
@@ -130,12 +206,37 @@ public final class ProfileRuntimeController {
     public synchronized void updateProfile(Profile updated) {
         Objects.requireNonNull(updated, "updated");
         if (!updated.id().equals(profile.id())) throw new IllegalArgumentException("Cannot replace a controller with a different profile ID");
-        if (process != null && process.isAlive()) throw new IllegalStateException("Stop the profile before changing its configuration");
+        if ((process != null && process.isAlive()) || automaticRecoveryTaskActive) {
+            throw new IllegalStateException("Stop the profile and wait for automatic recovery to finish before changing its configuration");
+        }
         profile = updated;
+    }
+
+    @FunctionalInterface
+    public interface ConfigurationChange {
+        void apply() throws IOException, io.github.ibcmanager.security.CredentialStoreException;
+    }
+
+    /** Serialize the complete save against manual start and asynchronous recovery. */
+    public synchronized void editConfiguration(Profile expected, ConfigurationChange change)
+            throws IOException, io.github.ibcmanager.security.CredentialStoreException {
+        if ((process != null && process.isAlive()) || automaticRecoveryTaskActive) {
+            throw new IOException("Stop the profile and wait for recovery before saving configuration");
+        }
+        if (!profile.equals(expected)) throw new IOException("The profile changed while the editor was open; reopen it");
+        change.apply();
     }
 
     public ProfileStatus status() {
         return status;
+    }
+
+    public synchronized boolean automaticRecoveryInProgress() {
+        return automaticRecoveryTaskActive;
+    }
+
+    public synchronized boolean recoveryRequiresManualIntervention() {
+        return recoveryPendingHealth || recoveryHistoryUnreadable;
     }
 
     public RuntimeLogBuffer logs() {
@@ -154,9 +255,27 @@ public final class ProfileRuntimeController {
         listeners.remove(listener);
     }
 
-    public synchronized void start() throws RuntimeControllerException {
+    public void start() throws RuntimeControllerException {
+        startInternal(StartReason.NORMAL);
+    }
+
+    private synchronized void startInternal(StartReason reason) throws RuntimeControllerException {
+        Objects.requireNonNull(reason, "reason");
+        if (automaticRecoveryTaskActive && reason != StartReason.AUTOMATIC_RECOVERY) {
+            throw new RuntimeControllerException("Automatic recovery is in progress");
+        }
         if (process != null && process.isAlive()) return;
-        setStatus(RuntimeState.VALIDATING, false, false, PortListenerState.UNKNOWN, -1, null, null, "Validating profile");
+        if (reason == StartReason.NORMAL) {
+            resetPendingRecoveryForManualStart();
+            automaticRecoveryGeneration = Long.MIN_VALUE;
+            automaticRecoveryCancelled = false;
+            freshRecoveryStartActive = false;
+        }
+        RuntimeState validationState = reason == StartReason.AUTOMATIC_RECOVERY
+                ? RuntimeState.STARTING_FRESH : RuntimeState.VALIDATING;
+        String validationMessage = reason == StartReason.AUTOMATIC_RECOVERY
+                ? "Validating the profile before a fresh automatic-recovery start" : "Validating profile";
+        setStatus(validationState, false, false, PortListenerState.UNKNOWN, -1, null, null, validationMessage);
         ValidationResult validation = validator.validate(profile, true);
         List<String> errors = validation.issues().stream()
                 .filter(issue -> issue.severity() == Severity.ERROR)
@@ -216,9 +335,17 @@ public final class ProfileRuntimeController {
             expectedTermination = ExpectedTermination.NONE;
             commandProbeFallbackPending = false;
             stateParser.reset();
+            startupStallDetector.reset();
             logTailer = new LogTailer(logFile);
+            freshRecoveryStartActive = reason == StartReason.AUTOMATIC_RECOVERY;
             Instant startedAt = launchedProcess.startInstant().orElseGet(clock::instant);
-            setStatus(RuntimeState.STARTING, true, false, PortListenerState.NOT_LISTENING, launchedProcess.pid(), startedAt, null, "IBC process started");
+            RuntimeState initialState = freshRecoveryStartActive
+                    ? RuntimeState.STARTING_FRESH : RuntimeState.STARTING;
+            String initialMessage = freshRecoveryStartActive
+                    ? "Fresh IBC/Gateway start launched after automatic recovery; authentication may be required"
+                    : "IBC process started";
+            setStatus(initialState, true, false, PortListenerState.NOT_LISTENING, launchedProcess.pid(),
+                    startedAt, null, initialMessage);
             launchedProcess.onExit().thenRun(this::handleProcessExit);
             if (startLease.coordinated()) awaitStartMilestone(launchedProcess);
         } catch (InterruptedException ex) {
@@ -284,9 +411,27 @@ public final class ProfileRuntimeController {
                 : observedApi.state();
         boolean apiListening = apiListener == PortListenerState.LISTENING;
         Optional<IbcLogStateParser.StateHint> hint = stateParser.latest();
+
+        if (apiListening || stateParser.loginCompleted()) markAutomaticRecoveryHealthy();
+
+        if (automaticRecoveryTaskActive) {
+            if (expectedTermination == ExpectedTermination.NONE
+                    && (apiListening || hint.map(IbcLogStateParser.StateHint::state)
+                            .filter(state -> state == RuntimeState.WAITING_FOR_LOGIN
+                                    || state == RuntimeState.WAITING_FOR_SECOND_FACTOR
+                                    || state == RuntimeState.RUNNING)
+                            .isPresent())) {
+                automaticRecoveryCancelled = true;
+            }
+            RuntimeState recoveryState = isAutomaticRecoveryState(status.state())
+                    ? status.state() : RuntimeState.AUTO_RECOVERY_STOPPING;
+            setStatus(recoveryState, true, commandOpen, apiListener, process.pid(),
+                    process.startInstant().orElse(status.startedAt()), null, status.message());
+            return;
+        }
+
         RuntimeState nextState;
         String message;
-
         if (expectedTermination == ExpectedTermination.STOP) {
             nextState = RuntimeState.STOPPING;
             message = status.message().isBlank() ? "Waiting for IBC to stop" : status.message();
@@ -305,31 +450,24 @@ public final class ProfileRuntimeController {
             message = hint.get().message();
         } else if (hint.isPresent() && hint.get().state() == RuntimeState.WAITING_FOR_SECOND_FACTOR) {
             nextState = RuntimeState.WAITING_FOR_SECOND_FACTOR;
-            message = hint.get().message();
+            message = secondFactorWaitingMessage(freshRecoveryStartActive, hint.get().message());
         } else if (hint.isPresent() && hint.get().state() == RuntimeState.WAITING_FOR_LOGIN) {
             nextState = RuntimeState.WAITING_FOR_LOGIN;
-            message = hint.get().message();
+            message = freshRecoveryStartActive
+                    ? "Fresh startup reached the login window"
+                    : hint.get().message();
         } else if (hint.isPresent() && hint.get().state() == RuntimeState.PAUSED) {
-            // PAUSE is an explicit shutdown request. During that transition, a socket can remain
-            // observable briefly, so the pause hint must outrank the probe result.
             nextState = RuntimeState.PAUSED;
             message = hint.get().message();
         } else if (hint.isPresent() && hint.get().state() == RuntimeState.STOPPED) {
-            // StartIBC.bat has confirmed a normal/scheduled exit and is finishing its own cleanup.
-            // The wrapper handle and old API listener can remain alive very briefly, so show a
-            // yellow transition until handleProcessExit() records the final STOPPED state.
             nextState = RuntimeState.STOPPING;
             message = hint.get().message() + "; waiting for the wrapper process to exit";
         } else if (hint.isPresent() && hint.get().state() == RuntimeState.UNKNOWN) {
-            // Preserve a deliberate child-exit/error observation while the wrapper decides whether
-            // to restart. A listener from the exiting child and older command-server readiness must
-            // not turn this transition back into misleading green or STARTING status.
             nextState = RuntimeState.UNKNOWN;
             message = hint.get().message();
         } else if (apiListening) {
             nextState = RuntimeState.API_LISTENER_DETECTED;
-            message = "The operating system reports an API TCP listener owned by the managed process tree"
-                    + listenerDetails(observedApi) + "; IB API handshake is not verified";
+            message = "Gateway's API listener is available" + listenerDetails(observedApi) + ".";
         } else if (observedApi.state() == PortListenerState.LISTENING) {
             nextState = RuntimeState.UNKNOWN;
             message = observedApi.ownershipAvailable()
@@ -337,28 +475,112 @@ public final class ProfileRuntimeController {
                             + " but its PID does not belong to the managed IBC/Gateway process tree"
                     : "An API listener exists" + listenerDetails(observedApi)
                             + " but this operating system did not expose enough ownership data to verify it";
+        } else if (startupStallDetector.isStalled(stateParser)) {
+            handleStartupStall(commandOpen, apiListener);
+            return;
         } else if (hint.isPresent() && hint.get().state() == RuntimeState.RUNNING) {
             nextState = RuntimeState.RUNNING;
             message = apiListener == PortListenerState.UNKNOWN
-                    ? "IBC login completed; API TCP listener state is temporarily unavailable"
-                    : "IBC login completed; API TCP listener is not currently present";
+                    ? "Gateway login completed; API listener status is temporarily unavailable"
+                    : "Gateway login completed; waiting for the API listener to become available";
         } else if (commandOpen) {
-            nextState = RuntimeState.STARTING;
-            message = "IBC command server is available; waiting for login completion";
+            nextState = freshRecoveryStartActive ? RuntimeState.STARTING_FRESH : RuntimeState.STARTING;
+            message = freshRecoveryStartActive
+                    ? "A new Gateway session is starting; waiting for login or 2FA approval"
+                    : "Engine control is available; waiting for login to complete";
         } else if (apiListener == PortListenerState.UNKNOWN) {
             nextState = RuntimeState.UNKNOWN;
             message = "Could not inspect the local API TCP listener state";
         } else {
-            nextState = RuntimeState.STARTING;
-            message = hint.map(IbcLogStateParser.StateHint::message).orElse("IBC process is starting");
+            nextState = freshRecoveryStartActive ? RuntimeState.STARTING_FRESH : RuntimeState.STARTING;
+            message = freshRecoveryStartActive
+                    ? "Starting a new Gateway session"
+                    : hint.map(IbcLogStateParser.StateHint::message).orElse("Starting the included Gateway engine");
         }
         setStatus(nextState, true, commandOpen, apiListener, process.pid(),
                 process.startInstant().orElse(status.startedAt()), null, message);
     }
 
+    private String secondFactorWaitingMessage(boolean freshStart, String fallback) {
+        String base = freshStart
+                ? "Fresh startup reached second-factor authentication; approve the IBKR Mobile request"
+                : fallback;
+        if (!profile.reloginAfterSecondFactorTimeout()) return base;
+        if (fallback.startsWith("Automatic 2FA retry blocked")) return fallback;
+        return base + ". Login retry is enabled after "
+                + (SecondFactorPolicy.RETRY_TIMEOUT_SECONDS / 60)
+                + " minutes without approval; another phone notification depends on IBKR and phone delivery.";
+    }
+
+    private void handleStartupStall(boolean commandOpen, PortListenerState apiListener) {
+        long minutes = Math.max(StartupStallDetector.DEFAULT_TIMEOUT.toMinutes(),
+                startupStallDetector.elapsed().toMinutes());
+        String application = profile.targetType() == io.github.ibcmanager.model.TargetType.GATEWAY
+                ? "Gateway" : "TWS";
+        String baseMessage = "Startup has made no progress for " + minutes + " minutes after IBC reported "
+                + "'Starting " + application + "'. No login window, second-factor window, or verified API "
+                + "listener was observed.";
+        long generation = stateParser.sessionGeneration();
+        if (!profile.autoRecoverStartupStall()) {
+            boolean firstObservation = status.state() != RuntimeState.STARTUP_STALLED;
+            String message = baseMessage + " Automatic recovery is disabled; use Force Stop, then Start.";
+            setStatus(RuntimeState.STARTUP_STALLED, true, commandOpen, apiListener, process.pid(),
+                    process.startInstant().orElse(status.startedAt()), null, message);
+            if (firstObservation) logBuffer.append("IBC Manager: " + message);
+            return;
+        }
+        if (automaticRecoveryGeneration == generation) {
+            if (status.state() == RuntimeState.RECOVERY_FAILED) return;
+            String message = baseMessage + " An automatic recovery decision has already been made for this "
+                    + "IBC child generation.";
+            setStatus(RuntimeState.STARTUP_STALLED, true, commandOpen, apiListener, process.pid(),
+                    process.startInstant().orElse(status.startedAt()), null, message);
+            return;
+        }
+        automaticRecoveryGeneration = generation;
+        RecoveryHistoryStore.BeginResult decision;
+        try {
+            decision = recoveryHistoryStore.beginAttempt(profile.id(), clock.instant(),
+                    MAX_AUTOMATIC_RECOVERIES_PER_HOUR);
+        } catch (IOException ex) {
+            setRecoveryFailed("Automatic recovery was not started because its persistent rate-limit state "
+                    + "could not be read or updated: " + safeMessage(ex));
+            return;
+        }
+        if (decision.disposition() == RecoveryHistoryStore.BeginDisposition.PREVIOUS_ATTEMPT_PENDING) {
+            setRecoveryFailed(baseMessage + " A previous automatic recovery has not yet reached a healthy "
+                    + "login/API state, so another force-restart attempt is blocked.");
+            return;
+        }
+        if (decision.disposition() == RecoveryHistoryStore.BeginDisposition.RATE_LIMITED) {
+            setRecoveryFailed(baseMessage + " The safety limit of " + decision.maximumAttempts()
+                    + " automatic recoveries per hour has been reached.");
+            return;
+        }
+
+        recoveryPendingHealth = true;
+        automaticRecoveryTaskActive = true;
+        automaticRecoveryCancelled = false;
+        ProfileStatus stalledSnapshot = new ProfileStatus(profile.id(), RuntimeState.STARTUP_STALLED,
+                true, commandOpen, apiListener, process.pid(),
+                process.startInstant().orElse(status.startedAt()), null,
+                baseMessage + " Automatic recovery attempt " + decision.attemptsInWindow() + " of "
+                        + decision.maximumAttempts() + " will begin now.", clock.instant());
+        setStatus(stalledSnapshot.state(), stalledSnapshot.processAlive(), stalledSnapshot.commandPortOpen(),
+                stalledSnapshot.apiListenerState(), stalledSnapshot.pid(), stalledSnapshot.startedAt(),
+                stalledSnapshot.exitCode(), stalledSnapshot.message());
+        logBuffer.append("IBC Manager: " + stalledSnapshot.message());
+        try {
+            automaticRecoveryExecutor.execute(() -> runAutomaticRecovery(generation, stalledSnapshot));
+        } catch (RejectedExecutionException ex) {
+            automaticRecoveryTaskActive = false;
+            setRecoveryFailed("Automatic recovery could not be scheduled: " + safeMessage(ex));
+        }
+    }
+
     public synchronized boolean canExecute(IbcCommand command) {
         Objects.requireNonNull(command, "command");
-        if (process == null || !process.isAlive()) return false;
+        if (process == null || !process.isAlive() || automaticRecoveryTaskActive) return false;
         if (command == IbcCommand.STOP) return true;
         // Native IBC RESTART can fall back to changing the application's persistent
         // auto-restart schedule. The Manager exposes restartSession(), which performs
@@ -372,6 +594,7 @@ public final class ProfileRuntimeController {
 
     public synchronized boolean canRestartSession() {
         return process != null && process.isAlive()
+                && !automaticRecoveryTaskActive
                 && expectedTermination == ExpectedTermination.NONE
                 && status.commandPortOpen()
                 && stateParser.mainWindowReady();
@@ -413,6 +636,9 @@ public final class ProfileRuntimeController {
     }
 
     public synchronized void stop() throws RuntimeControllerException {
+        if (automaticRecoveryTaskActive) {
+            throw new RuntimeControllerException("Automatic recovery is in progress; use Force Stop to cancel it");
+        }
         if (process == null || !process.isAlive()) {
             try {
                 cleanupStoppedState("Already stopped", null);
@@ -421,9 +647,11 @@ public final class ProfileRuntimeController {
                 throw new RuntimeControllerException("Could not clean stale runtime state", ex);
             }
         }
+        boolean stalledAtRequest = status.state() == RuntimeState.STARTUP_STALLED;
         expectedTermination = ExpectedTermination.STOP;
         ManagedProcess stoppingProcess = process;
-        setStatus(RuntimeState.STOPPING, true, status.commandPortOpen(), status.apiListenerState(), stoppingProcess.pid(), status.startedAt(), null, "Stopping through the IBC command server");
+        setStatus(RuntimeState.STOPPING, true, status.commandPortOpen(), status.apiListenerState(),
+                stoppingProcess.pid(), status.startedAt(), null, "Stopping through the IBC command server");
         try {
             try {
                 Duration timeout = stateParser.commandServerState() == IbcLogStateParser.CommandServerState.OPEN
@@ -432,15 +660,26 @@ public final class ProfileRuntimeController {
                         profile.commandServerPort(), IbcCommand.STOP, timeout);
                 markCommandServerAvailable(true);
                 if (!result.success()) {
-                    logBuffer.append("IBC Manager: graceful STOP command was rejected: " + result.response());
+                    String response = result.response();
+                    logBuffer.append("IBC Manager: graceful STOP command was rejected: " + response);
+                    if (stalledAtRequest) {
+                        restoreStalledAfterFailedStop("IBC rejected graceful STOP: " + response);
+                    }
                 }
             } catch (IOException ex) {
                 markCommandServerAvailable(false);
-                logBuffer.append("IBC Manager: graceful STOP command failed: " + safeMessage(ex));
+                String failure = safeMessage(ex);
+                logBuffer.append("IBC Manager: graceful STOP command failed: " + failure);
+                if (stalledAtRequest) {
+                    restoreStalledAfterFailedStop("IBC did not respond to graceful STOP: " + failure);
+                }
             }
-            boolean stopped = stoppingProcess.waitFor(Duration.ofSeconds(profile.gracefulStopTimeoutSeconds()));
+            Duration waitTimeout = stalledAtRequest
+                    ? STALLED_GRACEFUL_STOP_TIMEOUT
+                    : Duration.ofSeconds(profile.gracefulStopTimeoutSeconds());
+            boolean stopped = stoppingProcess.waitFor(waitTimeout);
             if (!stopped) {
-                String message = "Graceful stop timed out after " + profile.gracefulStopTimeoutSeconds()
+                String message = "Graceful stop timed out after " + waitTimeout.toSeconds()
                         + " seconds; the process was not killed. Use Force Stop explicitly if required.";
                 logBuffer.append("IBC Manager: " + message);
                 setStatus(RuntimeState.STOPPING, true, status.commandPortOpen(), status.apiListenerState(),
@@ -456,10 +695,28 @@ public final class ProfileRuntimeController {
         }
     }
 
+    private void restoreStalledAfterFailedStop(String reason) throws RuntimeControllerException {
+        expectedTermination = ExpectedTermination.NONE;
+        String message = reason + ". The stalled process was not killed. Use Force Stop, then Start.";
+        setStatus(RuntimeState.STARTUP_STALLED, true, false, status.apiListenerState(), process.pid(),
+                status.startedAt(), null, message);
+        throw new RuntimeControllerException(message);
+    }
+
     public synchronized void forceStop() throws RuntimeControllerException {
+        boolean cancellingRecovery = automaticRecoveryTaskActive;
+        automaticRecoveryCancelled = cancellingRecovery;
+        Thread recoveryThread = automaticRecoveryThread;
+        if (cancellingRecovery && recoveryThread != null && recoveryThread != Thread.currentThread()) {
+            recoveryThread.interrupt();
+        }
         if (process == null || !process.isAlive()) {
             try {
                 cleanupStoppedState("Already stopped", null);
+                if (!cancellingRecovery) {
+                    automaticRecoveryCancelled = false;
+                    resetPendingRecoveryForManualStart();
+                }
                 return;
             } catch (IOException ex) {
                 throw new RuntimeControllerException("Could not clean stale runtime state", ex);
@@ -472,12 +729,309 @@ public final class ProfileRuntimeController {
                 throw new RuntimeControllerException("The process tree did not terminate");
             }
             if (process == stoppingProcess) cleanupStoppedState("Force stopped", stoppingProcess.exitCode());
+            if (!cancellingRecovery) {
+                automaticRecoveryCancelled = false;
+                resetPendingRecoveryForManualStart();
+            }
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             throw new RuntimeControllerException("Interrupted while force stopping IBC", ex);
         } catch (IOException ex) {
             throw new RuntimeControllerException("Could not clean runtime state", ex);
         }
+    }
+
+    private void runAutomaticRecovery(long generation, ProfileStatus stalledSnapshot) {
+        ManagedProcess target;
+        synchronized (this) {
+            automaticRecoveryThread = Thread.currentThread();
+        }
+        try {
+            captureAutomaticRecoveryDiagnostics(stalledSnapshot);
+            synchronized (this) {
+                if (!automaticRecoveryTaskActive) return;
+                if (automaticRecoveryCancelled) {
+                    finishCancelledAutomaticRecovery();
+                    return;
+                }
+                target = process;
+                if (!recoveryTargetRemainsStalled(target, generation)) return;
+                expectedTermination = ExpectedTermination.AUTO_RECOVERY;
+                setRecoveryState(RuntimeState.AUTO_RECOVERY_STOPPING,
+                        "Startup is stalled. Automatic recovery is requesting one graceful IBC STOP before "
+                                + "force cleanup.");
+            }
+
+            requestGracefulStopForAutomaticRecovery();
+            boolean stopped = target.waitFor(STALLED_GRACEFUL_STOP_TIMEOUT);
+            if (automaticRecoveryCancelled()) {
+                finishCancelledAutomaticRecovery();
+                return;
+            }
+            if (!stopped && target.isAlive()) {
+                // Login, 2FA, a new engine child, or API readiness may have appeared while
+                // STOP was in flight. Never escalate using the pre-wait snapshot.
+                if (!recoveryTargetRemainsStalled(target, generation)) return;
+                setRecoveryState(RuntimeState.AUTO_RECOVERY_FORCE_CLEANUP,
+                        "Graceful STOP did not complete within "
+                                + STALLED_GRACEFUL_STOP_TIMEOUT.toSeconds()
+                                + " seconds. Terminating only this profile's tracked process tree.");
+                if (!terminator.terminate(target, Duration.ofMillis(500), FORCE_TIMEOUT)) {
+                    setRecoveryFailed("Automatic recovery could not terminate the stalled managed process tree");
+                    return;
+                }
+            }
+            if (target.isAlive()) {
+                setRecoveryFailed("Automatic recovery stopped because the old managed process is still alive");
+                return;
+            }
+            cleanupExitedProcessForAutomaticRecovery(target);
+            if (automaticRecoveryCancelled()) {
+                finishCancelledAutomaticRecovery();
+                return;
+            }
+
+            setRecoveryState(RuntimeState.AUTO_RECOVERY_FORCE_CLEANUP,
+                    "The old process tree exited. Verifying that the API and IBC command ports are released.");
+            if (!waitForRecoveryPortsToClose()) {
+                if (automaticRecoveryCancelled()) {
+                    finishCancelledAutomaticRecovery();
+                } else {
+                    setRecoveryFailed("Automatic recovery did not start a replacement because the old API or IBC "
+                            + "command port remained occupied or could not be inspected for "
+                            + RECOVERY_PORT_RELEASE_TIMEOUT.toSeconds() + " seconds");
+                }
+                return;
+            }
+
+            setRecoveryState(RuntimeState.AUTO_RECOVERY_COOLDOWN,
+                    "Old processes and ports are clear. Waiting " + RECOVERY_COOLDOWN.toSeconds()
+                            + " seconds before a fresh IBC/Gateway start.");
+            recoverySleeper.sleep(RECOVERY_COOLDOWN);
+            if (automaticRecoveryCancelled()) {
+                finishCancelledAutomaticRecovery();
+                return;
+            }
+
+            setRecoveryState(RuntimeState.STARTING_FRESH,
+                    "Launching a completely fresh StartIBC wrapper. A new IBKR Mobile approval may be required.");
+            startInternal(StartReason.AUTOMATIC_RECOVERY);
+            synchronized (this) {
+                automaticRecoveryTaskActive = false;
+                automaticRecoveryCancelled = false;
+                logBuffer.append("IBC Manager: automatic recovery launched a fresh IBC/Gateway session");
+            }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            if (automaticRecoveryCancelled()) finishCancelledAutomaticRecovery();
+            else setRecoveryFailed("Automatic recovery was interrupted");
+        } catch (RuntimeControllerException | IOException | RuntimeException ex) {
+            setRecoveryFailed("Automatic recovery failed: " + safeMessage(ex));
+        } finally {
+            synchronized (this) {
+                if (automaticRecoveryThread == Thread.currentThread()) automaticRecoveryThread = null;
+            }
+        }
+    }
+
+    /** Revalidate current evidence at each destructive recovery boundary, not just at enqueue time. */
+    private synchronized boolean recoveryTargetRemainsStalled(ManagedProcess target, long generation) {
+        if (automaticRecoveryCancelled) {
+            finishCancelledAutomaticRecovery();
+            return false;
+        }
+        if (target == null || process != target || !target.isAlive()) {
+            abortAutomaticRecoveryBecauseProgressResumed();
+            return false;
+        }
+        // Drain the owned process output here even when the regular refresh has not run yet.
+        readNewLogLines();
+        if (stateParser.sessionGeneration() != generation || !startupStallDetector.isStalled(stateParser)) {
+            abandonEscalationForProgress();
+            return false;
+        }
+        portProbe.invalidate();
+        ListenerObservation observation = portProbe.observe("127.0.0.1", profile.apiPort(), PORT_TIMEOUT);
+        apiListenerObservation = observation;
+        if (observation.state() == PortListenerState.UNKNOWN) {
+            setRecoveryFailed("Automatic recovery stopped because current API-listener absence could not "
+                    + "be verified. No further process termination was performed.");
+            return false;
+        }
+        if (observation.state() == PortListenerState.LISTENING) {
+            if (listenerBelongsToManagedTree(observation)) {
+                abandonEscalationForProgress();
+            } else {
+                setRecoveryFailed("Automatic recovery stopped because the API port has an unverified or "
+                        + "unrelated listener. No further process termination was performed.");
+            }
+            return false;
+        }
+        return true;
+    }
+
+    private void abandonEscalationForProgress() {
+        boolean stopWasRequested = expectedTermination == ExpectedTermination.AUTO_RECOVERY;
+        abortAutomaticRecoveryBecauseProgressResumed();
+        if (stopWasRequested) {
+            logBuffer.append("IBC Manager: forced cleanup cancelled after new startup progress. "
+                    + "The already-sent graceful STOP cannot be recalled and may still complete.");
+        }
+        refresh();
+    }
+
+    private void captureAutomaticRecoveryDiagnostics(ProfileStatus stalledSnapshot) {
+        try {
+            Path bundle = recoveryDiagnosticCapture.create(profile, stalledSnapshot, logBuffer.snapshot());
+            if (bundle != null) {
+                logBuffer.append("IBC Manager: automatic-recovery diagnostic bundle created: " + bundle);
+            }
+        } catch (IOException | RuntimeException ex) {
+            logBuffer.append("IBC Manager: automatic recovery could not create a diagnostic bundle: "
+                    + safeMessage(ex));
+        }
+    }
+
+    private void requestGracefulStopForAutomaticRecovery() {
+        try {
+            Duration timeout = stateParser.commandServerState() == IbcLogStateParser.CommandServerState.OPEN
+                    ? COMMAND_TIMEOUT : UNCONFIRMED_STOP_COMMAND_TIMEOUT;
+            IbcCommandResult result = commandClient.send(probeHost(profile.bindAddress()),
+                    profile.commandServerPort(), IbcCommand.STOP, timeout);
+            synchronized (this) { markCommandServerAvailable(true); }
+            if (result.success()) {
+                logBuffer.append("IBC Manager: automatic recovery sent graceful STOP successfully");
+            } else {
+                logBuffer.append("IBC Manager: automatic-recovery graceful STOP was rejected: "
+                        + result.response());
+            }
+        } catch (IOException ex) {
+            synchronized (this) { markCommandServerAvailable(false); }
+            logBuffer.append("IBC Manager: automatic-recovery graceful STOP did not respond: "
+                    + safeMessage(ex));
+        }
+    }
+
+    private synchronized void cleanupExitedProcessForAutomaticRecovery(ManagedProcess target)
+            throws IOException {
+        if (process == target) {
+            cleanupTerminatedState(RuntimeState.AUTO_RECOVERY_FORCE_CLEANUP,
+                    "The stalled process tree exited; verifying process and port cleanup", target.exitCode());
+        } else if (process != null && process.isAlive()) {
+            throw new IOException("A different managed process appeared during automatic recovery");
+        }
+    }
+
+    private boolean waitForRecoveryPortsToClose() throws InterruptedException {
+        int polls = Math.max(1, (int) Math.ceil((double) RECOVERY_PORT_RELEASE_TIMEOUT.toMillis()
+                / RECOVERY_PORT_POLL_INTERVAL.toMillis()));
+        for (int attempt = 0; attempt <= polls; attempt++) {
+            if (automaticRecoveryCancelled()) return false;
+            portProbe.invalidate();
+            ListenerObservation command = portProbe.observe(probeHost(profile.bindAddress()),
+                    profile.commandServerPort(), PORT_TIMEOUT);
+            ListenerObservation api = portProbe.observe("127.0.0.1", profile.apiPort(), PORT_TIMEOUT);
+            apiListenerObservation = api;
+            if (command.state() == PortListenerState.NOT_LISTENING
+                    && api.state() == PortListenerState.NOT_LISTENING) {
+                return true;
+            }
+            if (attempt < polls) recoverySleeper.sleep(RECOVERY_PORT_POLL_INTERVAL);
+        }
+        return false;
+    }
+
+    private synchronized void setRecoveryState(RuntimeState state, String message) {
+        if (!automaticRecoveryTaskActive) return;
+        ManagedProcess current = process;
+        boolean alive = current != null && current.isAlive();
+        setStatus(state, alive, status.commandPortOpen(), status.apiListenerState(),
+                alive ? current.pid() : -1,
+                alive ? current.startInstant().orElse(status.startedAt()) : status.startedAt(),
+                alive ? null : status.exitCode(), message);
+        logBuffer.append("IBC Manager: " + message);
+    }
+
+    private synchronized void setRecoveryFailed(String message) {
+        automaticRecoveryTaskActive = false;
+        automaticRecoveryCancelled = false;
+        freshRecoveryStartActive = false;
+        expectedTermination = ExpectedTermination.NONE;
+        ManagedProcess current = process;
+        boolean alive = current != null && current.isAlive();
+        setStatus(RuntimeState.RECOVERY_FAILED, alive, alive && status.commandPortOpen(),
+                status.apiListenerState(), alive ? current.pid() : -1,
+                alive ? current.startInstant().orElse(status.startedAt()) : status.startedAt(),
+                alive ? null : status.exitCode(), message);
+        logBuffer.append("IBC Manager: " + message);
+    }
+
+    private synchronized boolean automaticRecoveryCancelled() {
+        return automaticRecoveryCancelled || !automaticRecoveryTaskActive;
+    }
+
+    private synchronized void finishCancelledAutomaticRecovery() {
+        automaticRecoveryTaskActive = false;
+        automaticRecoveryCancelled = false;
+        expectedTermination = ExpectedTermination.NONE;
+        freshRecoveryStartActive = false;
+        recoveryPendingHealth = false;
+        try {
+            recoveryHistoryStore.resetPendingAttempt(profile.id(), clock.instant());
+        } catch (IOException ex) {
+            logBuffer.append("IBC Manager: could not clear cancelled automatic-recovery state: "
+                    + safeMessage(ex));
+        }
+        logBuffer.append("IBC Manager: automatic recovery was cancelled by an explicit user action");
+    }
+
+    private synchronized void abortAutomaticRecoveryBecauseProgressResumed() {
+        automaticRecoveryTaskActive = false;
+        automaticRecoveryCancelled = false;
+        expectedTermination = ExpectedTermination.NONE;
+        recoveryPendingHealth = false;
+        try {
+            recoveryHistoryStore.resetPendingAttempt(profile.id(), clock.instant());
+        } catch (IOException ex) {
+            logBuffer.append("IBC Manager: could not clear the no-longer-needed recovery attempt: "
+                    + safeMessage(ex));
+        }
+        logBuffer.append("IBC Manager: automatic recovery was cancelled because startup progress resumed");
+    }
+
+    private synchronized void markAutomaticRecoveryHealthy() {
+        if (!recoveryPendingHealth && !freshRecoveryStartActive) return;
+        recoveryPendingHealth = false;
+        freshRecoveryStartActive = false;
+        automaticRecoveryGeneration = Long.MIN_VALUE;
+        try {
+            recoveryHistoryStore.markHealthy(profile.id(), clock.instant());
+        } catch (IOException ex) {
+            logBuffer.append("IBC Manager: could not persist the successful automatic-recovery state: "
+                    + safeMessage(ex));
+        }
+    }
+
+    private synchronized void resetPendingRecoveryForManualStart() throws RuntimeControllerException {
+        try {
+            if (recoveryHistoryUnreadable) {
+                recoveryHistoryStore.clear(profile.id());
+            } else {
+                recoveryHistoryStore.resetPendingAttempt(profile.id(), clock.instant());
+            }
+            recoveryPendingHealth = false;
+            recoveryHistoryUnreadable = false;
+            recoveryHistoryError = "";
+        } catch (IOException ex) {
+            throw new RuntimeControllerException("Could not clear the previous automatic-recovery state", ex);
+        }
+    }
+
+    private static boolean isAutomaticRecoveryState(RuntimeState state) {
+        return state == RuntimeState.AUTO_RECOVERY_STOPPING
+                || state == RuntimeState.AUTO_RECOVERY_FORCE_CLEANUP
+                || state == RuntimeState.AUTO_RECOVERY_COOLDOWN
+                || state == RuntimeState.STARTING_FRESH;
     }
 
     private IbcCommandResult sendCommand(IbcCommand command) throws RuntimeControllerException {
@@ -530,6 +1084,13 @@ public final class ProfileRuntimeController {
                 }
             } else if (termination == ExpectedTermination.STOP) {
                 cleanupStoppedState("Stopped", exitCode);
+            } else if (termination == ExpectedTermination.AUTO_RECOVERY) {
+                cleanupTerminatedState(RuntimeState.AUTO_RECOVERY_FORCE_CLEANUP,
+                        "The stalled process exited during automatic recovery; verifying cleanup", exitCode);
+            } else if (freshRecoveryStartActive) {
+                String message = "The fresh automatic-recovery start exited before login/API health was restored";
+                if (code != null) message += " with code " + code;
+                cleanupTerminatedState(RuntimeState.RECOVERY_FAILED, message, exitCode);
             } else if (stateParser.normalExitConfirmed()
                     && !stateParser.errorExitConfirmed() && (code == null || code == 0)) {
                 cleanupStoppedState("IBC completed a normal or scheduled shutdown", exitCode);
@@ -566,10 +1127,27 @@ public final class ProfileRuntimeController {
         process = null;
         expectedTermination = ExpectedTermination.NONE;
         commandProbeFallbackPending = false;
+        if (finalState != RuntimeState.AUTO_RECOVERY_FORCE_CLEANUP) {
+            freshRecoveryStartActive = false;
+        }
         stateParser.reset();
+        startupStallDetector.reset();
         apiListenerObservation = ListenerObservation.unknown(profile.apiPort());
         setStatus(finalState, false, false, PortListenerState.UNKNOWN, -1,
                 oldProcess == null ? null : oldProcess.startInstant().orElse(status.startedAt()), code, message);
+    }
+
+    private void loadInitialRecoveryState() {
+        try {
+            RecoveryHistoryStore.State recovery = recoveryHistoryStore.snapshot(profile.id(), clock.instant());
+            recoveryPendingHealth = recovery.awaitingHealthy();
+            freshRecoveryStartActive = recovery.awaitingHealthy();
+        } catch (IOException ex) {
+            recoveryHistoryUnreadable = true;
+            recoveryHistoryError = safeMessage(ex);
+            logBuffer.append("IBC Manager: automatic-recovery history is unreadable and automatic startup is "
+                    + "blocked until explicit intervention: " + recoveryHistoryError);
+        }
     }
 
     private void reattachIfPossible() {
@@ -578,6 +1156,7 @@ public final class ProfileRuntimeController {
         process = attached.get();
         expectedTermination = ExpectedTermination.NONE;
         stateParser.reset();
+        startupStallDetector.reset();
         commandProbeFallbackPending = true;
         for (Path runtimeConfig : RuntimeConfigLocation.cleanupCandidates(paths, profile)) {
             if (SecureFileOperations.isRegularFile(runtimeConfig)) {
@@ -627,6 +1206,10 @@ public final class ProfileRuntimeController {
 
 
     public synchronized boolean prepareForManagerExit() {
+        if (automaticRecoveryTaskActive) {
+            logBuffer.append("IBC Manager: cannot exit while automatic recovery is in progress");
+            return false;
+        }
         if (configLease == null) return true;
         if (process != null && process.isAlive()) {
             // StartIBC.bat is a long-lived supervisor and may start another IBC JVM after a
@@ -656,7 +1239,10 @@ public final class ProfileRuntimeController {
                     ? process.drainOutputLines()
                     : logTailer.readNewLines();
             logBuffer.appendAll(newLines);
-            for (String line : newLines) stateParser.accept(line);
+            for (String line : newLines) {
+                stateParser.accept(line);
+                startupStallDetector.observe(stateParser);
+            }
         } catch (IOException ex) {
             logBuffer.append("IBC Manager: could not read log: " + ex.getMessage());
         }
@@ -731,6 +1317,7 @@ public final class ProfileRuntimeController {
         expectedTermination = ExpectedTermination.NONE;
         commandProbeFallbackPending = false;
         stateParser.reset();
+        startupStallDetector.reset();
         apiListenerObservation = ListenerObservation.unknown(profile.apiPort());
         try {
             identityStore.delete(profile.id());

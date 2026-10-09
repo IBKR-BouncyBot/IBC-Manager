@@ -22,7 +22,6 @@ import java.util.UUID;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public final class ProfileRepository {
-    private static final int MAX_PROFILE_BYTES = 1024 * 1024;
     private final AppPaths paths;
     private final ProfileCodec codec;
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
@@ -67,13 +66,17 @@ public final class ProfileRepository {
                             continue;
                         }
                         try {
-                            Profile recovered = readValidated(backup, directory);
+                            String recoveredText = readText(backup);
+                            Profile recovered = validate(recoveredText, directory);
                             if (!loadedIds.add(recovered.id())) {
                                 warnings.add("Ignored duplicate recovered profile ID " + recovered.id() + " in " + backup);
                                 continue;
                             }
                             profiles.add(recovered);
-                            AtomicFileWriter.write(file, codec.encode(recovered).getBytes(StandardCharsets.UTF_8), false);
+                            // Preserve the validated backup bytes exactly. Re-encoding a legacy
+                            // profile here would erase the source format before Managed Config
+                            // can complete its one-time compatibility migration.
+                            AtomicFileWriter.write(file, recoveredText.getBytes(StandardCharsets.UTF_8), false);
                             FilePermissionHardener.hardenFile(file);
                             warnings.add("Recovered profile '" + recovered.name() + "' from backup");
                         } catch (RuntimeException | IOException backupFailure) {
@@ -97,8 +100,8 @@ public final class ProfileRepository {
             Path directory = paths.profileDirectory(profile.id());
             FilePermissionHardener.hardenDirectory(directory);
             byte[] bytes = codec.encode(profile).getBytes(StandardCharsets.UTF_8);
-            if (bytes.length > MAX_PROFILE_BYTES) {
-                throw new IOException("Profile data exceeds the " + MAX_PROFILE_BYTES + " byte safety limit");
+            if (bytes.length > ProfileCodec.MAX_ENCODED_BYTES) {
+                throw new IOException("Profile data exceeds the " + ProfileCodec.MAX_ENCODED_BYTES + " byte safety limit");
             }
             Path target = paths.profileFile(profile.id());
             AtomicFileWriter.write(target, bytes, true);
@@ -150,8 +153,16 @@ public final class ProfileRepository {
     }
 
     private Profile readValidated(Path file, Path directory) throws IOException {
-        Profile profile = codec.decode(BoundedFileReader.readString(
-                file, StandardCharsets.UTF_8, MAX_PROFILE_BYTES, "Profile file"));
+        return validate(readText(file), directory);
+    }
+
+    private static String readText(Path file) throws IOException {
+        return BoundedFileReader.readString(file, StandardCharsets.UTF_8,
+                ProfileCodec.MAX_ENCODED_BYTES, "Profile file");
+    }
+
+    private Profile validate(String text, Path directory) {
+        Profile profile = codec.decode(text);
         String directoryId = directory.getFileName().toString();
         if (!profile.id().toString().equalsIgnoreCase(directoryId)) {
             throw new IllegalArgumentException("Profile ID does not match its directory name");

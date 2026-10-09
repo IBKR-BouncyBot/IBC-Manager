@@ -1,0 +1,258 @@
+--- a/ibcalpha/ibc/CommandDispatcher.java
++++ b/ibcalpha/ibc/CommandDispatcher.java
+@@ -16,6 +16,7 @@
+ // You should have received a copy of the GNU General Public License
+ // along with IBC.  If not, see <http://www.gnu.org/licenses/>.
+ 
++// IBC Manager integration: reject reconnect before a main window exists.
+ package ibcalpha.ibc;
+ 
+ import java.awt.Toolkit;
+@@ -83,6 +84,10 @@
+             return;
+         }
+         JFrame jf = MainWindowManager.mainWindowManager().getMainWindow(1, TimeUnit.MILLISECONDS);
++        if (jf == null) {
++            mChannel.writeNack("Gateway main window is not ready");
++            return;
++        }
+ 
+         KeyEvent pressed=new KeyEvent(jf,  KeyEvent.KEY_PRESSED, System.currentTimeMillis(), SHORTCUT_MODIFIERS, KeyEvent.VK_F, KeyEvent.CHAR_UNDEFINED);
+         KeyEvent typed=new KeyEvent(jf, KeyEvent.KEY_TYPED, System.currentTimeMillis(), SHORTCUT_MODIFIERS, KeyEvent.VK_UNDEFINED, 'F' );
+@@ -99,7 +104,11 @@
+             mChannel.writeNack("RECONNECTACCOUNT is not valid for the FIX Gateway");
+             return;
+         }
+-        JFrame jf = MainWindowManager.mainWindowManager().getMainWindow();
++        JFrame jf = MainWindowManager.mainWindowManager().getMainWindow(1, TimeUnit.MILLISECONDS);
++        if (jf == null) {
++            mChannel.writeNack("Gateway main window is not ready");
++            return;
++        }
+ 
+         KeyEvent pressed=new KeyEvent(jf,  KeyEvent.KEY_PRESSED, System.currentTimeMillis(), SHORTCUT_MODIFIERS, KeyEvent.VK_R, KeyEvent.CHAR_UNDEFINED);
+         KeyEvent typed=new KeyEvent(jf, KeyEvent.KEY_TYPED, System.currentTimeMillis(), SHORTCUT_MODIFIERS, KeyEvent.VK_UNDEFINED, 'R' );
+--- a/ibcalpha/ibc/CommandServer.java
++++ b/ibcalpha/ibc/CommandServer.java
+@@ -16,6 +16,7 @@
+ // You should have received a copy of the GNU General Public License
+ // along with IBC.  If not, see <http://www.gnu.org/licenses/>.
+ 
++// IBC Manager integration: publish command-server lifecycle.
+ package ibcalpha.ibc;
+ 
+ import java.io.IOException;
+@@ -60,6 +61,7 @@
+ 
+         if (createSocket(port)) {
+             Utils.logToConsole("CommandServer started and is ready to accept commands");
++            EngineEvents.emit("COMMAND_SERVER_READY");
+             for (; !mQuitting;) {
+                 // this will return null if the shutDown method is called
+                 Socket socket = getClient();
+@@ -70,6 +72,7 @@
+             }
+         }
+ 
++        EngineEvents.emit("COMMAND_SERVER_CLOSED");
+         Utils.logToConsole("CommandServer is shutdown");
+     }
+ 
+--- /dev/null
++++ b/ibcalpha/ibc/EngineEvents.java
+@@ -0,0 +1,24 @@
++// IBC Manager integration; GPL-3.0-or-later, like the upstream engine.
++package ibcalpha.ibc;
++
++import java.util.Set;
++import java.util.UUID;
++
++/** Versioned, bounded lifecycle messages on the inherited stdout pipe. No credentials or free text. */
++public final class EngineEvents {
++    public static final String PREFIX = "IBC_MANAGER_EVENT|1|";
++    private static final String GENERATION = UUID.randomUUID().toString();
++    private static final Set<String> ALLOWED = Set.of(
++            "ENGINE_STARTED", "GATEWAY_STARTING", "MAIN_WINDOW_READY",
++            "LOGIN_LOGGED_OUT", "LOGIN_LOGGING_IN", "LOGIN_AWAITING_CREDENTIALS",
++            "LOGIN_TWO_FA_IN_PROGRESS", "LOGIN_LOGGED_IN", "LOGIN_LOGIN_FAILED",
++            "COMMAND_SERVER_READY", "COMMAND_SERVER_CLOSED");
++    private static long sequence;
++
++    private EngineEvents() { }
++
++    public static synchronized void emit(String event) {
++        if (!ALLOWED.contains(event)) throw new IllegalArgumentException("Unknown engine event");
++        Utils.getOutStream().println(PREFIX + GENERATION + "|" + (++sequence) + "|" + event);
++    }
++}
+--- /dev/null
++++ b/ibcalpha/ibc/GatewayEntrypoint.java
+@@ -0,0 +1,19 @@
++// IBC Manager integration; GPL-3.0-or-later, like the upstream engine.
++package ibcalpha.ibc;
++
++import java.lang.reflect.InvocationTargetException;
++
++/** Loads IBKR's separately installed Gateway, never a packaged substitute. */
++final class GatewayEntrypoint {
++    private GatewayEntrypoint() { }
++
++    static void invoke(String[] args) throws Throwable {
++        try {
++            Class<?> entry = Class.forName("ibgateway.GWClient");
++            entry.getMethod("main", String[].class).invoke(null, (Object) args);
++        } catch (InvocationTargetException ex) {
++            // Preserve the original Gateway failure, rather than hiding it in reflection noise.
++            throw ex.getCause();
++        }
++    }
++}
+--- a/ibcalpha/ibc/GatewayMainWindowFrameHandler.java
++++ b/ibcalpha/ibc/GatewayMainWindowFrameHandler.java
+@@ -16,6 +16,7 @@
+ // You should have received a copy of the GNU General Public License
+ // along with IBC.  If not, see <http://www.gnu.org/licenses/>.
+ 
++// IBC Manager integration: publish main-window availability.
+ package ibcalpha.ibc;
+ 
+ import java.awt.Window;
+@@ -36,6 +37,7 @@
+     @Override
+     public void handleWindow(Window window, int eventID) {
+         SessionManager.setMainWindow((JFrame) window);
++        EngineEvents.emit("MAIN_WINDOW_READY");
+     }
+ 
+     @Override
+--- a/ibcalpha/ibc/IbcGateway.java
++++ b/ibcalpha/ibc/IbcGateway.java
+@@ -16,6 +16,7 @@
+ // You should have received a copy of the GNU General Public License
+ // along with IBC.  If not, see <http://www.gnu.org/licenses/>.
+ 
++// IBC Manager integration: Windows/IB API Gateway-only entry and lifecycle event.
+ package ibcalpha.ibc;
+ 
+ import static ibcalpha.ibc.IbcTws.checkArguments;
+@@ -26,8 +27,15 @@
+         if (Thread.getDefaultUncaughtExceptionHandler() == null) {
+             Thread.setDefaultUncaughtExceptionHandler(new ibcalpha.ibc.UncaughtExceptionHandler());
+         }
++        if (!System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("windows")) {
++            throw new IllegalStateException("IBC Manager engine supports Windows only");
++        }
+         checkArguments(args);
+         setupDefaultEnvironment(args, true);
++        if (Settings.settings().getBoolean("FIX", false)) {
++            throw new IllegalArgumentException("The integrated engine supports IB API Gateway only, not FIX");
++        }
++        EngineEvents.emit("ENGINE_STARTED");
+         IbcTws.load();
+     }
+ 
+--- a/ibcalpha/ibc/IbcTws.java
++++ b/ibcalpha/ibc/IbcTws.java
+@@ -16,6 +16,7 @@
+ // You should have received a copy of the GNU General Public License
+ // along with IBC.  If not, see <http://www.gnu.org/licenses/>.
+ 
++// IBC Manager integration: Gateway-only startup via reflection; no proprietary build dependency.
+ package ibcalpha.ibc;
+ 
+ import java.awt.AWTEvent;
+@@ -208,17 +209,14 @@
+ 
+     private IbcTws() { }
+ 
++    /** Kept for upstream source compatibility; TWS is not an executable product mode. */
+     public static void main(final String[] args) throws Exception {
+-        if (Thread.getDefaultUncaughtExceptionHandler() == null) {
+-            Thread.setDefaultUncaughtExceptionHandler(new ibcalpha.ibc.UncaughtExceptionHandler());
+-        }
+-        checkArguments(args);
+-        setupDefaultEnvironment(args, false);
+-        load();
++        throw new UnsupportedOperationException("IBC Manager 2.0 supports IB Gateway only");
+     }
+ 
+     static void setupDefaultEnvironment(final String[] args, final boolean isGateway) throws Exception {
+-        SessionManager.initialise(isGateway);
++        if (!isGateway) throw new UnsupportedOperationException("IB Gateway only");
++        SessionManager.initialise(true);
+         Settings.initialise(new DefaultSettings(args));
+         LoginManager.initialise(new DefaultLoginManager(args));
+         MainWindowManager.initialise(new DefaultMainWindowManager());
+@@ -471,7 +469,8 @@
+         twsArgs[0] = getTWSSettingsDirectory();
+         try {
+             Utils.logToConsole("Starting Gateway");
+-            ibgateway.GWClient.main(twsArgs);
++            EngineEvents.emit("GATEWAY_STARTING");
++            GatewayEntrypoint.invoke(twsArgs);
+         } catch (Throwable t) {
+             Utils.logException(t);
+             Utils.exitWithError(ErrorCodes.CANT_FIND_ENTRYPOINT);
+@@ -505,30 +504,12 @@
+         }, delay, TimeUnit.MILLISECONDS);
+     }
+ 
+-    private static void startTws() {
+-        if (Settings.settings().getBoolean("ShowAllTrades", false)) {
+-            Utils.showTradesLogWindow();
+-        }
+-        String[] twsArgs = new String[1];
+-        twsArgs[0] = getTWSSettingsDirectory();
+-        try {
+-            Utils.logToConsole("Starting TWS");
+-            jclient.LoginFrame.main(twsArgs);
+-        } catch (Throwable t) {
+-            Utils.logException(t);
+-            Utils.exitWithError(ErrorCodes.CANT_FIND_ENTRYPOINT);
+-        }
+-    }
+-
+     private static void startTwsOrGateway() {
+         Utils.logToConsole("TWS Settings directory is: " + getTWSSettingsDirectory());
+         SessionManager.startSession();
+         JtsIniManager.initialise(getJtsIniFilePath());
+-        if (SessionManager.isGateway()) {
+-            startGateway();
+-        } else {
+-            startTws();
+-        }
++        if (!SessionManager.isGateway()) throw new UnsupportedOperationException("IB Gateway only");
++        startGateway();
+ 
+         configureResetOrderIdsAtStart();
+         configureApiPort();
+--- a/ibcalpha/ibc/IbcVersionInfo.java
++++ b/ibcalpha/ibc/IbcVersionInfo.java
+@@ -1,7 +1,5 @@
+-// NB: this file is updated by the Ant build script
+-
++// Maintained engine generated version; based on IBC tag 3.24.2.
+ package ibcalpha.ibc;
+-
+ public class IbcVersionInfo {
+-    public final static String IBC_VERSION = "3.24.2";
++    public static final String IBC_VERSION = "3.24.2";
+ }
+--- a/ibcalpha/ibc/LoginManager.java
++++ b/ibcalpha/ibc/LoginManager.java
+@@ -16,6 +16,7 @@
+ // You should have received a copy of the GNU General Public License
+ // along with IBC.  If not, see <http://www.gnu.org/licenses/>.
+ 
++// IBC Manager integration: publish non-secret login-state transitions.
+ package ibcalpha.ibc;
+ 
+ import java.time.Duration;
+@@ -80,6 +81,7 @@
+     public void setLoginState(LoginState state) {
+         if (state == loginState) return;
+         loginState = state;
++        if (state != null) EngineEvents.emit("LOGIN_" + state.name());
+         if (null != loginState) switch (loginState) {
+             case TWO_FA_IN_PROGRESS:
+                 Utils.logToConsole("Second Factor Authentication initiated");

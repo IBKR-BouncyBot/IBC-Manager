@@ -1,0 +1,322 @@
+diff --git a/ibcalpha/ibc/AbstractLoginHandler.java b/ibcalpha/ibc/AbstractLoginHandler.java
+index 923605d..8b9f994 100644
+--- a/ibcalpha/ibc/AbstractLoginHandler.java
++++ b/ibcalpha/ibc/AbstractLoginHandler.java
+@@ -41,7 +41,9 @@ public abstract class AbstractLoginHandler implements WindowHandler {
+                     case LOGGING_IN:
+                         return false;
+                     case TWO_FA_IN_PROGRESS:
+-                        return false;
++                        // Register a reconstructed login frame after expiry, but
++                        // handleWindow must leave resubmission to the existing deadline.
++                        return true;
+                     default:
+                         return true;
+                 }
+@@ -88,11 +90,25 @@ public abstract class AbstractLoginHandler implements WindowHandler {
+         }
+     }
+ 
++    /** Called only after the retry adapter has restored and validated the exact form. */
++    boolean initiatePreparedLogin(Window window) {
++        if (StopTask.shutdownInProgress()) return false;
++        LoginManager.loginManager().setLoginState(LoginManager.LoginState.AWAITING_CREDENTIALS);
++        try {
++            // Do not write the fields again: Gateway may asynchronously disable
++            // its login button during document validation after each setText.
++            if (!preLogin(window, WindowEvent.WINDOW_OPENED)) return false;
++            Utils.logToConsole("Login attempt: " + ++loginAttemptNumber);
++            doLogin(window);
++            return true;
++        } catch (IbcException failure) {
++            Utils.logError("2FA retry login submission could not find a recognized control");
++            return false;
++        }
++    }
++
+     private void doLogin(final Window window) throws IbcException {
+         
+-        // this JLabel is only present for the 1016+ versions
+-        final JLabel initialTitleLabel = SwingUtils.findLabel(window, "LOGIN");
+-        
+         final LoginManager owner = LoginManager.loginManager();
+         final int attempt = currentLoginAttemptNumber();
+         GuiDeferredExecutor.instance().execute(() -> {
+@@ -101,6 +117,10 @@ public abstract class AbstractLoginHandler implements WindowHandler {
+                     || owner.getLoginState() != LoginManager.LoginState.AWAITING_CREDENTIALS
+                     || !window.isShowing()) return;
+             final JButton loginButton = findLoginButton(window);
++            if (loginButton == null || !loginButton.isShowing() || !loginButton.isEnabled()) {
++                Utils.logError("Login submission blocked: Log In control is unavailable");
++                return;
++            }
+             LoginManager.loginManager().setLoginState(LoginManager.LoginState.LOGGING_IN);
+             SwingUtils.clickButton(loginButton);
+         });
+@@ -109,7 +129,7 @@ public abstract class AbstractLoginHandler implements WindowHandler {
+         if (tradingMode.equalsIgnoreCase(TradingModeManager.TRADING_MODE_PAPER)) {
+             // paper trading mode doesn't use Second Factor Authentication, so nothing
+             // to do here
+-        } else if (initialTitleLabel != null) {
++        } else {
+             // Starting with TWS 1016, there is no longer a separate Second Factor
+             // Authentication dialog. Instead, TWS replaces the Login frame's controls
+             // with the controls that used to be in the 2FA dialog (so the Login frame
+@@ -117,8 +137,8 @@ public abstract class AbstractLoginHandler implements WindowHandler {
+             // that IBC normally handles, so it goes undetected, and thus IBC doesn't
+             // know when to process the Second Factor Authentication dialog. 
+             //
+-            // To avoid this problem, we make a periodic check that the JLabel that
+-            // initially contained "LOGIN" has changed to "SECOND FACTOR AUTHENTICATION":
++            // Observe the actual challenge label, even when this Gateway version
++            // did not show an initial literal "LOGIN" heading:
+             // when this happens, we can pass the window to the SecondFactorAuthenticationDialogHandler
+             // to be actioned.
+ 
+@@ -138,8 +158,7 @@ public abstract class AbstractLoginHandler implements WindowHandler {
+                 || StopTask.shutdownInProgress() || !window.isShowing()
+                 || (owner.getLoginState() != LoginManager.LoginState.LOGGING_IN
+                 && owner.getLoginState() != LoginManager.LoginState.TWO_FA_IN_PROGRESS)) return;
+-        JLabel currentTitleLabel = SwingUtils.findLabel(window, "SECOND FACTOR AUTHENTICATION");
+-        if (currentTitleLabel != null) {
++        if (hasVisibleSecondFactorHeading(window)) {
+             // the login frame has now become the 2FA dialog, so invoke the 
+             // handler for that as if it had just been opened
+             Utils.logToConsole("Login frame has now become SecondFactorAuthenticationDialog");
+@@ -156,6 +175,16 @@ public abstract class AbstractLoginHandler implements WindowHandler {
+         }
+     }
+     
++    static boolean hasVisibleSecondFactorHeading(Window window) {
++        ComponentIterator components = new ComponentIterator(window);
++        while (components.hasNext()) {
++            java.awt.Component component = components.next();
++            if (component instanceof JLabel label && label.isShowing() && label.getText() != null
++                    && label.getText().toUpperCase(java.util.Locale.ROOT).contains("SECOND FACTOR AUTHENTICATION")) return true;
++        }
++        return false;
++    }
++
+     protected abstract boolean initialise(final Window window, int eventID) throws IbcException;
+ 
+     protected abstract boolean preLogin(final Window window, int eventID) throws IbcException;
+diff --git a/ibcalpha/ibc/SecondFactorRetry.java b/ibcalpha/ibc/SecondFactorRetry.java
+index fdc82cc..d52fb5b 100644
+--- a/ibcalpha/ibc/SecondFactorRetry.java
++++ b/ibcalpha/ibc/SecondFactorRetry.java
+@@ -20,6 +20,7 @@ final class SecondFactorRetry implements AutoCloseable {
+         boolean hasCredentials();
+         boolean isChallengeShowing();
+         boolean cancelChallenge();
++        default void prepareLogin() { }
+         boolean isLoginReady();
+         boolean retryLogin();
+         void event(String event);
+@@ -92,6 +93,10 @@ final class SecondFactorRetry implements AutoCloseable {
+ 
+     private void awaitLogin() {
+         if (!allowed()) return;
++        if (!target.isChallengeShowing()) {
++            target.prepareLogin();
++            if (!allowed()) return;
++        }
+         if (!target.isChallengeShowing() && target.isLoginReady()) {
+             if (!allowed() || !target.hasCredentials()) {
+                 close();
+@@ -99,6 +104,7 @@ final class SecondFactorRetry implements AutoCloseable {
+             }
+             close(); // Claim this attempt before invoking the reentrant login handler.
+             if (target.retryLogin()) target.event("SECOND_FACTOR_RETRY_STARTED");
++            else target.event("SECOND_FACTOR_RETRY_BLOCKED");
+             return;
+         }
+         if (nanoTime.getAsLong() - readyWaitStartedAt >= READY_WAIT_NANOS) {
+diff --git a/ibcalpha/ibc/SecondFactorRetryTarget.java b/ibcalpha/ibc/SecondFactorRetryTarget.java
+index 4a70da5..53074d7 100644
+--- a/ibcalpha/ibc/SecondFactorRetryTarget.java
++++ b/ibcalpha/ibc/SecondFactorRetryTarget.java
+@@ -10,13 +10,17 @@ import javax.swing.JButton;
+ import javax.swing.JDialog;
+ import javax.swing.JFrame;
+ import javax.swing.SwingUtilities;
++import javax.swing.JTextField;
+ import javax.swing.JToggleButton;
+ 
+-/** Only operates on the exact challenge and login frame captured by the engine. */
++/** Only operates on the exact challenge and a login frame registered by this engine. */
+ final class SecondFactorRetryTarget implements SecondFactorRetry.Target {
+     private final LoginManager owner;
+     private final Window challenge;
+-    private final JFrame frame;
++    private final JFrame originalFrame;
++    private JFrame preparedFrame;
++    private JTextField preparedUser;
++    private JTextField preparedPassword;
+     private final AbstractLoginHandler handler;
+     private final long generation;
+ 
+@@ -24,7 +28,7 @@ final class SecondFactorRetryTarget implements SecondFactorRetry.Target {
+         this.owner = owner;
+         this.generation = generation;
+         this.challenge = challenge;
+-        this.frame = owner.getLoginFrame();
++        this.originalFrame = owner.getLoginFrame();
+         this.handler = owner.getLoginHandler();
+     }
+ 
+@@ -33,23 +37,24 @@ final class SecondFactorRetryTarget implements SecondFactorRetry.Target {
+         return LoginManager.loginManager() == owner && !StopTask.shutdownInProgress()
+                 && owner.isCurrentSecondFactorChallenge(challenge, generation)
+                 && owner.getLoginState() == LoginManager.LoginState.TWO_FA_IN_PROGRESS
+-                && owner.reloginPermitted() && owner.getLoginFrame() == frame
++                && owner.reloginPermitted()
+                 && owner.getLoginHandler() == handler;
+     }
+ 
+     @Override public boolean hasCredentials() {
+         requireEdt();
+-        return frame != null && handler != null && frame.isDisplayable()
++        return originalFrame != null && handler != null
++                && owner.getLoginFrame() != null && owner.getLoginFrame().isDisplayable()
+                 && !owner.IBAPIUserName().isEmpty() && !owner.IBAPIPassword().isEmpty();
+     }
+ 
+     @Override public boolean isChallengeShowing() {
+         requireEdt();
+         if (!challenge.isShowing()) return false;
+-        if (challenge != frame) return true;
++        if (challenge != originalFrame) return true;
+         // Some Gateway generations replace the controls inside the login frame.
+-        return SwingUtils.findLabel(frame, "SECOND FACTOR AUTHENTICATION") != null
+-                || handler == null || !handler.recogniseWindow(frame);
++        return AbstractLoginHandler.hasVisibleSecondFactorHeading(challenge)
++                || handler == null || !handler.recogniseWindow(challenge);
+     }
+ 
+     @Override public boolean cancelChallenge() {
+@@ -64,17 +69,59 @@ final class SecondFactorRetryTarget implements SecondFactorRetry.Target {
+         return true;
+     }
+ 
++    @Override public void prepareLogin() {
++        requireEdt();
++        if (!isPending() || isChallengeShowing()) return;
++        JFrame frame = owner.getLoginFrame();
++        if (!isLoginFormUsable(frame, false)) return;
++        JTextField user = SwingUtils.findTextField(frame, 0);
++        JTextField password = SwingUtils.findTextField(frame, 1);
++        if (preparedFrame == frame && preparedUser == user && preparedPassword == password) return;
++        // A returned form commonly clears its password and disables Log In until
++        // credentials have been restored. Waiting for an enabled button first
++        // deadlocks that UI. Populate once, then wait for the real button to enable.
++        try {
++            if (!handler.initialise(frame, java.awt.event.WindowEvent.WINDOW_OPENED)) return;
++            if (!isPending() || !isLoginFormUsable(frame, false)) return;
++            user = SwingUtils.findTextField(frame, 0);
++            password = SwingUtils.findTextField(frame, 1);
++            if (!handler.setFields(frame, java.awt.event.WindowEvent.WINDOW_OPENED)) return;
++            preparedFrame = frame;
++            preparedUser = user;
++            preparedPassword = password;
++        } catch (IbcException failure) {
++            // No guessed field, arbitrary exception text or fatal engine exit.
++            Utils.logError("2FA retry: recognized login fields could not be populated");
++        }
++    }
++
+     @Override public boolean isLoginReady() {
+         requireEdt();
+-        return frame != null && handler != null && frame.isShowing() && frame.isEnabled()
+-                && handler.recogniseWindow(frame)
+-                && !handler.isUserIdDisabledOrAbsent(frame)
+-                && !handler.isPasswordDisabledOrAbsent(frame)
+-                && usableGatewaySelectors() && existingLoginButtonIsUsable()
+-                && visibleLoginButtons(frame) == 1 && !hasOtherModalWindow(null);
++        JFrame frame = owner.getLoginFrame();
++        return preparedFrame == frame && frame != null
++                && preparedUser == SwingUtils.findTextField(frame, 0)
++                && preparedPassword == SwingUtils.findTextField(frame, 1)
++                && isLoginFormUsable(frame, true);
++    }
++
++    private boolean isLoginFormUsable(JFrame frame, boolean requireEnabledButton) {
++        if (frame == null || handler == null || !frame.isShowing() || !frame.isEnabled()
++                || !handler.recogniseWindow(frame) || hasOtherModalWindow(null)) return false;
++        // Only a form registered by this engine's login handler is eligible. If
++        // another recognized login frame is showing, do not choose between them.
++        for (Window window : Window.getWindows()) {
++            if (window != frame && window.isShowing() && handler.recogniseWindow(window)) return false;
++        }
++        JTextField user = SwingUtils.findTextField(frame, 0);
++        JTextField password = SwingUtils.findTextField(frame, 1);
++        if (user == null || password == null || !user.isShowing() || !password.isShowing()
++                || !user.isEnabled() || !password.isEnabled()
++                || !user.isEditable() || !password.isEditable()) return false;
++        return usableGatewaySelectors(frame) && existingLoginButtonIsUsable(frame, requireEnabledButton)
++                && visibleLoginButtons(frame) == 1;
+     }
+ 
+-    private boolean usableGatewaySelectors() {
++    private boolean usableGatewaySelectors(JFrame frame) {
+         JToggleButton api = SwingUtils.findToggleButton(frame, "IB API");
+         if (api == null) api = SwingUtils.findToggleButton(frame, "TWS/API");
+         if (api == null || !api.isShowing() || !api.isEnabled() || !api.isSelected()) return false;
+@@ -87,21 +134,19 @@ final class SecondFactorRetryTarget implements SecondFactorRetry.Target {
+         return true;
+     }
+ 
+-    private boolean existingLoginButtonIsUsable() {
+-        // Mirror the upstream handler's selector order. A hidden earlier match
+-        // must not be used merely because a different visible alias exists.
++    private boolean existingLoginButtonIsUsable(JFrame frame, boolean requireEnabled) {
++        // Mirror the actual handler's selector order, including hidden aliases.
+         JButton button = SwingUtils.findButton(frame, "Login");
+         if (button == null) button = SwingUtils.findButton(frame, "Log In");
+         if (button == null) button = SwingUtils.findButton(frame, "Paper Log In");
+-        return button != null && button.isShowing() && button.isEnabled();
++        return button != null && button.isShowing() && (!requireEnabled || button.isEnabled());
+     }
+ 
+     @Override public boolean retryLogin() {
+         requireEdt();
+         // The deadline state machine rechecks immediately before calling here.
+         if (!isPending() || !isLoginReady()) return false;
+-        handler.initiateLogin(frame);
+-        return true;
++        return handler.initiatePreparedLogin(owner.getLoginFrame());
+     }
+ 
+     @Override public void event(String event) {
+@@ -116,11 +161,22 @@ final class SecondFactorRetryTarget implements SecondFactorRetry.Target {
+             case "SECOND_FACTOR_RETRY_STARTED" -> Utils.logToConsole(
+                     "2FA relogin initiated; phone notification delivery is controlled by IBKR");
+             case "SECOND_FACTOR_RETRY_BLOCKED" -> Utils.logError(
+-                    "2FA retry could not safely proceed: check stored credentials, Cancel control and login form; no process was killed");
++                    "2FA retry blocked: " + blockedReason() + "; no process was killed");
+             default -> throw new IllegalArgumentException("Unknown retry event");
+         }
+     }
+ 
++    private String blockedReason() {
++        if (!hasCredentials()) return "stored credentials or registered login frame unavailable";
++        if (hasOtherModalWindow(challenge)) return "another modal dialog is open";
++        if (isChallengeShowing()) return "challenge remains visible or Cancel is missing/ambiguous";
++        JFrame frame = owner.getLoginFrame();
++        if (frame == null || !frame.isShowing()) return "registered login frame is not visible";
++        if (!isLoginFormUsable(frame, false)) return "login form or API selector is unavailable/ambiguous";
++        if (!existingLoginButtonIsUsable(frame, true)) return "login button remained disabled after credential restoration";
++        return "login attempt changed before submission";
++    }
++
+     private static void collectCancel(Component component, List<JButton> buttons) {
+         if (component instanceof JButton button && button.isShowing() && button.isEnabled()
+                 && "Cancel".equals(button.getText())) buttons.add(button);
+@@ -131,7 +187,7 @@ final class SecondFactorRetryTarget implements SecondFactorRetry.Target {
+ 
+     private static int visibleLoginButtons(Component component) {
+         int count = 0;
+-        if (component instanceof JButton button && button.isShowing() && button.isEnabled()
++        if (component instanceof JButton button && button.isShowing()
+                 && ("Login".equals(button.getText()) || "Log In".equals(button.getText())
+                 || "Paper Log In".equals(button.getText()))) count++;
+         if (component instanceof Container container) {

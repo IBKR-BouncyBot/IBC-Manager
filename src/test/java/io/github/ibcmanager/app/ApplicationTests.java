@@ -103,6 +103,8 @@ public final class ApplicationTests implements TestSuite {
                 "profile file must be scoped by UUID");
         Assertions.equals(paths.runtime().resolve(id.toString()).resolve("process.properties"), paths.runtimeState(id),
                 "runtime identity must be scoped by UUID");
+        Assertions.equals(paths.runtime().resolve(id.toString()).resolve("recovery-history.properties"),
+                paths.recoveryHistory(id), "automatic recovery history must be scoped by UUID");
         Assertions.equals(paths.credentials().resolve(id + ".dpapi"), paths.credentialFile(id),
                 "credential file must be scoped by UUID");
     }
@@ -187,9 +189,9 @@ public final class ApplicationTests implements TestSuite {
         });
         Assertions.contains(captured.stdout(), Version.APPLICATION_NAME + " " + Version.VERSION,
                 "version output must identify application");
-        Assertions.contains(captured.stdout(), "IBC installer: " + Version.IBC_RELEASE_CHANNEL,
+        Assertions.contains(captured.stdout(), "Engine: " + Version.IBC_RELEASE_CHANNEL,
                 "version output must identify the dynamic IBC release channel");
-        Assertions.contains(captured.stdout(), "compatibility floor " + Version.IBC_MINIMUM_SUPPORTED_VERSION,
+        Assertions.contains(captured.stdout(), "upstream " + Version.IBC_MINIMUM_SUPPORTED_VERSION,
                 "version output must identify the IBC compatibility floor");
         Assertions.equals("", captured.stderr(), "version command must not print errors");
     }
@@ -271,7 +273,8 @@ public final class ApplicationTests implements TestSuite {
             int code = IbcManagerApp.run(new String[] {"--data-dir", "build/headless-test"});
             Assertions.equals(3, code, "GUI start in headless mode must have a dedicated exit code");
         });
-        Assertions.contains(captured.stderr(), "graphical desktop session is required",
+        Assertions.contains(captured.stderr(), OperatingSystem.current() == OperatingSystem.WINDOWS
+                        ? "graphical desktop session is required" : "Windows only",
                 "headless error must be actionable");
     }
 
@@ -348,7 +351,7 @@ public final class ApplicationTests implements TestSuite {
                 "manager version must use semantic numeric form");
         Assertions.isTrue(Version.IBC_MINIMUM_SUPPORTED_VERSION.matches("[0-9]+\\.[0-9]+\\.[0-9]+"),
                 "IBC compatibility floor must use semantic numeric form");
-        Assertions.equals("latest official", Version.IBC_RELEASE_CHANNEL,
+        Assertions.equals("integrated engine", Version.IBC_RELEASE_CHANNEL,
                 "IBC release channel changed unexpectedly");
     }
 

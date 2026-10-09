@@ -49,6 +49,8 @@ public final class RuntimeComponentTests implements TestSuite {
         return List.of(
                 new NamedTest("launch specification is immutable", this::launchSpecImmutable),
                 new NamedTest("Windows launch script delegates to official StartIBC", this::launchScript),
+                new NamedTest("blank Java override delegates runtime selection to StartIBC",
+                        this::launchScriptDelegatesJavaSelection),
                 new NamedTest("launch script contains no credential arguments", this::launchScriptNoCredentials),
                 new NamedTest("launch script rejects unsafe batch values", this::launchScriptUnsafe),
                 new NamedTest("launching IBC is rejected on non-Windows systems", this::launchScriptNonWindows),
@@ -92,6 +94,8 @@ public final class RuntimeComponentTests implements TestSuite {
                         this::stateParserCommandServer),
                 new NamedTest("StartIBC launch marker clears stale command and login readiness",
                         this::stateParserStartMarker),
+                new NamedTest("IBC log parser tracks the actual Gateway or TWS launch milestone",
+                        this::stateParserApplicationLaunch),
                 new NamedTest("Windows listener-table parser ignores established connections",
                         this::windowsListenerParser),
                 new NamedTest("Windows listener-table parser retains address and owning PID",
@@ -106,7 +110,7 @@ public final class RuntimeComponentTests implements TestSuite {
                         this::listenerProbeCache),
                 new NamedTest("listener probe retains only a bounded stale snapshot",
                         this::listenerProbeFailure),
-                new NamedTest("StartIBC-compatible Java resolver follows explicit and install4j precedence",
+                new NamedTest("Java override validation delegates automatic runtime selection to StartIBC",
                         this::javaRuntimeResolution),
                 new NamedTest("offline-installation startup coordinator serializes only matching program trees",
                         this::startCoordinatorSerialization),
@@ -142,11 +146,42 @@ public final class RuntimeComponentTests implements TestSuite {
             Assertions.contains(script, "\"/Gateway\"", "Gateway mode argument must be supplied");
             Assertions.contains(script, "\"/TwsPath:" + profile.twsPath() + "\"", "TWS path must be supplied");
             Assertions.contains(script, "\"/TwsSettingsPath:" + profile.twsSettingsPath() + "\"", "settings path must be supplied");
-            Assertions.contains(script, "\"/IbcPath:" + profile.ibcPath() + "\"", "IBC path must be supplied");
+            Assertions.contains(script, ".ibc-manager-engine", "integrated IBC path must be supplied");
+            Assertions.notContains(script, "\"/IbcPath:" + profile.ibcPath() + "\"", "external IBC path is ignored");
             Assertions.contains(script, "\"/Config:" + runtimeConfig + "\"", "runtime config must be supplied");
             Assertions.contains(script, "\"/Mode:paper\"", "trading mode must be explicit");
+            Assertions.contains(script, "\"/On2FATimeout:restart\"",
+                    "unattended profiles must ask StartIBC to restart after an unresolved 2FA exit");
+            Assertions.contains(script, "\"/JavaPath:" + profile.ibcJavaPath() + "\"",
+                    "an explicit Java override must be passed to StartIBC");
             Assertions.equals(List.of("cmd.exe", "/d", "/s", "/c", spec.displayCommand()), spec.command(),
                     "process command must execute only the generated script");
+        } finally { TestSupport.deleteTree(root); }
+    }
+
+    private void launchScriptDelegatesJavaSelection() throws Exception {
+        Path root = TestSupport.tempDirectory("launch-java-delegation");
+        try {
+            AppPaths paths = new AppPaths(root.resolve("data"));
+            Profile profile = TestSupport.validProfile(root.resolve("install"));
+            Path runtimeConfig = paths.runtimeDirectory(profile.id()).resolve("config.ini");
+            Files.createDirectories(runtimeConfig.getParent());
+            Files.writeString(runtimeConfig, "TradingMode=paper\n");
+            AtomicInteger executions = new AtomicInteger();
+            IbcJavaRuntimeResolver resolver = new IbcJavaRuntimeResolver(
+                    OperatingSystem.WINDOWS,
+                    (command, input, timeout) -> {
+                        executions.incrementAndGet();
+                        return new CommandResult(0, "", "openjdk version \"25.0.1\"", false);
+                    },
+                    new OfflineApplicationLayoutResolver());
+            LaunchSpec spec = new LaunchScriptFactory(paths, OperatingSystem.WINDOWS, resolver)
+                    .create(profile, runtimeConfig);
+            String script = Files.readString(spec.launchScript());
+            Assertions.notContains(script, "/JavaPath:",
+                    "a blank override must leave bundled-runtime discovery to StartIBC.bat");
+            Assertions.equals(0, executions.get(),
+                    "automatic Java selection must not probe a legacy install4j runtime");
         } finally { TestSupport.deleteTree(root); }
     }
 
@@ -857,6 +892,29 @@ public final class RuntimeComponentTests implements TestSuite {
                 "each StartIBC launch marker must advance the session generation");
     }
 
+    private void stateParserApplicationLaunch() {
+        IbcLogStateParser parser = new IbcLogStateParser();
+        parser.accept("Starting IBC with this command: java -cp IBC.jar ibcalpha.ibc.IbcGateway");
+        Assertions.isFalse(parser.applicationLaunchObserved(),
+                "starting the IBC JVM must not be mistaken for starting Gateway/TWS");
+        parser.accept("2026-10-06 23:45:07:867 IBC: Starting Gateway");
+        Assertions.isTrue(parser.applicationLaunchObserved(),
+                "the official Gateway launch marker must be tracked");
+        Assertions.equals(RuntimeState.STARTING, parser.latest().orElseThrow().state(),
+                "the application launch marker must remain a startup state");
+
+        parser.accept("Login dialog WINDOW_OPENED");
+        Assertions.isTrue(parser.applicationLaunchObserved(),
+                "later login progress must not erase the application-launch milestone");
+        parser.accept("Starting IBC with this command: replacement");
+        Assertions.isFalse(parser.applicationLaunchObserved(),
+                "a replacement IBC child generation must clear the previous launch milestone");
+
+        parser.accept("Starting TWS with this command: java ...");
+        Assertions.isTrue(parser.applicationLaunchObserved(),
+                "the official TWS command marker must also be recognized");
+    }
+
     private void windowsListenerParser() {
         String output = """
                 Active Connections
@@ -1003,72 +1061,81 @@ public final class RuntimeComponentTests implements TestSuite {
         Path root = TestSupport.tempDirectory("ibc-java-resolution");
         try {
             Profile base = TestSupport.validProfile(root.resolve("install"));
-            Path program = base.twsPath().resolve("ibgateway").resolve(base.twsMajorVersion());
-            Path install4j = program.resolve(".install4j");
             Path explicitBin = createFakeJava(root.resolve("explicit"), "java.exe");
-            Path preferredRoot = root.resolve("preferred");
-            Path preferredBin = createFakeJava(preferredRoot, "bin/java.exe");
-            Path installedRoot = root.resolve("installed");
-            Path installedBin = createFakeJava(installedRoot, "bin/java.exe");
-            Path programData = root.resolve("ProgramData");
-            Path oracleBin = createFakeJava(programData.resolve("Oracle/Java/javapath"), "java.exe");
-            Files.writeString(install4j.resolve("pref_jre.cfg"), preferredRoot + System.lineSeparator());
-            Files.writeString(install4j.resolve("inst_jre.cfg"), installedRoot + System.lineSeparator());
-
-            List<Path> executed = new ArrayList<>();
+            AtomicInteger executions = new AtomicInteger();
             IbcJavaRuntimeResolver resolver = new IbcJavaRuntimeResolver(
-                    OperatingSystem.WINDOWS, Map.of("PROGRAMDATA", programData.toString()),
+                    OperatingSystem.WINDOWS,
                     (command, input, timeout) -> {
-                        executed.add(Path.of(command.get(0)).toAbsolutePath().normalize());
+                        executions.incrementAndGet();
                         return new CommandResult(0, "", "openjdk version \"17.0.12\"", false);
-                    }, new OfflineApplicationLayoutResolver());
-
-            Profile explicit = base.toBuilder().ibcJavaPath(explicitBin).build();
-            Assertions.equals(explicitBin.toAbsolutePath().normalize(), resolver.resolve(explicit).directory(),
-                    "explicit /JavaPath directory must take precedence over install4j files");
-            Assertions.equals(explicitBin.resolve("java.exe").toAbsolutePath().normalize(), executed.get(0),
-                    "the exact explicit runtime must be version checked");
+                    },
+                    new OfflineApplicationLayoutResolver());
 
             Profile automatic = base.toBuilder().ibcJavaPath(Path.of("")).build();
-            Assertions.equals(preferredBin.toAbsolutePath().normalize(), resolver.resolve(automatic).directory(),
-                    "pref_jre.cfg must precede inst_jre.cfg and ProgramData fallback");
-            Files.delete(install4j.resolve("pref_jre.cfg"));
-            Assertions.equals(installedBin.toAbsolutePath().normalize(), resolver.resolve(automatic).directory(),
-                    "inst_jre.cfg must be used when no preferred runtime is configured");
-            Files.delete(install4j.resolve("inst_jre.cfg"));
-            Assertions.equals(oracleBin.toAbsolutePath().normalize(), resolver.resolve(automatic).directory(),
-                    "ProgramData Oracle javapath must be the final StartIBC-compatible fallback");
+            Assertions.isTrue(resolver.resolve(automatic).isEmpty(),
+                    "a blank override must delegate Java discovery to official StartIBC.bat");
+            Assertions.equals(0, executions.get(),
+                    "delegated Java discovery must not run a legacy pref_jre.cfg probe");
+
+            Profile explicit = base.toBuilder().ibcJavaPath(explicitBin).build();
+            IbcJavaRuntimeResolver.ResolvedJava explicitJava = resolver.resolve(explicit).orElseThrow();
+            Assertions.equals(explicitBin.toAbsolutePath().normalize(), explicitJava.directory(),
+                    "an explicit Java override must be validated exactly");
+            Assertions.equals(explicitBin.resolve("java.exe").toAbsolutePath().normalize(),
+                    explicitJava.executable(), "the exact explicit runtime must be version checked");
+            Assertions.equals(1, executions.get(), "only the explicit override should be executed");
 
             IbcJavaRuntimeResolver java8 = new IbcJavaRuntimeResolver(
-                    OperatingSystem.WINDOWS, Map.of("PROGRAMDATA", programData.toString()),
+                    OperatingSystem.WINDOWS,
                     (command, input, timeout) -> new CommandResult(
                             0, "", "java version \"1.8.0_401\"", false),
                     new OfflineApplicationLayoutResolver());
             IOException incompatible = Assertions.throwsType(IOException.class,
-                    () -> java8.resolve(automatic), "Java 8 must be rejected before StartIBC is launched");
+                    () -> java8.resolve(explicit), "Java 8 override must be rejected before launch");
             Assertions.contains(incompatible.getMessage(), "requires Java 17",
-                    "the rejected runtime must explain the supported-IBC Java requirement");
+                    "the rejected override must explain the supported-IBC Java requirement");
 
             TestSupport.writeIbcJar(base.ibcPath().resolve("IBC.jar"),
                     io.github.ibcmanager.app.Version.IBC_MINIMUM_SUPPORTED_VERSION, 65);
             IbcJavaRuntimeResolver java17ForJava21Ibc = new IbcJavaRuntimeResolver(
-                    OperatingSystem.WINDOWS, Map.of("PROGRAMDATA", programData.toString()),
+                    OperatingSystem.WINDOWS,
                     (command, input, timeout) -> new CommandResult(
                             0, "", "openjdk version \"17.0.12\"", false),
                     new OfflineApplicationLayoutResolver());
-            IOException newerIbcNeedsNewerJava = Assertions.throwsType(IOException.class,
-                    () -> java17ForJava21Ibc.resolve(automatic),
-                    "a dynamically resolved IBC release must not start on an older Java runtime");
-            Assertions.contains(newerIbcNeedsNewerJava.getMessage(), "requires Java 21",
-                    "the error must report the Java requirement embedded in the selected IBC release");
+            Assertions.isTrue(java17ForJava21Ibc.resolve(automatic).isEmpty(),
+                    "a different external IBC class version must not affect the bundled engine");
+            Assertions.equals(17, java17ForJava21Ibc.resolve(explicit).orElseThrow().major(),
+                    "the source-built engine targets Java 17 independently of an external JAR");
 
-            IbcJavaRuntimeResolver java21 = new IbcJavaRuntimeResolver(
-                    OperatingSystem.WINDOWS, Map.of("PROGRAMDATA", programData.toString()),
+            TestSupport.writeIbcJar(base.ibcPath().resolve("IBC.jar"),
+                    io.github.ibcmanager.app.Version.IBC_MINIMUM_SUPPORTED_VERSION, 61);
+            Profile gateway1050 = base.toBuilder().twsMajorVersion("1050").build();
+            TestSupport.createOfflineGatewayInstallation(gateway1050.twsPath(), "1050");
+            Profile gateway1050Explicit = gateway1050.toBuilder().ibcJavaPath(explicitBin).build();
+            IbcJavaRuntimeResolver java17ForGateway1050 = new IbcJavaRuntimeResolver(
+                    OperatingSystem.WINDOWS,
                     (command, input, timeout) -> new CommandResult(
-                            0, "", "openjdk version \"21.0.7\"", false),
+                            0, "", "openjdk version \"17.0.12\"", false),
                     new OfflineApplicationLayoutResolver());
-            Assertions.equals(21, java21.resolve(automatic).major(),
-                    "a runtime satisfying a future IBC class-file requirement must be accepted");
+            IOException gatewayNeedsJava25 = Assertions.throwsType(IOException.class,
+                    () -> java17ForGateway1050.resolve(gateway1050Explicit),
+                    "Gateway 10.50 must reject an explicit Java 17 override");
+            Assertions.contains(gatewayNeedsJava25.getMessage(), "IB Gateway 1050 requires Java 25",
+                    "new Gateway releases must explain their explicit-override requirement");
+            Assertions.contains(gatewayNeedsJava25.getMessage(), "Clear the override",
+                    "the error must recommend bundled-runtime delegation");
+
+            IbcJavaRuntimeResolver java25 = new IbcJavaRuntimeResolver(
+                    OperatingSystem.WINDOWS,
+                    (command, input, timeout) -> new CommandResult(
+                            0, "", "openjdk version \"25.0.1\"", false),
+                    new OfflineApplicationLayoutResolver());
+            Assertions.equals(25, java25.resolve(gateway1050Explicit).orElseThrow().major(),
+                    "a Java 25 override must be accepted for Gateway 10.50");
+            Assertions.equals(17, IbcJavaRuntimeResolver.requiredApplicationJavaMajor("1045"),
+                    "Gateway/TWS 10.45 remains on the Java 17 generation");
+            Assertions.equals(25, IbcJavaRuntimeResolver.requiredApplicationJavaMajor("1048"),
+                    "Gateway/TWS 10.48 begins the Java 25 generation");
         } finally {
             TestSupport.deleteTree(root);
         }
@@ -1156,7 +1223,6 @@ public final class RuntimeComponentTests implements TestSuite {
     private static LaunchScriptFactory windowsLaunchFactory(AppPaths paths) {
         IbcJavaRuntimeResolver resolver = new IbcJavaRuntimeResolver(
                 OperatingSystem.WINDOWS,
-                Map.of(),
                 (command, input, timeout) -> new CommandResult(
                         0, "", "openjdk version \"17.0.12\"", false),
                 new OfflineApplicationLayoutResolver());

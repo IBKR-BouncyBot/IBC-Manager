@@ -1,4 +1,226 @@
+# 2.0.2 - returned-login retry and profile-only configuration
+
+## 2.0.3 - status wording and GitHub README
+
+- Green status now reads "Gateway running - API listener available"; a passive
+  monitor's unperformed handshake check is no longer shown as a startup fault.
+- Move API-verification responsibilities into tooltips and remove the always-visible
+  API-listener disclaimer from the Overview footer.
+- Start/Stop activity messages describe requests rather than premature completion.
+- Use readable status labels, compact two-line profile entries and clearer engine
+  control/API availability wording. State decisions, colours and guards are unchanged.
+- Refresh images/GUI.png from the current real GUI smoke test using explicitly
+  simulated paper profiles. No live account or broker connection is shown.
+- Simplify README for GitHub, retain advanced detail in docs, copy the supplied
+  BouncyBot Thank me section and preserve existing GPL licences and credits.
+- Keep engine 3.24.2-manager.3 and profile format 6 unchanged. No authentication,
+  supervision, migration, credential, command or trading behavior change.
+
+- Restore credentials before waiting for the returned Gateway Log In button.
+- Adopt only engine-registered reconstructed login frames, retaining the challenge deadline.
+- Observe inline challenges without requiring a preceding LOGIN heading.
+- Avoid duplicate credential writes while asynchronous validation enables Log In.
+- Add specific non-secret retry-blocking diagnostics and regression fixtures.
+- Remove Managed Config editing and external/base configuration UI; all active settings live in Profile.
+- Import legacy effective settings/credentials transactionally into format 6, preserving IDs and originals.
+- Show generated engine values and their source; preserve unknown settings in the same table.
+- Remove inactive second-factor/TWS controls and obsolete validation coupling.
+- Move Windows startup controls inside Profile and reject stale/active recovery saves.
+- Maintain embedded source-built engine 3.24.2-manager.3 and its third reviewable patch.
+- No new external engine mode, TOTP, passive-probe connection or global process termination.
+
+The attached incident ZIP predates 2.0.1; the repair is source/fixture-verified, not
+proof of the exact user's later incident. Windows/Gateway/push acceptance remains necessary.
+
+---
+
+# IBC Manager changelog
+
+## 2.0.1 - 2026-10-08
+
+- Engine revision 3.24.2-manager.2 adds a monotonic five-minute second-factor
+  deadline that runs even while the challenge stays open.
+- Guarded in-process Cancel/login retry; no process-tree termination for 2FA.
+- Cancel stale/queued tasks on success, shutdown, failure or new attempts; replace
+  the old dialog-close scheduler to avoid duplicate retries and early exits.
+- Bound login-form readiness waits and fail visibly for unsupported controls or
+  missing credentials. Move transformed-login-frame observation onto Swing EDT
+  and prevent stale queued login clicks after successful authentication.
+- Add virtual deadline, actual Swing/engine, and real 300-second fixture coverage.
+- Document local retry versus phone delivery and the purpose of each batch file.
+- Preserve the reviewed 2.0.0 recovery fixes, About credit, pause behavior and
+  profile format/credential associations.
+
+## 2.0.0
+
+- Same-version 2026-10-08 refresh: independent requirements/source review in
+  `docs/INDEPENDENT_REVIEW.md`.
+- Adds one final pause to user-facing batch entry points, with unchanged exit codes,
+  CI/explicit automation opt-out, and attached console output for interactive run.
+- About explicitly thanks Richard L King (rlktradewright), Steven M. Kearns and
+  upstream contributors.
+- Revalidates current generation, login/2FA progress and passive API absence before
+  recovery STOP and again before forced cleanup; unknown ownership/inspection fails closed.
+- Corrects five-minute notification wording: the unchanged engine applies a
+  dialog-close threshold, not an independent strict resend timer.
+
+- Includes a maintained source-built IBC 3.24.2-derived engine; removes external
+  IBC installation selection/download and runtime fallback.
+- Supports Windows and IB API Gateway only. Retains legacy TWS profiles disabled.
+- Adds bounded per-JVM structured lifecycle events while preserving the Windows
+  wrapper, Gateway handler ordering, command protocol and credential contract.
+- Rejects reconnect before main-window readiness in the engine itself.
+- Migrates previous profiles in place with original backups, retained IDs/DPAPI
+  blobs, interrupted-transaction recovery and failed-start lock cleanup.
+- Adds actual engine contract and Swing/command tests, reproducible source-built
+  payload packaging, upstream provenance and maintenance documentation.
+- Retains native 2FA relogin with a 300-second threshold, bounded stalled-start recovery, passive listener
+  status, 60-second disk batching and confirmed session controls from 1.0.25.
+- Native Windows and live paper Gateway acceptance remain separately required.
+
+## Prior release history
+
+Historical five-minute-resend claims below are superseded by the source review in
+2.0.0: the native setting is a dialog-close threshold, not an independent timer.
+
 # Changelog
+
+
+## 1.0.25 - 2026-10-07
+
+### Five-minute second-factor notification retry
+
+- Enabled IBC's native in-process second-factor relogin policy by default for
+  new profiles and for profiles migrated from formats 1 through 3.
+- Manager-owned runtime configurations now set
+  `ReloginAfterSecondFactorAuthenticationTimeout=yes` and
+  `SecondFactorAuthenticationTimeout=300`, causing an uncompleted IBKR Mobile
+  request to restart the login sequence and request another phone notification
+  after five minutes.
+- New and migrated profiles use `/On2FATimeout:restart` as the StartIBC wrapper
+  fallback when IBC exits after an acknowledged second-factor request still
+  fails to complete.
+- Added profile format version 4. Legacy profile migration now also resists a
+  stale pre-migration Managed Config value when Profile Edit is first opened;
+  the first save canonicalizes both files to the five-minute policy. Once format
+  4 is persisted, disabling the retry remains an explicit durable choice and
+  restores IBC's documented 180-second timeout.
+- Renamed and clarified the Profile-tab control so the five-minute behavior and
+  warm-relogin semantics are visible rather than hidden behind two IBC setting
+  names.
+- The dashboard now states the retry interval and explains that another phone
+  notification will be requested while the profile is waiting for second
+  factor.
+- `SecondFactorAuthenticationTimeout` is now profile-controlled and cannot be
+  silently overridden by a conflicting advanced setting or imported managed
+  configuration.
+- Added a warning for manual-password profiles because an in-process relogin may
+  require the password to be entered again.
+- Retained the safety boundary that a second-factor screen is real progress and
+  never enters destructive stalled-start cleanup.
+- Added migration, configuration, wrapper-argument, UI, runtime-state,
+  validation, and architecture regression tests for the policy.
+
+## 1.0.24 - 2026-10-07
+
+### Bounded unattended stalled-start recovery
+
+- Extended the 1.0.23 child-generation startup watchdog into an optional,
+  profile-controlled automatic recovery path for the observed IB Gateway 10.50
+  warm/token-restart deadlock.
+- Added **Automatically recover a stalled TWS/Gateway startup** to the Profile
+  tab. It is enabled by default for new and migrated profiles; manual-password
+  profiles receive a warning that a fresh start remains interactive.
+- A confirmed five-minute stall now captures a redacted diagnostic bundle,
+  sends one graceful IBC `STOP`, allows 15 seconds for exit, and, when required,
+  terminates only the selected profile's tracked wrapper and verified
+  descendants.
+- Recovery verifies for up to 30 seconds that the old IBC command and API
+  listeners are gone, applies a 10-second cooldown, and launches exactly one
+  fresh `StartIBC.bat` wrapper through the normal validation, credential, runtime
+  configuration, and process-identity path.
+- Added explicit `AUTO_RECOVERY_STOPPING`, `AUTO_RECOVERY_FORCE_CLEANUP`,
+  `AUTO_RECOVERY_COOLDOWN`, `STARTING_FRESH`, and `RECOVERY_FAILED` states with
+  text-backed dashboard indicators.
+- Login, second-factor, completed-login, verified API-listener, replacement-child,
+  and terminal-wrapper progress prevent or cancel the destructive stall path.
+  A legitimate second-factor prompt is never killed by the watchdog.
+- Added persistent loop prevention: one unresolved recovery blocks another and
+  at most two automatic recoveries may begin in a rolling hour. A fresh
+  replacement must reach completed login or a verified API listener before the
+  pending marker is cleared.
+- A fresh replacement that also stalls, an old listener that remains occupied,
+  failed exact-tree cleanup, corrupt recovery state, or the rate limit ends in
+  `RECOVERY_FAILED`; the Manager does not continue cycling.
+- Force Stop remains separately confirmed, cancels any in-progress automatic
+  recovery, and never targets unrelated Java, IBC, TWS, Gateway, or bot
+  processes.
+- IBC Manager blocks normal GUI exit while a recovery is active. A Manager or
+  machine crash fails closed through the persisted pending marker rather than
+  resuming a destructive loop automatically.
+- Automatic diagnostics now include a bounded, redacted snapshot of current
+  in-memory runtime output in addition to on-disk log tails.
+- Added profile format version 3 and backward migration for the new recovery
+  option, bounded owner-restricted recovery-history persistence, registry and
+  editor lifecycle protection, and comprehensive controller/UI/security tests.
+- Corrected a duplicate equality comparison in the immutable Profile model and
+  updated the startup detector documentation to reflect its observational role
+  within the separate recovery controller.
+
+## 1.0.23 - 2026-10-07
+
+### Scheduled-restart stall detection and recovery
+
+- Diagnosed two repeatable IB Gateway 10.50 scheduled auto-restarts that exited
+  the old Gateway normally, found the auto-restart token, launched a replacement
+  IBC JVM on bundled Java 25, and then stopped permanently after IBC logged
+  `Starting Gateway`. No login window, second-factor stage, completed login, API
+  listener, child exit, or Java exception followed.
+- Added the explicit red `STARTUP_STALLED` runtime state. A five-minute watchdog
+  begins only after the current IBC child reports that it is starting Gateway or
+  TWS and is cancelled by real lifecycle progress, a verified API listener, a
+  child-generation change, or a terminal wrapper decision.
+- Prevented a live but wedged IBC child with a listening command socket from
+  remaining indefinitely in the generic `STARTING` / waiting-for-login state.
+- Added a prominent, separately confirmed **Force Stop** button to the Session
+  toolbar. It retains exact managed-process-tree scoping and does not terminate
+  unrelated Java, IBC, TWS, or Gateway processes.
+- When a stalled command server rejects or fails to answer normal STOP, the
+  Manager now restores the stalled state immediately with a Force Stop/Start
+  recovery instruction. If STOP is accepted but the wrapper remains alive, the
+  stalled-session wait is limited to 15 seconds before reporting that explicit
+  Force Stop is required.
+- Normal Stop still never silently escalates to forced termination, and the
+  watchdog never auto-kills or auto-restarts a live-account process because a
+  fresh login can require manual second-factor authentication.
+- Added regression coverage for the actual `Starting Gateway` milestone,
+  generation reset, five-minute stall transition, API-listener precedence,
+  unresponsive STOP behavior, the red status indicator, and visible Force Stop
+  presentation and confirmation.
+
+## 1.0.22 - 2026-10-05
+
+### IB Gateway 10.48+ bundled-Java compatibility
+
+- Fixed profile validation blocking IB Gateway/TWS 10.48 and newer when their
+  bundled Java 25 runtime is not exposed through the legacy install4j
+  `pref_jre.cfg` or `inst_jre.cfg` files.
+- A blank **IBC Java override** now leaves Java discovery to the official
+  `StartIBC.bat`, which is authoritative for the runtime bundled with the
+  selected offline TWS/Gateway installation.
+- `/JavaPath:` is now emitted only when the user explicitly configures an
+  override. Explicit overrides continue to be executed and version-checked
+  before launch.
+- Explicit overrides require Java 25 or newer for TWS/Gateway 10.48 and newer,
+  while older supported installations retain the Java 17 minimum.
+- Updated the profile tooltip and validation messages to explain automatic
+  bundled-runtime selection and how to recover from an incompatible override.
+- Added regression coverage for a Gateway 10.50 installation without legacy JRE
+  marker files, launch-script omission of `/JavaPath:`, Java 25 override
+  validation, and source-architecture invariants preventing the old resolver
+  from returning.
+- No profile format, credential, IBC download, command, logging, or session-state
+  behavior changed.
 
 ## 1.0.21 - 2026-08-26
 

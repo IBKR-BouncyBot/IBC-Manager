@@ -28,11 +28,14 @@ public final class Profile {
     private final boolean reloginAfterSecondFactorTimeout;
     private final boolean forceApiPortAtLaunch;
     private final boolean autoStart;
+    private final boolean autoRecoverStartupStall;
     private final boolean minimizeMainWindow;
     private final int gracefulStopTimeoutSeconds;
     private final Map<String, String> settings;
+    private final boolean profileOnlyConfiguration;
 
     private Profile(Builder builder) {
+        profileOnlyConfiguration = builder.profileOnlyConfiguration;
         id = Objects.requireNonNull(builder.id, "id");
         name = normalize(builder.name);
         enabled = builder.enabled;
@@ -53,6 +56,7 @@ public final class Profile {
         reloginAfterSecondFactorTimeout = builder.reloginAfterSecondFactorTimeout;
         forceApiPortAtLaunch = builder.forceApiPortAtLaunch;
         autoStart = builder.autoStart;
+        autoRecoverStartupStall = builder.autoRecoverStartupStall;
         minimizeMainWindow = builder.minimizeMainWindow;
         gracefulStopTimeoutSeconds = builder.gracefulStopTimeoutSeconds;
         Map<String, String> copy = new LinkedHashMap<>();
@@ -92,12 +96,15 @@ public final class Profile {
     public boolean reloginAfterSecondFactorTimeout() { return reloginAfterSecondFactorTimeout; }
     public boolean forceApiPortAtLaunch() { return forceApiPortAtLaunch; }
     public boolean autoStart() { return autoStart; }
+    public boolean autoRecoverStartupStall() { return autoRecoverStartupStall; }
     public boolean minimizeMainWindow() { return minimizeMainWindow; }
     public int gracefulStopTimeoutSeconds() { return gracefulStopTimeoutSeconds; }
     public Map<String, String> settings() { return settings; }
+    public boolean profileOnlyConfiguration() { return profileOnlyConfiguration; }
 
     public Builder toBuilder() {
         return new Builder()
+                .profileOnlyConfiguration(profileOnlyConfiguration)
                 .id(id)
                 .name(name)
                 .enabled(enabled)
@@ -118,6 +125,7 @@ public final class Profile {
                 .reloginAfterSecondFactorTimeout(reloginAfterSecondFactorTimeout)
                 .forceApiPortAtLaunch(forceApiPortAtLaunch)
                 .autoStart(autoStart)
+                .autoRecoverStartupStall(autoRecoverStartupStall)
                 .minimizeMainWindow(minimizeMainWindow)
                 .gracefulStopTimeoutSeconds(gracefulStopTimeoutSeconds)
                 .settings(settings);
@@ -128,6 +136,9 @@ public final class Profile {
     }
 
     public static final class Builder {
+        // False identifies in-memory legacy import records. The app creates and
+        // migrates every active profile with profileOnlyConfiguration(true).
+        private boolean profileOnlyConfiguration;
         private UUID id = UUID.randomUUID();
         private String name = "New profile";
         private boolean enabled = true;
@@ -144,14 +155,16 @@ public final class Profile {
         private String bindAddress = "127.0.0.1";
         private String username = "";
         private CredentialMode credentialMode = CredentialMode.MANUAL;
-        private TwoFactorTimeoutAction twoFactorTimeoutAction = TwoFactorTimeoutAction.EXIT;
-        private boolean reloginAfterSecondFactorTimeout;
+        private TwoFactorTimeoutAction twoFactorTimeoutAction = TwoFactorTimeoutAction.RESTART;
+        private boolean reloginAfterSecondFactorTimeout = true;
         private boolean forceApiPortAtLaunch;
         private boolean autoStart;
+        private boolean autoRecoverStartupStall = true;
         private boolean minimizeMainWindow = true;
         private int gracefulStopTimeoutSeconds = 90;
         private Map<String, String> settings = new LinkedHashMap<>();
 
+        public Builder profileOnlyConfiguration(boolean value) { profileOnlyConfiguration = value; return this; }
         public Builder id(UUID value) { id = value; return this; }
         public Builder name(String value) { name = value; return this; }
         public Builder enabled(boolean value) { enabled = value; return this; }
@@ -172,6 +185,7 @@ public final class Profile {
         public Builder reloginAfterSecondFactorTimeout(boolean value) { reloginAfterSecondFactorTimeout = value; return this; }
         public Builder forceApiPortAtLaunch(boolean value) { forceApiPortAtLaunch = value; return this; }
         public Builder autoStart(boolean value) { autoStart = value; return this; }
+        public Builder autoRecoverStartupStall(boolean value) { autoRecoverStartupStall = value; return this; }
         public Builder minimizeMainWindow(boolean value) { minimizeMainWindow = value; return this; }
         public Builder gracefulStopTimeoutSeconds(int value) { gracefulStopTimeoutSeconds = value; return this; }
         public Builder settings(Map<String, String> value) {
@@ -189,12 +203,14 @@ public final class Profile {
     public boolean equals(Object other) {
         if (this == other) return true;
         if (!(other instanceof Profile profile)) return false;
-        return enabled == profile.enabled
+        return profileOnlyConfiguration == profile.profileOnlyConfiguration
+                && enabled == profile.enabled
                 && apiPort == profile.apiPort
                 && commandServerPort == profile.commandServerPort
                 && reloginAfterSecondFactorTimeout == profile.reloginAfterSecondFactorTimeout
                 && forceApiPortAtLaunch == profile.forceApiPortAtLaunch
                 && autoStart == profile.autoStart
+                && autoRecoverStartupStall == profile.autoRecoverStartupStall
                 && minimizeMainWindow == profile.minimizeMainWindow
                 && gracefulStopTimeoutSeconds == profile.gracefulStopTimeoutSeconds
                 && id.equals(profile.id)
@@ -216,10 +232,11 @@ public final class Profile {
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, name, enabled, targetType, tradingMode, twsMajorVersion, ibcPath,
+        return Objects.hash(profileOnlyConfiguration, id, name, enabled, targetType, tradingMode, twsMajorVersion, ibcPath,
                 twsPath, twsSettingsPath, baseConfigPath, ibcJavaPath, apiPort, commandServerPort,
                 bindAddress, username, credentialMode, twoFactorTimeoutAction,
-                reloginAfterSecondFactorTimeout, forceApiPortAtLaunch, autoStart, minimizeMainWindow,
+                reloginAfterSecondFactorTimeout, forceApiPortAtLaunch, autoStart,
+                autoRecoverStartupStall, minimizeMainWindow,
                 gracefulStopTimeoutSeconds, settings);
     }
 

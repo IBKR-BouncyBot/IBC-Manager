@@ -6,7 +6,7 @@ import io.github.ibcmanager.app.ProfileSaveService;
 import io.github.ibcmanager.app.SingleInstanceLock;
 import io.github.ibcmanager.config.ManagedConfigService;
 import io.github.ibcmanager.config.RuntimeConfigLease;
-import io.github.ibcmanager.install.IbcInstallerService;
+import io.github.ibcmanager.engine.EmbeddedEngine;
 import io.github.ibcmanager.model.CredentialMode;
 import io.github.ibcmanager.model.Profile;
 import io.github.ibcmanager.security.BoundedFileReader;
@@ -88,7 +88,7 @@ public final class ReleaseAuditTests implements TestSuite {
                 new NamedTest("mismatched deletion metadata cannot target another profile", this::staleTransactionMismatch),
                 new NamedTest("profile editor reports invalid paths cleanly", this::profileEditorInvalidPath),
                 new NamedTest("application arguments report invalid data paths cleanly", this::appInvalidDataPath),
-                new NamedTest("IBC validation rejects symbolic required files", this::installerSymlink),
+                new NamedTest("integrated engine rejects symbolic required files", this::installerSymlink),
                 new NamedTest("log tailer refuses a symbolic log source", this::logTailerSymlink));
     }
 
@@ -741,16 +741,20 @@ public final class ReleaseAuditTests implements TestSuite {
     }
 
     private void installerSymlink() throws Exception {
-        Path root = TestSupport.tempDirectory("audit-installer-link");
+        Path root = TestSupport.tempDirectory("audit-engine-link");
         try {
-            createMinimalIbc(root);
+            Path engine = EmbeddedEngine.ensureUnder(root);
             Path target = root.resolve("real-version");
-            Files.move(root.resolve("version"), target);
-            if (!trySymlink(root.resolve("version"), target)) { Assertions.isTrue(true, "symbolic links unavailable"); return; }
-            Assertions.isFalse(IbcInstallerService.isValidInstallation(root),
-                    "symbolic required installer file must be rejected");
-            Assertions.equals("3.24.2", Files.readString(target), "target version file must remain unchanged");
-            Assertions.isTrue(Files.isSymbolicLink(root.resolve("version")), "link must remain visible");
+            byte[] original = Files.readAllBytes(engine.resolve("version"));
+            Files.move(engine.resolve("version"), target);
+            if (!trySymlink(engine.resolve("version"), target)) {
+                Assertions.isTrue(true, "symbolic links unavailable"); return;
+            }
+            Assertions.throwsType(IOException.class,
+                    () -> EmbeddedEngine.ensureUnder(root), "symbolic engine file must be rejected");
+            Assertions.isTrue(java.util.Arrays.equals(original, Files.readAllBytes(target)),
+                    "target version file must remain unchanged");
+            Assertions.isTrue(Files.isSymbolicLink(engine.resolve("version")), "link must remain visible");
         } finally { TestSupport.deleteTree(root); }
     }
 

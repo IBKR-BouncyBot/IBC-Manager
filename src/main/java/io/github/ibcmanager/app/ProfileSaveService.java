@@ -46,6 +46,7 @@ public final class ProfileSaveService {
         if (previous != null && !previous.id().equals(updated.id())) {
             throw new IllegalArgumentException("An existing profile cannot be saved under a different profile ID");
         }
+        if (updated.profileOnlyConfiguration()) io.github.ibcmanager.config.ProfileConfiguration.document(updated);
         char[] supplied = newPassword == null ? new char[0] : Arrays.copyOf(newPassword, newPassword.length);
         if (updated.credentialMode() == CredentialMode.ENCRYPTED
                 && TextSafety.containsConfigBreakingControl(supplied)) {
@@ -102,6 +103,7 @@ public final class ProfileSaveService {
     public synchronized Profile saveManagedConfig(Profile current, IbcConfigDocument document) throws IOException {
         Objects.requireNonNull(current, "current");
         Objects.requireNonNull(document, "document");
+        if (current.profileOnlyConfiguration()) throw new IOException("Edit configuration only through the Profile editor");
         if (current.credentialMode() == CredentialMode.EXISTING_CONFIG) {
             throw new IOException("Profiles using an external config.ini cannot save a managed configuration");
         }

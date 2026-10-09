@@ -1,67 +1,62 @@
-# IBC Manager 1.0.21 test report
+# IBC Manager 2.0.3 test report
 
-## Release identity
+## Scope and measured results
 
-- Application version: **1.0.21**
-- IBC download channel: **latest published official GitHub release**
-- IBC compatibility floor/reference: **3.24.2**
-- Change scope: dynamic latest-release resolution and validation
-- Java source target: **Java 17**
+This release changes status presentation, the Overview footer, README, screenshot,
+version metadata and test/documentation support. It retains the existing GPL licences.
+The engine source/resources, engine revision 3.24.2-manager.3, profile format 6,
+credential handling, command/recovery logic and API monitoring behavior are unchanged.
 
-## Latest-release validation
+Baseline 2.0.2 was independently compiled and tested before edits: 639 headless
+cases / 8,684 assertions passed on this host.
 
-The release gate verifies that IBC Manager:
+The updated suite contains 644 named headless tests. The final measured assertion
+count and complete per-run outcomes are recorded in FINAL_VALIDATION and the logs.
+Compilation is strict for both Manager and the engine:
+`--release 17 -encoding UTF-8 -g -Xlint:all -Werror`.
+Compiled source counts: 113 Manager production files, 87 engine production files,
+and 33 test/helper files. Compilation reported no warnings; warnings are treated as errors.
 
-- queries only `https://api.github.com/repos/IbcAlpha/IBC/releases/latest`;
-- rejects draft, prerelease, malformed, duplicate-key, non-numeric, and
-  below-floor metadata;
-- selects exactly `IBCWin-<resolved-version>.zip` from the official release;
-- rejects unexpected hosts, paths, ports, user information, queries, fragments,
-  duplicate Windows assets, missing digests, and unsafe asset sizes;
-- verifies the downloaded byte count and SHA-256 against both transfer results
-  and GitHub's release-asset metadata;
-- validates external and embedded IBC versions, required distribution files,
-  JAR classes, launcher switches, and referenced helper scripts;
-- accepts compatible future numeric releases in deterministic fixtures;
-- reuses an existing installation only when it matches the currently resolved
-  latest release and never silently overwrites a different non-empty tree;
-- retains 3.24.2 only as the compatibility floor and retained reference template;
-- uses 1.0.21 consistently in JAR, normal release ZIP, source ZIP, Windows
-  packaging scripts, GUI title, and documentation.
+The real Manager Swing smoke verifies the existing Profile-only interface, session
+confirmations, About credit and disposal, plus absent permanent API notice and a
+present on-demand tooltip. The screenshot gate repeats these checks and captures
+an actual window with visibly labelled demo paper profiles. Its display-only
+process fixture cannot launch or terminate a process and is not packaged in the JAR.
 
-## Automated result
+The engine GUI fixtures pass: 4 scenarios / 26 checks and 23 second-factor scenarios /
+64 checks. These use actual engine code with synthetic controls, not IBKR Gateway
+binaries. The virtual-time deadline tests remain in the headless suite.
 
-- Production Java files compiled: **119**
-- Test Java files compiled: **24**
-- Automated test cases: **541 passed**
-- Assertions: **8,125 passed**
-- Failed tests: **0**
-- Skipped tests: **0**
-- Compiler warnings: **0; warnings treated as errors**
-- Class-file target: **Java 17 / major version 61**
+## New regression coverage
 
-Compilation uses:
+Five headless cases add friendly labels for every existing state, qualification
+only in the API tooltip, unknown-vs-absent listener wording, exact supplied support
+section/GPL bytes, and test-only screenshot/permanent-footer architecture checks.
+The existing controller success-state test now requires factual listener-availability
+wording instead of presenting an unperformed handshake as a startup failure.
 
-```text
-javac --release 17 -encoding UTF-8 -Xlint:all -Werror
-```
+State selection, listener ownership checks and colour mapping were retained. The
+runtime-controller diff contains only message string/concatenation changes.
 
-## Release gates
+## Reproducibility and evidence
 
-- Three complete clean build/test/package runs passed.
-- JAR, release ZIP, and source ZIP hashes were identical across all three runs.
-- Packaged JAR `--version` and isolated headless smoke passed.
-- Real-window Swing GUI smoke passed under Xvfb.
-- Release and source ZIP integrity/path/duplicate checks passed.
-- Extracted release execution passed.
-- Extracted source clean rebuild and full retest passed.
-- Extracted-source JAR and ZIP artifacts were byte-identical to the originals.
-- Windows `.bat`/`.ps1` CRLF and no-BOM policy passed.
-- Source archive cleanliness and absence of bundled official `IBC.jar` passed.
+The final release procedure repeats clean test/JAR/smoke/archive builds three times,
+compares hashes, rebuilds an extracted source ZIP, executes the extracted release,
+reproduces the source patch and verifies archive safety, engine payload identity,
+licence identity, support-section identity, screenshot equality and script line endings.
+Actual final outcomes and artifact hashes are in the distributed FINAL_VALIDATION
+record and VALIDATION_LOGS.zip, not inferred from older release reports.
 
-## Platform boundary
+## Validation limits
 
-The Java/cross-platform release gate cannot execute Windows-native WiX,
-`jpackage --type exe`, DPAPI, NTFS ACL, Task Scheduler, a live GitHub download
-through the GUI, or a real IBC/Gateway session. `validate-windows.bat` and
-`package-windows.bat` remain the final native Windows acceptance path.
+Host: Linux, OpenJDK 21.0.12.1, Java 17 compilation target. Linux is a development
+host, not a supported operational platform. Windows-conditional assertions are not
+executed here; the headless count must not be treated as native Windows coverage.
+The supplied user's earlier Windows 2.0.1 log is not a 2.0.3 acceptance result.
+
+No real account, credential, Gateway login, push delivery or live order is used.
+A new full-duration 300-second test is not required or claimed for this display-only
+release: the complete engine payload is byte-identical to 2.0.2. Actual Windows
+CMD/PowerShell, DPAPI, NTFS ACLs, Task Scheduler, jpackage/WiX and Gateway lifecycle
+checks remain in docs/WINDOWS_VALIDATION_CHECKLIST.md. No native Windows EXE or
+_windows.zip is represented as generated by this Linux release run.

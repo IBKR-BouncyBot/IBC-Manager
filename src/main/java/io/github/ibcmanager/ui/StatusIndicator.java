@@ -30,6 +30,9 @@ final class StatusIndicator extends JPanel {
     static final Color YELLOW = new Color(181, 116, 0);
     static final Color RED = new Color(176, 38, 38);
     private static final int LARGE_DOT_SIZE = 20;
+    static final String API_MONITORING_TOOLTIP = "IBC Manager monitors Gateway and its API listener without "
+            + "opening an API connection. Your trading application verifies its own API connection, "
+            + "account and permissions.";
 
     private final JLabel dot = new JLabel();
     private final JLabel headline = new JLabel("No profile selected");
@@ -64,7 +67,7 @@ final class StatusIndicator extends JPanel {
     }
 
     void updateStatus(ProfileStatus status) {
-        presentation = presentationFor(status == null ? null : status.state());
+        presentation = presentationForStatus(status);
         dot.setIcon(icon(presentation.color(), LARGE_DOT_SIZE));
         headline.setText(presentation.headline());
         headline.setForeground(presentation.color());
@@ -76,7 +79,11 @@ final class StatusIndicator extends JPanel {
         String accessible = presentation.headline() + ". " + detail.getText();
         getAccessibleContext().setAccessibleName("Profile status");
         getAccessibleContext().setAccessibleDescription(accessible);
-        setToolTipText(accessible);
+        String tooltip = status != null && status.state() == RuntimeState.API_LISTENER_DETECTED
+                ? accessible + " " + API_MONITORING_TOOLTIP : accessible;
+        setToolTipText(tooltip);
+        headline.setToolTipText(tooltip);
+        detail.setToolTipText(tooltip);
         dot.getAccessibleContext().setAccessibleName(presentation.headline() + " status indicator");
         revalidate();
         repaint();
@@ -86,22 +93,62 @@ final class StatusIndicator extends JPanel {
         return presentation;
     }
 
+    static Presentation presentationForStatus(ProfileStatus status) {
+        if (status != null && status.state() == RuntimeState.RUNNING
+                && status.apiListenerState() == io.github.ibcmanager.model.PortListenerState.UNKNOWN) {
+            return new Presentation(Tone.YELLOW, YELLOW, "Logged in \u2014 checking API listener");
+        }
+        return presentationFor(status == null ? null : status.state());
+    }
+
     static Presentation presentationFor(RuntimeState state) {
         if (state == null) return new Presentation(Tone.YELLOW, YELLOW, "No profile selected");
         return switch (state) {
-            case API_LISTENER_DETECTED -> new Presentation(Tone.GREEN, GREEN, "API listener detected");
-            case RUNNING -> new Presentation(Tone.YELLOW, YELLOW, "Logged in; API not confirmed");
-            case ERROR -> new Presentation(Tone.RED, RED, "Error");
-            case STOPPED -> new Presentation(Tone.RED, RED, "Stopped");
-            case VALIDATING -> new Presentation(Tone.YELLOW, YELLOW, "Validating");
-            case STARTING -> new Presentation(Tone.YELLOW, YELLOW, "Starting");
-            case RESTARTING -> new Presentation(Tone.YELLOW, YELLOW, "Restarting");
-            case WAITING_FOR_LOGIN -> new Presentation(Tone.YELLOW, YELLOW, "Waiting for login");
-            case WAITING_FOR_SECOND_FACTOR -> new Presentation(Tone.YELLOW, YELLOW, "Waiting for second factor");
-            case PAUSED -> new Presentation(Tone.YELLOW, YELLOW, "Paused");
-            case PAUSING -> new Presentation(Tone.YELLOW, YELLOW, "Pausing");
-            case STOPPING -> new Presentation(Tone.YELLOW, YELLOW, "Stopping");
-            case UNKNOWN -> new Presentation(Tone.YELLOW, YELLOW, "Checking status");
+            case API_LISTENER_DETECTED -> new Presentation(Tone.GREEN, GREEN, "Gateway running \u2014 API listener available");
+            case RUNNING -> new Presentation(Tone.YELLOW, YELLOW, "Logged in \u2014 API listener unavailable");
+            case ERROR -> new Presentation(Tone.RED, RED, "Action required");
+            case STARTUP_STALLED -> new Presentation(Tone.RED, RED, "Gateway startup stalled");
+            case AUTO_RECOVERY_STOPPING -> new Presentation(Tone.YELLOW, YELLOW, "Recovering \u2014 stopping Gateway");
+            case AUTO_RECOVERY_FORCE_CLEANUP -> new Presentation(Tone.YELLOW, YELLOW, "Recovering \u2014 clearing stalled processes");
+            case AUTO_RECOVERY_COOLDOWN -> new Presentation(Tone.YELLOW, YELLOW, "Recovering \u2014 waiting to restart");
+            case STARTING_FRESH -> new Presentation(Tone.YELLOW, YELLOW, "Starting a new Gateway session");
+            case RECOVERY_FAILED -> new Presentation(Tone.RED, RED, "Automatic recovery failed");
+            case STOPPED -> new Presentation(Tone.RED, RED, "Gateway stopped");
+            case VALIDATING -> new Presentation(Tone.YELLOW, YELLOW, "Checking profile");
+            case STARTING -> new Presentation(Tone.YELLOW, YELLOW, "Starting Gateway");
+            case RESTARTING -> new Presentation(Tone.YELLOW, YELLOW, "Restarting Gateway");
+            case WAITING_FOR_LOGIN -> new Presentation(Tone.YELLOW, YELLOW, "Waiting for Gateway login");
+            case WAITING_FOR_SECOND_FACTOR -> new Presentation(Tone.YELLOW, YELLOW, "Waiting for 2FA approval");
+            case PAUSED -> new Presentation(Tone.YELLOW, YELLOW, "Gateway paused");
+            case PAUSING -> new Presentation(Tone.YELLOW, YELLOW, "Pausing Gateway");
+            case STOPPING -> new Presentation(Tone.YELLOW, YELLOW, "Stopping Gateway");
+            case UNKNOWN -> new Presentation(Tone.YELLOW, YELLOW, "Checking Gateway status");
+        };
+    }
+
+    /** Compact wording for the profile list and Overview status row. */
+    static String shortLabel(RuntimeState state) {
+        if (state == null) return "No profile selected";
+        return switch (state) {
+            case API_LISTENER_DETECTED -> "Running";
+            case RUNNING -> "Waiting for API listener";
+            case ERROR -> "Action required";
+            case STARTUP_STALLED -> "Startup stalled";
+            case AUTO_RECOVERY_STOPPING -> "Recovery: stopping";
+            case AUTO_RECOVERY_FORCE_CLEANUP -> "Recovery: cleanup";
+            case AUTO_RECOVERY_COOLDOWN -> "Recovery: waiting to restart";
+            case STARTING_FRESH -> "Starting new session";
+            case RECOVERY_FAILED -> "Recovery failed";
+            case STOPPED -> "Stopped";
+            case VALIDATING -> "Checking profile";
+            case STARTING -> "Starting";
+            case RESTARTING -> "Restarting";
+            case WAITING_FOR_LOGIN -> "Waiting for login";
+            case WAITING_FOR_SECOND_FACTOR -> "Waiting for 2FA approval";
+            case PAUSED -> "Paused";
+            case PAUSING -> "Pausing";
+            case STOPPING -> "Stopping";
+            case UNKNOWN -> "Checking status";
         };
     }
 
