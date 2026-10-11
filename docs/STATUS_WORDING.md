@@ -1,3 +1,12 @@
+# Status presentation in 2.1.0
+
+The application name follows the selected profile: TWS is not labelled as Gateway.
+The current screenshot is captured from 2.1.0 and includes simulated Gateway/TWS
+profiles. The new Copy control and profile runtime installer do not change listener
+or trading-readiness semantics. All runtime errors remain in Details/Logs.
+
+## Earlier status changes (historical version labels)
+
 # Status presentation in 2.0.3
 
 This release changes display text only. Diagnostic RuntimeState enum values, state
@@ -57,3 +66,10 @@ After compilation, run `BuildProject.java gui-screenshot` on an interactive disp
 (or under Xvfb on a development host). The gate runs the real GUI assertions and
 writes build/GUI.png without touching the checked-in image. Review it before copying
 to images/GUI.png. Rebuild the distribution after changing the checked-in image.
+
+## 2.0.4
+
+The display labels above remain unchanged. Supervision is strengthened as described
+in V2_0_4_RELIABILITY.md; the earlier statement that behavior is unchanged describes
+only the 2.0.3 wording release. images/GUI.png is recaptured from 2.0.4 using the same
+explicitly simulated paper-profile smoke fixture.

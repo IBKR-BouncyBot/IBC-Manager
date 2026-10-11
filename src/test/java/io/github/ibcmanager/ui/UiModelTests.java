@@ -233,7 +233,7 @@ public final class UiModelTests implements TestSuite {
         ProfileSessionAction.Prompt paperStart = ProfileSessionAction.START.prompt(paper);
         Assertions.equals(javax.swing.JOptionPane.QUESTION_MESSAGE, paperStart.messageType(),
                 "paper start may use an informational confirmation");
-        Assertions.contains(paperStart.message(), "Unsupported legacy TWS profile",
+        Assertions.contains(paperStart.message(), "Trader Workstation",
                 "paper start confirmation must identify TWS");
         Assertions.notContains(paperStart.message(), "LIVE trading profile",
                 "paper start must not display the live-mode warning");

@@ -48,10 +48,16 @@ public final class ProfileEditorDialog extends JDialog {
     private final boolean newProfile;
     private final boolean credentialStoreAvailable;
     private final Profile source;
+    private boolean loadingProfile;
+    private TargetType lastTarget = TargetType.GATEWAY;
+    private TradingMode lastMode = TradingMode.PAPER;
     private final InstallationDiscoveryService installationDiscovery = new InstallationDiscoveryService();
 
     private final JTextField nameField = new JTextField(30);
     private final JCheckBox enabledBox = new JCheckBox("Profile enabled");
+    private final JComboBox<TargetType> applicationBox = new JComboBox<>(TargetType.values());
+    private final JCheckBox managedRuntimeBox = new JCheckBox("Fix Java 25 headless startup with managed JBR + JavaFX");
+    private JComponent javaPathPanel;
     private final JComboBox<TradingMode> tradingModeBox = new JComboBox<>(TradingMode.values());
     private final JTextField versionField = new JTextField(12);
     private final JTextField twsPathField = new JTextField(36);
@@ -69,11 +75,11 @@ public final class ProfileEditorDialog extends JDialog {
     private final JCheckBox reloginAfterSecondFactorTimeoutBox =
             new JCheckBox("Retry IBKR Mobile login after 5 minutes without approval");
     private final JCheckBox forceApiPortBox =
-            new JCheckBox("Force this API port into IB Gateway through IBC at startup");
+            new JCheckBox("Force this API port into TWS/Gateway through IBC at startup");
     private final JCheckBox autoStartBox = new JCheckBox("Start this profile when IBC Manager starts");
     private final JCheckBox autoRecoverStartupStallBox =
-            new JCheckBox("Automatically recover a stalled IB Gateway startup");
-    private final JCheckBox minimizeBox = new JCheckBox("Minimize IB Gateway after login");
+            new JCheckBox("Automatically recover a stalled TWS/Gateway startup");
+    private final JCheckBox minimizeBox = new JCheckBox("Minimize TWS/Gateway after login");
     private final JSpinner gracefulStopSpinner = new JSpinner(new SpinnerNumberModel(90, 30, 300, 1));
     private final ProfileSettingsTableModel settingsModel;
     private final SettingsTable settingsTable;
@@ -82,8 +88,12 @@ public final class ProfileEditorDialog extends JDialog {
     private Runnable removeStartup;
 
     private ProfileEditorDialog(Frame owner, Profile profile, boolean credentialStoreAvailable) {
-        super(owner, profile == null ? "New IBC profile" : "Edit profile - " + profile.name(), true);
-        this.newProfile = profile == null;
+        this(owner, profile, credentialStoreAvailable, false);
+    }
+
+    private ProfileEditorDialog(Frame owner, Profile profile, boolean credentialStoreAvailable, boolean copy) {
+        super(owner, profile == null ? "New IBC profile" : (copy ? "Copy profile - " : "Edit profile - ") + profile.name(), true);
+        this.newProfile = profile == null || copy;
         this.credentialStoreAvailable = credentialStoreAvailable;
         this.source = profile == null ? Profile.builder().profileOnlyConfiguration(true).build() : profile;
         this.settingsModel = new ProfileSettingsTableModel(source.settings());
@@ -99,22 +109,17 @@ public final class ProfileEditorDialog extends JDialog {
 
     public static Optional<ProfileEditResult> showDialog(Frame owner, Profile profile,
             boolean credentialStoreAvailable) {
-        if (profile != null && profile.targetType() != TargetType.GATEWAY) {
-            JOptionPane.showMessageDialog(owner, "This legacy TWS profile is preserved but not supported. Create an IB Gateway profile instead.",
-                    "Unsupported legacy profile", JOptionPane.WARNING_MESSAGE);
-            return Optional.empty();
-        }
         return showDialog(owner, profile, credentialStoreAvailable, null, null);
     }
 
     public static Optional<ProfileEditResult> showDialog(Frame owner, Profile profile,
             boolean credentialStoreAvailable, Runnable installStartup, Runnable removeStartup) {
-        if (profile != null && profile.targetType() != TargetType.GATEWAY) {
-            JOptionPane.showMessageDialog(owner, "This legacy TWS profile is preserved but unsupported.",
-                    "Unsupported profile", JOptionPane.WARNING_MESSAGE);
-            return Optional.empty();
-        }
-        ProfileEditorDialog dialog = new ProfileEditorDialog(owner, profile, credentialStoreAvailable);
+        return showDialog(owner, profile, credentialStoreAvailable, installStartup, removeStartup, false);
+    }
+
+    public static Optional<ProfileEditResult> showDialog(Frame owner, Profile profile,
+            boolean credentialStoreAvailable, Runnable installStartup, Runnable removeStartup, boolean copy) {
+        ProfileEditorDialog dialog = new ProfileEditorDialog(owner, profile, credentialStoreAvailable, copy);
         dialog.installStartup = installStartup;
         dialog.removeStartup = removeStartup;
         dialog.setVisible(true);
@@ -124,7 +129,7 @@ public final class ProfileEditorDialog extends JDialog {
     private void buildUi() {
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Profile", createGeneralPanel());
-        tabs.addTab("Gateway settings", createSettingsPanel());
+        tabs.addTab("TWS / Gateway settings", createSettingsPanel());
         tabs.addTab("Windows startup", createStartupPanel());
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
@@ -147,7 +152,7 @@ public final class ProfileEditorDialog extends JDialog {
         detectButton.setName("detectInstallationsButton");
         detectButton.setEnabled(installationDiscovery.isAvailable());
         detectButton.setToolTipText(installationDiscovery.isAvailable()
-                ? "Search common Windows locations for offline IB Gateway installations"
+                ? "Search common Windows locations for offline TWS and IB Gateway installations"
                 : "Automatic discovery is available on Windows");
         detectButton.addActionListener(event -> detectInstallations());
 
@@ -157,7 +162,7 @@ public final class ProfileEditorDialog extends JDialog {
         UiUtil.addRow(panel, row++, "Automation engine", engineLabel);
         UiUtil.addRow(panel, row++, "Profile name", nameField);
         UiUtil.addRow(panel, row++, "Enabled", enabledBox);
-        UiUtil.addRow(panel, row++, "Application", new JLabel("IB Gateway (Windows)"));
+        UiUtil.addRow(panel, row++, "Application", applicationBox);
         UiUtil.addRow(panel, row++, "Trading mode", tradingModeBox);
         UiUtil.addRow(panel, row++, "Offline version number", versionField);
         versionField.setToolTipText("Numeric major version used by the offline installer, for example 1045");
@@ -165,12 +170,27 @@ public final class ProfileEditorDialog extends JDialog {
         twsPathField.setToolTipText(batchPathGuidance);
         settingsPathField.setToolTipText(batchPathGuidance);
         ibcJavaPathField.setToolTipText("Optional folder containing java.exe. Leave blank to let the official "
-                + "StartIBC.bat select the runtime bundled with the chosen IB Gateway installation. "
-                + "IB Gateway 10.48 and newer require Java 25 when an override is used. "
+                + "StartIBC.bat select the runtime bundled with the chosen TWS/Gateway installation. "
+                + "TWS/Gateway 10.48 and newer require Java 25 when an override is used. "
                 + batchPathGuidance);
-        UiUtil.addRow(panel, row++, "IB Gateway root", UiUtil.pathField(this, twsPathField, true));
-        UiUtil.addRow(panel, row++, "Gateway settings directory", UiUtil.pathField(this, settingsPathField, true));
-        UiUtil.addRow(panel, row++, "IBC Java override", UiUtil.pathField(this, ibcJavaPathField, true));
+        UiUtil.addRow(panel, row++, "TWS/Gateway root", UiUtil.pathField(this, twsPathField, true));
+        UiUtil.addRow(panel, row++, "TWS/Gateway settings directory", UiUtil.pathField(this, settingsPathField, true));
+        javaPathPanel = UiUtil.pathField(this, ibcJavaPathField, true);
+        UiUtil.addRow(panel, row++, "IBC Java override", javaPathPanel);
+        managedRuntimeBox.setName("managedHeadlessRuntimeBox");
+        applicationBox.setName("applicationTypeBox");
+        managedRuntimeBox.setToolTipText("Optional, consent-based download and reversible setup on Save; no changes on Cancel");
+        managedRuntimeBox.addActionListener(event -> {
+            boolean enabling = managedRuntimeBox.isSelected();
+            String explanation = enabling ? io.github.ibcmanager.workaround.ManagedRuntimeService.CONSENT
+                    : io.github.ibcmanager.workaround.ManagedRuntimeService.REMOVE_CONSENT;
+            if (JOptionPane.showConfirmDialog(this, consentHtml(explanation), enabling ? "Install managed runtime" : "Remove managed runtime",
+                    JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
+                managedRuntimeBox.setSelected(!enabling);
+            }
+            updateRuntimeControls();
+        });
+        UiUtil.addRow(panel, row++, "RDP headless workaround", managedRuntimeBox);
 
         JPanel portPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
         portPanel.add(apiPortSpinner);
@@ -217,6 +237,8 @@ public final class ProfileEditorDialog extends JDialog {
         panel.add(new JPanel(), filler);
 
         credentialModeBox.addActionListener(event -> updateCredentialControls());
+        applicationBox.addActionListener(event -> updateDefaultPort());
+        tradingModeBox.addActionListener(event -> updateDefaultPort());
 
         JPanel content = new JPanel(new BorderLayout());
         content.add(panel, BorderLayout.NORTH);
@@ -242,15 +264,16 @@ public final class ProfileEditorDialog extends JDialog {
         if (detected.isEmpty()) {
             JOptionPane.showMessageDialog(this,
                     "No matching installation was found in the common Windows locations.\n"
-                            + "Select the IB Gateway directories manually.",
+                            + "Select the TWS/Gateway directories manually.",
                     "No installations detected", JOptionPane.INFORMATION_MESSAGE);
             return;
         }
         DetectedInstallation selected = (DetectedInstallation) JOptionPane.showInputDialog(this,
-                "Select the offline IB Gateway installation to use:",
+                "Select the offline TWS/Gateway installation to use:",
                 "Detected installations", JOptionPane.QUESTION_MESSAGE, null,
                 detected.toArray(DetectedInstallation[]::new), detected.get(0));
         if (selected == null) return;
+        applicationBox.setSelectedItem(selected.targetType());
         versionField.setText(selected.version());
         twsPathField.setText(selected.twsRoot().toString());
         settingsPathField.setText(selected.settingsPath().toString());
@@ -264,7 +287,8 @@ public final class ProfileEditorDialog extends JDialog {
     }
 
     private static int defaultApiPort(TargetType targetType, TradingMode tradingMode) {
-        return tradingMode == TradingMode.LIVE ? 4001 : 4002;
+        return targetType == TargetType.TWS ? (tradingMode == TradingMode.LIVE ? 7496 : 7497)
+                : (tradingMode == TradingMode.LIVE ? 4001 : 4002);
     }
 
     private JPanel createSettingsPanel() {
@@ -312,6 +336,10 @@ public final class ProfileEditorDialog extends JDialog {
     }
 
     private void loadProfile() {
+        loadingProfile = true;
+        applicationBox.setSelectedItem(source.targetType());
+        managedRuntimeBox.setSelected(source.managedHeadlessRuntime());
+        updateRuntimeControls();
         nameField.setText(source.name());
         enabledBox.setSelected(source.enabled());
         tradingModeBox.setSelectedItem(source.tradingMode());
@@ -332,6 +360,31 @@ public final class ProfileEditorDialog extends JDialog {
         autoRecoverStartupStallBox.setSelected(source.autoRecoverStartupStall());
         minimizeBox.setSelected(source.minimizeMainWindow());
         gracefulStopSpinner.setValue(source.gracefulStopTimeoutSeconds());
+        lastTarget = source.targetType(); lastMode = source.tradingMode();
+        loadingProfile = false;
+    }
+
+    private void updateDefaultPort() {
+        if (loadingProfile) return;
+        TargetType nextTarget = (TargetType) applicationBox.getSelectedItem();
+        TradingMode nextMode = (TradingMode) tradingModeBox.getSelectedItem();
+        if (nextTarget == null || nextMode == null) return;
+        if ((Integer) apiPortSpinner.getValue() == defaultApiPort(lastTarget, lastMode)) {
+            apiPortSpinner.setValue(defaultApiPort(nextTarget, nextMode));
+        }
+        lastTarget = nextTarget; lastMode = nextMode;
+    }
+
+    static String consentHtml(String text) {
+        return "<html><body style='width: 540px'>" + text.replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;").replace("\n", "<br>") + "</body></html>";
+    }
+
+    private void updateRuntimeControls() {
+        boolean editable = !managedRuntimeBox.isSelected();
+        javaPathPanel.setEnabled(editable);
+        for (java.awt.Component child : javaPathPanel.getComponents()) child.setEnabled(editable);
+        ibcJavaPathField.setEnabled(editable);
     }
 
     private void updateCredentialControls() {
@@ -371,7 +424,8 @@ public final class ProfileEditorDialog extends JDialog {
                     .name(nameField.getText())
                     .enabled(enabledBox.isSelected())
                     .profileOnlyConfiguration(true)
-                    .targetType(TargetType.GATEWAY)
+                    .targetType((TargetType) applicationBox.getSelectedItem())
+                    .managedHeadlessRuntime(managedRuntimeBox.isSelected())
                     .tradingMode((TradingMode) tradingModeBox.getSelectedItem())
                     .twsMajorVersion(versionField.getText())
                     .twsPath(toPath(twsPathField.getText()))

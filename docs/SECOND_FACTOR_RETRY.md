@@ -1,6 +1,6 @@
 # Second-factor retry in 2.0.2
 
-Engine revision: 3.24.2-manager.3. Upstream snapshot: IBC 3.24.2.
+Engine revision: 3.24.2-manager.4 (authentication code unchanged from manager.3). Upstream snapshot: IBC 3.24.2.
 
 ## Local contract
 

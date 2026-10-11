@@ -64,7 +64,8 @@ public final class DiagnosticsTests implements TestSuite {
                     bundle.getFileName().toString(), "filename must use safe name and fixed UTC timestamp");
             Map<String, String> entries = readTextEntries(bundle);
             Assertions.equals(List.of("manifest.txt", "profile.txt", "validation.txt", "config-redacted.ini",
-                            "profile-log-tail.txt", "live-runtime-log.txt", "manager-log-tail.txt"),
+                            "profile-log-tail.txt", "live-runtime-log.txt", "manager-log-tail.txt",
+                            "runtime-details/vmoptions.txt", "runtime-details/launcher-identity.txt", "application-log-inventory.txt"),
                     new ArrayList<>(entries.keySet()), "bundle entry order must be stable");
             Assertions.contains(entries.get("manifest.txt"), "Manager version: " + Version.VERSION,
                     "manifest must identify manager version");

@@ -35,6 +35,8 @@ public final class SubprocessFixture {
             case "output" -> writeOutput(intArgument(arguments, 1));
             case "exit" -> System.exit(intArgument(arguments, 1));
             case "stdout-stderr" -> writeBothStreams();
+            case "stderr-redaction" -> stderrRedaction(Path.of(stringArgument(arguments, 1)));
+            case "stderr-only" -> { System.err.println("synthetic-stderr-marker"); System.err.flush(); System.exit(23); }
             case "line-then-sleep" -> lineThenSleep(stringArgument(arguments, 1), longArgument(arguments, 2));
             case "launch-buffered-and-exit" -> launchBufferedAndExit(
                     stringArgument(arguments, 1), longArgument(arguments, 2));
@@ -70,6 +72,21 @@ public final class SubprocessFixture {
             remaining -= count;
         }
         System.out.flush();
+    }
+
+    private static void stderrRedaction(Path release) throws Exception {
+        System.out.println("stdout-ready");
+        System.err.println("java.lang.IllegalStateException: token=stderr-token-secret");
+        System.err.println("    at test.Gateway.main(Gateway.java:10)");
+        System.err.println("launcher /PW:stderr-password-secret");
+        System.err.println("stderr-ready");
+        System.out.flush(); System.err.flush();
+        long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+        while (!Files.exists(release) && System.nanoTime() < deadline) Thread.sleep(10);
+        if (!Files.exists(release)) System.exit(91);
+        System.err.print("IbPassword=final-secret-without-newline");
+        System.err.flush();
+        System.exit(23);
     }
 
     private static void writeBothStreams() {

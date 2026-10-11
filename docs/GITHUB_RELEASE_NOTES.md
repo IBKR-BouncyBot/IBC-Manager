@@ -1,21 +1,24 @@
-# IBC Manager 2.0.3
+# IBC Manager 2.1.0
 
-Status presentation and documentation update. Windows and IB Gateway only.
+Managed headless setup now pins JBR **25.0.4-b508.27**, rather than selecting an
+unqualified newer release. All eight OpenJFX25 modules are retained. Existing managed
+runtimes from a different build require disable/Save on all owners, then enable/Save;
+replacing Manager alone does not replace the runtime. Manual installations remain intact.
 
-Green now reads **Gateway running - API listener available**. API-handshake and
-account verification are explained in an on-demand tooltip rather than presented
-as a failed check. The permanent API notice below Overview is removed. Other
-states have clearer headlines, compact list labels and unchanged warning colours.
+An exact invalid twsInfo/OK dialog now reports ERROR rather than generic waiting or
+normal exit. The engine leaves the dialog untouched and does not retry or bypass IBKR's
+rejection. Pinning returns to the earlier manually successful build; acceptance with
+this automated setup still requires a real login and secured disconnected-RDP restart.
 
-The README is shorter, uses a current GUI smoke-test screenshot, includes the
-supplied Thank me section and retains GPL licensing/attribution. Engine
-3.24.2-manager.3 and profile format 6 are unchanged; there is no authentication or
-recovery policy change. This release does not claim to resolve phone-delivery
-behavior reported during real Gateway authentication tests.
+Diagnostics now includes bounded redacted accessible launcher/rotated/application/API/
+crash logs, runtime provenance/releases/options and read-only launcher identity hints.
+Missing, locked, encrypted or size-limited sources are inventoried. Encrypted application
+logs still require the application's own plaintext export; no credentials/tokens or raw
+native binaries are added.
 
-Stop profiles and exit the previous Manager before updating. Back up the data
-folder and retain the same Windows account/computer for saved credentials.
-Run the Java release with run.bat. Build a native Windows installer/portable archive
-from source with package-windows.bat; native outputs require a Windows build.
+Manager Java25, TWS support, Copy Profile, optional unavailable checksums/probes, prior
+CDN/dependency corrections and restart reliability fixes remain. Engine revision is
+3.24.2-manager.6; profile format is 7 and GPL licensing is unchanged.
 
-See TEST_REPORT.md and the final validation logs for executed checks and limits.
+See TEST_REPORT.md and docs/PINNED_RUNTIME_DIAGNOSTICS.md for executed regression tests,
+repair steps, collection limits and remaining native Windows/live Gateway acceptance.

@@ -10,8 +10,8 @@ exit /b %IBC_MANAGER_ENTRY_RESULT%
 cd /d "%~dp0.."
 if errorlevel 1 exit /b 2
 
-set "JAR=dist\IBC-Manager-2.0.3.jar"
-if not exist "%JAR%" set "JAR=IBC-Manager-2.0.3.jar"
+set "JAR=dist\IBC-Manager-2.1.0.jar"
+if not exist "%JAR%" set "JAR=IBC-Manager-2.1.0.jar"
 
 if exist "%JAR%" goto bootstrap_runtime
 
@@ -32,7 +32,7 @@ if not "%RESULT%"=="0" (
   echo [IBC Manager] The source build failed. Review the messages above.
   exit /b %RESULT%
 )
-set "JAR=dist\IBC-Manager-2.0.3.jar"
+set "JAR=dist\IBC-Manager-2.1.0.jar"
 if not exist "%JAR%" (
   echo [IBC Manager] The build completed without creating %JAR%.
   exit /b 2
@@ -63,6 +63,6 @@ if not "%RESULT%"=="0" (
 exit /b 0
 
 :jar_missing
-echo [IBC Manager] IBC-Manager-2.0.3.jar or its source build driver was not found.
+echo [IBC Manager] IBC-Manager-2.1.0.jar or its source build driver was not found.
 echo [IBC Manager] Extract the complete release archive, or run this launcher from the complete source tree.
 exit /b 2

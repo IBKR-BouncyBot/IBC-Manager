@@ -1,32 +1,38 @@
-# IBC Manager 2.0.3 release review
+# IBC Manager 2.1.0 - scoped compatibility and diagnostics review
 
-Scope: status wording, removal of the permanent Overview API notice, current GUI
-screenshot, GitHub README, supplied Thank me section, unchanged GPL licence.
+## Scope
 
-Baseline: supplied 2.0.2 source, independently rebuilt before modification; 639
-headless cases / 8,684 assertions passed on Linux/OpenJDK 21.0.12.1.
+Reviewed against the latest supplied JavaFX-complete 2.1.0 source, not a rebuilt
+older release. Changes are localized to managed runtime selection/validation,
+server-rejection reporting, read-only diagnostic collection and tests/documentation.
+Windows bootstrap and launch-resource scripts are unchanged. Historical review notes
+in docs describe their original releases; TEST_REPORT.md is the current execution record.
 
-Runtime changes are string replacements in ProfileRuntimeController only. No
-condition, state assignment, timeout, process call, command, credential operation,
-profile codec or listener probe is modified. All maintained engine source,
-resources, patches and reference bytes remain identical to 2.0.2. The embedded
-engine payload is compared byte-for-byte at the final gate.
+## Safety boundaries checked
 
-StatusIndicator maps all existing states to readable labels while retaining colour
-semantics. Overview uses short labels and a diagnostic-code tooltip. The API
-qualification remains a tooltip, not a claim of a verified bot/account session.
-The sidebar uses escaped two-line text to avoid clipping long status headlines.
-The real GUI smoke checks the footer's absence and hover explanation's presence.
+- Only the exact requested Windows-x64 vanilla JBR25.0.4-b508.27 URL is selected.
+  There is no fallback to a moving release; JavaFX stays on its existing stable25 line.
+- A prior owned/shared different build is not silently reused, deleted or upgraded.
+  Existing transactional removal and reinstall support remain, including failed commits.
+- No spoofed launcher values, disabled TLS, ignored available-hash mismatch, remote
+  log decryption, password export or generic process termination is introduced.
+- Server-rejection detection is exact, bounded, generation-aware, and non-clicking.
+  Explicit Stop and a later genuinely new engine retain existing lifecycle behavior.
+- Diagnostic work happens only when requested. It uses named local roots and bounded
+  files/directories/depth, does not execute native launchers, and reports omissions.
+- New broker-log redaction precedes generic command filtering to avoid hiding a
+  credential label while leaving its value. Headers, compound hashes, keys, session
+  paths, account IDs and secret environment variables have negative tests.
+- The selected native-launcher identity strings are evidence only, never interpreted
+  as a command or applied to startup. Embedded templates can differ from runtime values.
+- Engine revision/cache is advanced to manager.6 for the new handler/event. Logical
+  patches reproduce the maintained source; archival upstream/licence bytes are retained.
 
-README content is based on current code and the supplied BouncyBot README. The
-Thank me section is copied byte-for-byte as text; its referral offer is supplied
-wording, not a newly verified commercial offer. The BouncyBot noncommercial licence
-is not copied. All existing Manager/engine licence texts are retained unchanged.
+## Remaining qualification
 
-The screenshot fixture uses the actual MainFrame and demo paper-profile snapshots.
-No Gateway launch, real account, credential retrieval or broker API call occurs.
-The capture is visibly labelled and documented, and fixture code is test-only.
-
-See TEST_REPORT.md and actual validation logs for final measurements. Linux unit
-and GUI fixtures do not constitute native Windows/Gateway acceptance. No claim of
-resolved real-world phone notification delivery is made by this display-only release.
+No Windows/JBR25/IBKR process was run here. Synthetic network/native-launcher/module
+fixtures do not prove publisher availability, real server acceptance or exact PE-resource
+layout. Pinning returns to the earlier manually successful runtime, but a real login and
+locked disconnected-RDP restart remain required. Encrypted application logs still need
+Gateway/TWS's export-to-plaintext path. Redaction is best effort; inspect logs for private
+trading/account details before sharing.

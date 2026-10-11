@@ -1,6 +1,7 @@
 package io.github.ibcmanager.runtime;
 
 import io.github.ibcmanager.config.RuntimeConfigLease;
+import io.github.ibcmanager.security.SecretRedactor;
 
 import java.io.FileDescriptor;
 import java.io.FileOutputStream;
@@ -45,11 +46,11 @@ public final class BufferedProcessRelay {
             return 66;
         }
 
-        byte[] initial = descriptor.initialLogText().getBytes(StandardCharsets.UTF_8);
+        byte[] initial = SecretRedactor.redact(descriptor.initialLogText()).getBytes(StandardCharsets.UTF_8);
         try (PeriodicByteLog log = new PeriodicByteLog(
                 descriptor.logFile(), descriptor.flushInterval(), initial)) {
             OutputStream live = new FileOutputStream(FileDescriptor.out);
-            boolean liveAvailable = writeLive(live, initial);
+            boolean[] liveAvailable = {writeLive(live, initial)};
 
             ProcessBuilder builder = new ProcessBuilder(descriptor.command());
             builder.directory(descriptor.workingDirectory().toFile());
@@ -62,18 +63,15 @@ public final class BufferedProcessRelay {
                 byte[] message = ("IBC Manager process relay: launch failed: " + safeMessage(ex)
                         + System.lineSeparator()).getBytes(StandardCharsets.UTF_8);
                 log.append(message, 0, message.length);
-                if (liveAvailable) writeLive(live, message);
+                if (liveAvailable[0]) writeLive(live, message);
                 return finishWithCleanup(descriptor, log, live, START_FAILURE_EXIT_CODE);
             }
 
-            byte[] buffer = new byte[16 * 1024];
             try (InputStream input = child.getInputStream()) {
-                int count;
-                while ((count = input.read(buffer)) >= 0) {
-                    if (count == 0) continue;
-                    log.append(buffer, 0, count);
-                    if (liveAvailable) liveAvailable = writeLive(live, buffer, 0, count);
-                }
+                RedactedProcessOutput.relay(input, bytes -> {
+                    log.append(bytes, 0, bytes.length);
+                    if (liveAvailable[0]) liveAvailable[0] = writeLive(live, bytes);
+                });
             }
             int exitCode = child.waitFor();
             return finishWithCleanup(descriptor, log, live, exitCode);
@@ -125,6 +123,7 @@ public final class BufferedProcessRelay {
 
     private static String safeMessage(IOException failure) {
         String message = failure.getMessage();
-        return message == null || message.isBlank() ? failure.getClass().getSimpleName() : message;
+        return message == null || message.isBlank() ? failure.getClass().getSimpleName()
+                : SecretRedactor.redact(message);
     }
 }

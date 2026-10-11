@@ -86,6 +86,7 @@ public final class DiagnosticBundleService {
                 addTail(zip, paths.profileLog(profile.id()), "profile-log-tail.txt");
                 addLiveRuntimeLog(zip, liveRuntimeLog);
                 addTail(zip, paths.appLog(), "manager-log-tail.txt");
+                new ApplicationLogCollector(profile).collect(zip, paths);
             }
 
             target = reserveUniqueTarget(paths.diagnostics(), stem);
@@ -141,10 +142,13 @@ public final class DiagnosticBundleService {
                 + "Enabled: " + profile.enabled() + "\n"
                 + "Target: " + profile.targetType() + "\n"
                 + "Trading mode: " + profile.tradingMode() + "\n"
-                + "IB Gateway version: " + profile.twsMajorVersion() + "\n"
+                + "TWS/Gateway version: " + profile.twsMajorVersion() + "\n"
                 + "Ignored legacy IBC path: " + profile.ibcPath() + "\n"
-                + "Gateway program path: " + profile.twsPath() + "\n"
+                + "Application program path: " + profile.twsPath() + "\n"
                 + "Settings path: " + profile.twsSettingsPath() + "\n"
+                + "Managed headless runtime: " + profile.managedHeadlessRuntime() + "\n"
+                + "Gateway/TWS Java override: " + profile.ibcJavaPath() + "\n"
+                + "Managed JBR pin: " + io.github.ibcmanager.workaround.RuntimeCatalog.JBR_VERSION + "\n"
                 + "API port: " + profile.apiPort() + "\n"
                 + "Command-server port: " + profile.commandServerPort() + "\n"
                 + "Bind address: " + profile.bindAddress() + "\n"
@@ -226,7 +230,7 @@ public final class DiagnosticBundleService {
         putText(zip, entryName, SecretRedactor.redact(text));
     }
 
-    private static void putText(ZipOutputStream zip, String name, String text) throws IOException {
+    static void putText(ZipOutputStream zip, String name, String text) throws IOException {
         ZipEntry entry = new ZipEntry(name);
         entry.setTime(0L);
         zip.putNextEntry(entry);

@@ -13,6 +13,7 @@ import javax.swing.JCheckBox;
 import javax.swing.JDialog;
 import javax.swing.JList;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 import javax.swing.JMenu;
@@ -77,7 +78,7 @@ public final class GuiSmokeRunner {
                         MainFrame frame = frameRef.get();
                         require(frame != null, "main frame was not created");
                         require(frame.isShowing(), "main frame is not visible");
-                        require(frame.getTitle().startsWith("IBC Manager 2.0.3"), "window title is incorrect");
+                        require(frame.getTitle().startsWith("IBC Manager 2.1.0"), "window title is incorrect");
                         require(frame.getJMenuBar() != null && frame.getJMenuBar().getMenuCount() == 3,
                                 "menu bar is incomplete");
                         JMenu tools = frame.getJMenuBar().getMenu(1);
@@ -121,8 +122,8 @@ public final class GuiSmokeRunner {
                                 "profile status indicator lacks explicit state text");
                         require(components.stream().filter(JButton.class::isInstance)
                                         .map(JButton.class::cast)
-                                        .noneMatch(button -> "Enable API".equals(button.getText())),
-                                "TWS-only ENABLEAPI action must not be offered by a Gateway-only product");
+                                        .noneMatch(button -> "Enable API".equals(button.getText()) && button.isVisible()),
+                                "TWS-only ENABLEAPI is hidden for a Gateway profile");
                         JButton start = named(components, "startProfileButton", JButton.class);
                         JButton stop = named(components, "stopProfileButton", JButton.class);
                         JButton forceStop = named(components, "forceStopProfileButton", JButton.class);
@@ -154,6 +155,21 @@ public final class GuiSmokeRunner {
                         require(profileDialog != null && profileDialog.isShowing(),
                                 "profile editor was not created and displayed");
                         List<Component> profileComponents = descendants(profileDialog);
+                        JButton copyButton = named(components, "copyProfileButton", JButton.class);
+                        require(copyButton.isEnabled(), "Copy profile is available for a selected profile");
+                        javax.swing.JComboBox<?> application = named(profileComponents, "applicationTypeBox", javax.swing.JComboBox.class);
+                        require(application.getItemCount() == 2, "Gateway and TWS are offered");
+                        application.setSelectedItem(io.github.ibcmanager.model.TargetType.TWS);
+                        require(application.getSelectedItem() == io.github.ibcmanager.model.TargetType.TWS, "TWS selection persists");
+                        application.setSelectedItem(io.github.ibcmanager.model.TargetType.GATEWAY);
+                        JCheckBox workaround = named(profileComponents, "managedHeadlessRuntimeBox", JCheckBox.class);
+                        require("Fix Java 25 headless startup with managed JBR + JavaFX".equals(workaround.getText()),
+                                "checkbox must omit the 1050 prefix without changing Java25 compatibility");
+                        require(!workaround.isSelected(), "new profiles do not download a runtime without consent");
+                        answerRuntimeConsent(workaround, JOptionPane.NO_OPTION);
+                        require(!workaround.isSelected(), "declining workaround leaves it disabled");
+                        answerRuntimeConsent(workaround, JOptionPane.YES_OPTION);
+                        require(workaround.isSelected(), "accepted workaround is staged in the editor");
                         require(profileComponents.stream().filter(JLabel.class::isInstance).map(JLabel.class::cast)
                                 .noneMatch(l -> l.getText().contains("Existing/base config")
                                         || l.getText().contains("After IBC exits on 2FA")), "no hidden external or obsolete policy controls");
@@ -195,7 +211,7 @@ public final class GuiSmokeRunner {
                                 "2FA timing must describe the maintained engine timer");
                         require(profileComponents.stream().anyMatch(JScrollPane.class::isInstance),
                                 "profile editor must provide scrolling instead of compressing controls");
-                        profileTabs.setSelectedIndex(profileTabs.indexOfTab("Gateway settings"));
+                        profileTabs.setSelectedIndex(profileTabs.indexOfTab("TWS / Gateway settings"));
                         io.github.ibcmanager.ui.ProfileSettingsTableModel tableModel =
                                 (io.github.ibcmanager.ui.ProfileSettingsTableModel) settings.getModel();
                         int resetRow = -1;
@@ -214,6 +230,8 @@ public final class GuiSmokeRunner {
                         require("60".equals(tableModel.getValueAt(resetRow, 2)), "reset cannot be overwritten by an old cell value");
                         profileDialog.dispose();
                         require(!profileDialog.isDisplayable(), "profile editor did not dispose cleanly");
+                        assertCopyDialog(frame, services, profile, copyButton);
+                        assertTwsDisplay(frame, services, profile);
 
                         assertConfirmationDialog(start, "Confirm start");
                         stop.setEnabled(true);
@@ -243,6 +261,7 @@ public final class GuiSmokeRunner {
                                 .filter(button -> "Close".equals(button.getText())).findFirst().orElseThrow().doClick();
                         require(!about.isDisplayable(), "About Close disposes cleanly");
 
+                        assertDiagnosticExport(frame, services, profile);
                         if (screenshot == null) {
                             frame.dispatchEvent(new WindowEvent(frame, WindowEvent.WINDOW_CLOSING));
                             require(!frame.isDisplayable(), "normal close path did not dispose the window");
@@ -257,12 +276,156 @@ public final class GuiSmokeRunner {
             System.out.println("GUI SMOKE PASSED");
         } finally {
             SwingUtilities.invokeAndWait(() -> {
-                for (Window window : Window.getWindows()) window.dispose();
+                for (Window window : Window.getWindows()) {
+                    if (window instanceof MainFrame frame) {
+                        try {
+                            var field = MainFrame.class.getDeclaredField("uiTimer");
+                            field.setAccessible(true);
+                            ((Timer) field.get(frame)).stop();
+                        } catch (ReflectiveOperationException ex) { throw new AssertionError("GUI timer cleanup failed", ex); }
+                    }
+                    window.dispose();
+                }
             });
             if (previous == null) System.clearProperty("ibcmanager.suppressFirstRunWizard");
             else System.setProperty("ibcmanager.suppressFirstRunWizard", previous);
             TestSupport.deleteTree(root);
         }
+    }
+
+    /** Exercise the actual GUI export callback, not just the already-tested ZIP service. */
+    private static void assertDiagnosticExport(MainFrame frame, AppServices services, Profile profile) throws Exception {
+        var controller = services.runtimeRegistry().controller(profile.id()).orElseThrow();
+        String marker = "GUI_DIAGNOSTIC_BUFFER_ONLY_SENTINEL";
+        java.nio.file.Files.writeString(profile.twsSettingsPath().resolve("launcher.log"), "GUI_BROKER_LAUNCHER_SENTINEL token=broker-secret\n");
+        controller.logs().append(marker);
+        controller.logs().append("error token=gui-export-secret");
+        Path diskLog = services.paths().profileLog(profile.id());
+        require(!java.nio.file.Files.exists(diskLog) || !java.nio.file.Files.readString(diskLog).contains(marker),
+                "fixture marker must not already exist in the disk tail");
+        java.awt.SecondaryLoop loop = java.awt.Toolkit.getDefaultToolkit().getSystemEventQueue().createSecondaryLoop();
+        AtomicBoolean shown = new AtomicBoolean();
+        long deadline = System.nanoTime() + java.time.Duration.ofSeconds(15).toNanos();
+        Timer closer = new Timer(40, null);
+        closer.addActionListener(event -> {
+            for (Window window : Window.getWindows()) {
+                if (window instanceof JDialog dialog && dialog.isShowing() && "Diagnostics".equals(dialog.getTitle())) {
+                    shown.set(true);
+                    descendants(dialog).stream().filter(javax.swing.JOptionPane.class::isInstance)
+                            .map(javax.swing.JOptionPane.class::cast).findFirst()
+                            .ifPresent(pane -> pane.setValue(javax.swing.JOptionPane.NO_OPTION));
+                    dialog.dispose(); closer.stop(); SwingUtilities.invokeLater(loop::exit);
+                    return;
+                }
+            }
+            if (System.nanoTime() >= deadline) { closer.stop(); loop.exit(); }
+        });
+        try {
+            closer.start();
+            var export = MainFrame.class.getDeclaredMethod("exportDiagnostics"); export.setAccessible(true);
+            export.invoke(frame);
+            loop.enter();
+            require(shown.get(), "GUI export must complete and report its bundle");
+            Path archive;
+            try (var files = java.nio.file.Files.list(services.paths().diagnostics())) {
+                archive = files.filter(p -> p.toString().endsWith(".zip")).findFirst().orElseThrow();
+            }
+            try (var zip = new java.util.zip.ZipFile(archive.toFile())) {
+                String live = new String(zip.getInputStream(zip.getEntry("live-runtime-log.txt")).readAllBytes(),
+                        java.nio.charset.StandardCharsets.UTF_8);
+                require(live.contains(marker), "actual GUI export must include the current in-memory log");
+                require(!live.contains("gui-export-secret"), "GUI export must redact live error text");
+                require(!live.contains("No in-memory runtime log"), "the UI must not call the empty-log overload");
+                require(zip.getEntry("application-log-inventory.txt") != null, "real GUI export adds application log inventory");
+                StringBuilder brokerLogs = new StringBuilder();
+                for (var entry : java.util.Collections.list(zip.entries())) if (entry.getName().startsWith("application-logs/")) {
+                    brokerLogs.append(new String(zip.getInputStream(entry).readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+                }
+                require(brokerLogs.toString().contains("GUI_BROKER_LAUNCHER_SENTINEL"), "real UI includes launcher.log");
+                require(!brokerLogs.toString().contains("broker-secret"), "broker log content is redacted through GUI");
+            }
+        } finally { closer.stop(); }
+    }
+
+    private static void assertCopyDialog(MainFrame frame, AppServices services, Profile original, JButton action) throws Exception {
+        AtomicBoolean copied = new AtomicBoolean();
+        AtomicReference<Throwable> problem = new AtomicReference<>();
+        Timer responder = new Timer(40, null);
+        responder.addActionListener(event -> {
+            for (Window window : Window.getWindows()) {
+                if (!(window instanceof JDialog dialog) || !dialog.isShowing()) continue;
+                if ("Copy profile".equals(dialog.getTitle())) {
+                    descendants(dialog).stream().filter(JOptionPane.class::isInstance).map(JOptionPane.class::cast)
+                            .findFirst().ifPresent(pane -> pane.setValue(JOptionPane.OK_OPTION));
+                } else if (dialog.getTitle().startsWith("Copy profile - ")) {
+                    try {
+                        var source = ProfileEditorDialog.class.getDeclaredField("source"); source.setAccessible(true);
+                        Profile clone = (Profile) source.get(dialog);
+                        require(!clone.id().equals(original.id()), "actual Copy callback allocates a new identity");
+                        require(!clone.enabled() && !clone.autoStart(), "actual Copy callback cannot auto-launch a session");
+                        require(clone.credentialMode() == io.github.ibcmanager.model.CredentialMode.MANUAL, "Copy does not borrow the password association");
+                        copied.set(true);
+                    } catch (Throwable failure) { problem.set(failure); }
+                    finally { dialog.dispose(); responder.stop(); }
+                }
+            }
+        });
+        responder.start(); action.doClick(); responder.stop();
+        if (problem.get() != null) throw new AssertionError("Copy callback failed", problem.get());
+        require(copied.get(), "actual Copy toolbar opens an independently editable profile");
+        require(services.profileRepository().loadAll().profiles().size() == 1, "cancelling Copy saves nothing");
+        require(services.profileRepository().loadAll().profiles().get(0).id().equals(original.id()), "original is unchanged");
+    }
+
+    private static void assertTwsDisplay(MainFrame frame, AppServices services, Profile original) throws Exception {
+        Profile tws = original.toBuilder().id(java.util.UUID.randomUUID()).name("TWS display fixture")
+                .targetType(io.github.ibcmanager.model.TargetType.TWS).enabled(false).autoStart(false)
+                .apiPort(7497).commandServerPort(7498).build();
+        var load = MainFrame.class.getDeclaredMethod("loadProfiles"); load.setAccessible(true);
+        var select = MainFrame.class.getDeclaredMethod("selectProfile", java.util.UUID.class); select.setAccessible(true);
+        services.profileRepository().save(tws); load.invoke(frame); select.invoke(frame, tws.id());
+        List<Component> all = descendants(frame);
+        JButton enable = named(all, "enableApiButton", JButton.class);
+        require(enable.isVisible(), "TWS has its own Enable API control");
+        require(!enable.isEnabled(), "TWS API control stays disabled before the actual session is ready");
+        JLabel headline = named(all, "profileStatusIndicatorHeadline", JLabel.class);
+        require(headline.getText().contains("TWS"), "TWS is not presented as a Gateway session");
+        services.profileRepository().delete(tws.id()); load.invoke(frame); select.invoke(frame, original.id());
+        require(!enable.isVisible(), "Gateway does not expose TWS-only API commands");
+    }
+
+    private static void answerRuntimeConsent(JCheckBox checkbox, int answer) {
+        AtomicBoolean shown = new AtomicBoolean();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Timer responder = new Timer(40, null);
+        responder.addActionListener(event -> {
+            for (Window window : Window.getWindows()) {
+                if (window instanceof JDialog dialog && dialog.isShowing()
+                        && "Install managed runtime".equals(dialog.getTitle())) {
+                    for (Component child : descendants(dialog)) {
+                        if (child instanceof JOptionPane pane) {
+                            try {
+                                String message = pane.getMessage().toString();
+                                require(message.contains("25.0.4-b508.27"), "consent describes exact pinned runtime");
+                                require(message.contains("width: 540px"), "consent text must wrap on screen");
+                                require(!message.contains("1050 / "), "remove release-specific consent prefix");
+                                require(message.contains("Unavailable checksum or runtime checks") && message.contains("not fully verified"),
+                                        "actual consent explains that unavailable checks are skipped");
+                                require(message.contains("On Save") && message.contains("Manual installations are kept"),
+                                        "actual consent retains timing and removal scope");
+                                require(message.length() < 800, "visible consent is short rather than a technical essay");
+                                shown.set(true);
+                            } catch (Throwable ex) { failure.set(ex); }
+                            finally { pane.setValue(answer); responder.stop(); }
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+        responder.start(); checkbox.doClick(); responder.stop();
+        if (failure.get() != null) throw new AssertionError("Runtime consent check failed", failure.get());
+        require(shown.get(), "checkbox shows a real consent dialog");
     }
 
     private static void assertConfirmationDialog(JButton button, String expectedTitle) {

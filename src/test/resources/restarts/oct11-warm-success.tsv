@@ -1,0 +1,18 @@
+# Sanitized selected stdout milestones; milliseconds relative to first printed timestamp.
+0	2026-10-11 13:10:00:739 IBC: detected dialog entitled: Restart in progress; event=Activated
+1	2026-10-11 13:10:00:740 IBC: detected dialog entitled: Restart in progress; event=Focused
+2	2026-10-11 13:10:00:741 IBC: detected dialog entitled: Restart in progress; event=Opened
+2	Program has exited
+2	Error level is 0
+2	IBC will autorestart shortly
+2	Starting IBC with this command:
+2	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000001|1|ENGINE_STARTED
+4482	2026-10-11 13:10:05:221 IBC: CommandServer started and is ready to accept commands
+4482	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000001|2|COMMAND_SERVER_READY
+4576	2026-10-11 13:10:05:315 IBC: Re-starting session
+4585	2026-10-11 13:10:05:324 IBC: Starting Gateway
+4585	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000001|3|GATEWAY_STARTING
+8499	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000001|4|MAIN_WINDOW_READY
+8518	2026-10-11 13:10:09:257 IBC: Login dialog WINDOW_OPENED: LoginState is LOGGED_OUT
+13013	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000001|5|LOGIN_LOGGED_IN
+13013	2026-10-11 13:10:13:752 IBC: Login has completed

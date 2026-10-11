@@ -18,11 +18,11 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
-      - name: Set up Java 17
+      - name: Set up Java 25
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: '17'
+          distribution: microsoft
+          java-version: '25'
       - name: Clean build, tests, JAR smoke, and distributions
         shell: bash
         run: java src/build/java/io/github/ibcmanager/build/BuildProject.java clean test jar smoke dist
@@ -41,11 +41,11 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
-      - name: Set up Java 17
+      - name: Set up Java 25
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: '17'
+          distribution: microsoft
+          java-version: '25'
       - name: Install virtual display
         run: sudo apt-get update && sudo apt-get install -y xvfb
       - name: Run real-window Swing smoke test

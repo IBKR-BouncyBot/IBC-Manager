@@ -1,3 +1,6 @@
 0001-manager-integration.patch
 0002-second-factor-deadline.patch
 0003-returned-login-retry.patch
+0004-headless-command-dispatch.patch
+0005-tws-restoration.patch
+0006-invalid-twsinfo.patch

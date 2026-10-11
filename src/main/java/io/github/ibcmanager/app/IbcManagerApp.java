@@ -45,11 +45,16 @@ public final class IbcManagerApp {
                     + "; upstream " + Version.IBC_MINIMUM_SUPPORTED_VERSION + ")");
             return 0;
         }
+        if (OperatingSystem.current() == OperatingSystem.WINDOWS && Runtime.version().feature() != 25) {
+            System.err.println("IBC Manager 2.1 requires Java 25. Run run.bat to select/install Microsoft OpenJDK 25, "
+                    + "or rebuild the native package with package-windows.bat. Gateway/TWS uses its separate profile runtime.");
+            return 3;
+        }
         AppPaths paths = parsed.dataDirectory == null
                 ? AppPaths.systemDefault() : new AppPaths(parsed.dataDirectory);
         if (parsed.headlessSmoke) return headlessSmoke(paths);
         if (OperatingSystem.current() != OperatingSystem.WINDOWS) {
-            System.err.println("IBC Manager 2.0 supports Windows only; non-Windows hosts may run --headless-smoke for build validation.");
+            System.err.println("IBC Manager 2.1 supports Windows only; non-Windows hosts may run --headless-smoke for build validation.");
             return 3;
         }
         if (GraphicsEnvironment.isHeadless()) {

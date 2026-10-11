@@ -1,0 +1,12 @@
+diff --git a/scripts/StartIBC.bat b/scripts/StartIBC.bat
+--- a/scripts/StartIBC.bat
++++ b/scripts/StartIBC.bat
+@@ -355,7 +355,7 @@
+ set PHASE=Generating the JAVA VM options
+ 
+ set JAVA_VM_OPTIONS=
+-for /f "usebackq tokens=1 delims= " %%i in ("%VMOPTIONS_SOURCE%") do (
++for /f "usebackq tokens=*" %%i in ("%VMOPTIONS_SOURCE%") do (
+ 	set TOKEN=%%i
+ 	if not "!TOKEN!"=="" (
+ 		if not "!TOKEN:~0,1!"=="#" set JAVA_VM_OPTIONS=!JAVA_VM_OPTIONS! %%i

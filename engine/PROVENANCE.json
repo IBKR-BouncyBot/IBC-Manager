@@ -2,7 +2,7 @@
   "upstream_project": "IbcAlpha/IBC",
   "upstream_tag": "3.24.2",
   "upstream_commit": "2be2ecd05d7707f97479fda9ad098fdcc15ab807",
-  "engine_revision": "3.24.2-manager.3",
+  "engine_revision": "3.24.2-manager.6",
   "sources": {
     "IBC-3.24.2.zip": "8e0d2390a619bbcc2de2fb159a8dd8f0acff0a107731d08ec73e999e1cc27d84",
     "IBCWin-3.24.2.zip": "ba8e95f61f3c7c252620baef41e550c6aab98f6034179156e11a9a1623fdd892"
@@ -10,6 +10,13 @@
   "patch_series": [
     "0001-manager-integration.patch",
     "0002-second-factor-deadline.patch",
-    "0003-returned-login-retry.patch"
+    "0003-returned-login-retry.patch",
+    "0004-headless-command-dispatch.patch",
+    "0005-tws-restoration.patch",
+    "0006-invalid-twsinfo.patch"
+  ],
+  "resource_patch_series": [
+    "0001-capture-stderr.patch",
+    "0002-preserve-full-vmoptions.patch"
   ]
 }

@@ -74,12 +74,7 @@ public final class ProfileConfigurationUpgradeService {
         boolean importedCredential = false;
         try {
             Profile updated;
-            if (profile.targetType() != TargetType.GATEWAY) {
-                updated = profile.toBuilder().profileOnlyConfiguration(true).enabled(false).autoStart(false)
-                        .baseConfigPath(Path.of(""))
-                        .credentialMode(profile.credentialMode() == CredentialMode.EXISTING_CONFIG
-                                ? CredentialMode.MANUAL : profile.credentialMode()).build();
-            } else {
+            {
                 IbcConfigDocument effective = configs.loadRuntimeBase(profile).canonicalizedCopy();
                 if (profile.credentialMode() == CredentialMode.EXISTING_CONFIG) {
                     ManagedConfigService.applyProfile(effective, profile);
@@ -103,6 +98,7 @@ public final class ProfileConfigurationUpgradeService {
                     }
                 }
                 updated = ProfileConfiguration.importLegacy(profile, effective, mode);
+                if (profile.targetType() == TargetType.TWS) updated = updated.toBuilder().enabled(false).autoStart(false).build();
                 ProfileConfiguration.document(updated); // validate before writing credentials/profile
                 if (password != null && password.length > 0) {
                     credentials.save(id, password);

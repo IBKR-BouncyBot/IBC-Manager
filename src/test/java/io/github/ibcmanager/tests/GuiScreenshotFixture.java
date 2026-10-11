@@ -43,7 +43,7 @@ final class GuiScreenshotFixture {
         services.runtimeRegistry().close();
         Profile demo = original.toBuilder().name("Demo Gateway - paper").twsMajorVersion("1050").build();
         Profile paused = TestSupport.validProfile(services.paths().root().resolve("screenshot-paused"))
-                .toBuilder().name("Demo paused session").apiPort(4012).commandServerPort(7472).build();
+                .toBuilder().name("Demo TWS - paused").targetType(io.github.ibcmanager.model.TargetType.TWS).apiPort(7497).commandServerPort(7472).build();
         services.profileRepository().save(demo);
         services.profileRepository().save(paused);
         AtomicReference<Throwable> failure = new AtomicReference<>();
@@ -57,7 +57,7 @@ final class GuiScreenshotFixture {
                     select.invoke(frame, demo.id());
                     ProfileRuntimeController live = services.runtimeRegistry().controller(demo.id()).orElseThrow();
                     ProfileRuntimeController idle = services.runtimeRegistry().controller(paused.id()).orElseThrow();
-                    Instant at = Instant.parse("2026-10-09T08:15:00Z");
+                    Instant at = Instant.parse("2026-10-11T14:55:00Z");
                     set(live, "process", new DisplayProcess(at));
                     IbcLogStateParser parser = (IbcLogStateParser) field(live, "stateParser");
                     parser.accept("Login has completed");
@@ -68,7 +68,7 @@ final class GuiScreenshotFixture {
                             "Gateway's API listener is available on 127.0.0.1:4002 (PID 42024).", at));
                     set(idle, "status", new ProfileStatus(paused.id(), RuntimeState.PAUSED,
                             false, false, PortListenerState.NOT_LISTENING, -1, null, 0,
-                            "Gateway is paused. Use Start to resume the session.", at));
+                            "TWS is paused. Use Start to resume the session.", at));
                     invoke(frame, "refreshSelected");
                     ((JLabel) field(frame, "statusBar")).setText("IBC Manager " + Version.VERSION
                             + " GUI smoke test - simulated paper profiles; no Gateway or broker connection");

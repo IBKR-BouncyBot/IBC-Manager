@@ -29,8 +29,8 @@ public final class AboutDialog {
         body.add(title);
         body.add(new JLabel("Version " + Version.VERSION));
         body.add(new JLabel("Included engine " + Version.ENGINE_VERSION));
-        body.add(new JLabel("Based on IBC " + Version.IBC_MINIMUM_SUPPORTED_VERSION + "; Manager requires Java 17+"));
-        body.add(new JLabel("Windows-only; IB Gateway profiles, configuration, recovery, and diagnostics."));
+        body.add(new JLabel("Based on IBC " + Version.IBC_MINIMUM_SUPPORTED_VERSION + "; Manager requires Java 25"));
+        body.add(new JLabel("Windows-only; TWS and IB Gateway profiles, configuration, recovery, and diagnostics."));
         body.add(new JLabel("Maintained IBC-derived engine included; GPLv3-or-later source supplied."));
         JLabel thanks = new JLabel("Thank you to Richard L King (rlktradewright), author and long-time maintainer of IBC.");
         thanks.setName("ibcAuthorAcknowledgement");

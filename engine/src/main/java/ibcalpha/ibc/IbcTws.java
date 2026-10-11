@@ -16,7 +16,7 @@
 // You should have received a copy of the GNU General Public License
 // along with IBC.  If not, see <http://www.gnu.org/licenses/>.
 
-// IBC Manager integration: Gateway-only startup via reflection; no proprietary build dependency.
+// IBC Manager integration: TWS/Gateway startup via reflection; no proprietary build dependency.
 package ibcalpha.ibc;
 
 import java.awt.AWTEvent;
@@ -209,14 +209,23 @@ public class IbcTws {
 
     private IbcTws() { }
 
-    /** Kept for upstream source compatibility; TWS is not an executable product mode. */
+    /** Windows TWS entry; Gateway continues to use IbcGateway. */
     public static void main(final String[] args) throws Exception {
-        throw new UnsupportedOperationException("IBC Manager 2.0 supports IB Gateway only");
+        if (Thread.getDefaultUncaughtExceptionHandler() == null) {
+            Thread.setDefaultUncaughtExceptionHandler(new ibcalpha.ibc.UncaughtExceptionHandler());
+        }
+        if (!System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("windows")) {
+            throw new IllegalStateException("IBC Manager engine supports Windows only");
+        }
+        checkArguments(args);
+        setupDefaultEnvironment(args, false);
+        if (Settings.settings().getBoolean("FIX", false)) throw new IllegalArgumentException("FIX is not supported");
+        EngineEvents.emit("ENGINE_STARTED");
+        load();
     }
 
     static void setupDefaultEnvironment(final String[] args, final boolean isGateway) throws Exception {
-        if (!isGateway) throw new UnsupportedOperationException("IB Gateway only");
-        SessionManager.initialise(true);
+        SessionManager.initialise(isGateway);
         Settings.initialise(new DefaultSettings(args));
         LoginManager.initialise(new DefaultLoginManager(args));
         MainWindowManager.initialise(new DefaultMainWindowManager());
@@ -302,6 +311,7 @@ public class IbcTws {
     private static List<WindowHandler> createWindowHandlers() {
         List<WindowHandler> windowHandlers = new ArrayList<>();
 
+        windowHandlers.add(new InvalidTwsInfoDialogHandler());
         windowHandlers.add(new AcceptIncomingConnectionDialogHandler());
         windowHandlers.add(new BlindTradingWarningDialogHandler());
         windowHandlers.add(new LoginFrameHandler());
@@ -477,6 +487,18 @@ public class IbcTws {
         }
     }
 
+    private static void startTws() {
+        if (Settings.settings().getBoolean("ShowAllTrades", false)) Utils.showTradesLogWindow();
+        try {
+            Utils.logToConsole("Starting TWS");
+            EngineEvents.emit("TWS_STARTING");
+            TwsEntrypoint.invoke(new String[] {getTWSSettingsDirectory()});
+        } catch (Throwable failure) {
+            Utils.logException(failure);
+            Utils.exitWithError(ErrorCodes.CANT_FIND_ENTRYPOINT);
+        }
+    }
+
     private static void startCommandServer() {
         MyCachedThreadPool.getInstance().execute(new CommandServer());
     }
@@ -508,8 +530,8 @@ public class IbcTws {
         Utils.logToConsole("TWS Settings directory is: " + getTWSSettingsDirectory());
         SessionManager.startSession();
         JtsIniManager.initialise(getJtsIniFilePath());
-        if (!SessionManager.isGateway()) throw new UnsupportedOperationException("IB Gateway only");
-        startGateway();
+        if (SessionManager.isGateway()) startGateway();
+        else startTws();
 
         configureResetOrderIdsAtStart();
         configureApiPort();

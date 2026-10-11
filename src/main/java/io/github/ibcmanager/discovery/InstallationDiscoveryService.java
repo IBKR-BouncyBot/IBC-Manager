@@ -53,7 +53,7 @@ public final class InstallationDiscoveryService {
         Objects.requireNonNull(twsRoots, "twsRoots");
         List<DetectedInstallation> result = new ArrayList<>();
         for (AppInstallation app : findApplications(twsRoots)) {
-            result.add(new DetectedInstallation(Path.of(""), app.root(), app.root(), TargetType.GATEWAY, app.version()));
+            result.add(new DetectedInstallation(Path.of(""), app.root(), app.root(), app.targetType(), app.version()));
         }
         return result.stream().distinct().sorted(ORDER).toList();
     }
@@ -72,6 +72,7 @@ public final class InstallationDiscoveryService {
         for (Path root : normalizeDistinct(roots)) {
             Path normalizedRoot = realOrNormalized(root);
 
+            scanVersionChildren(normalizedRoot, normalizedRoot, TargetType.TWS, result);
             scanVersionChildren(normalizedRoot.resolve("ibgateway"), normalizedRoot, TargetType.GATEWAY, result);
         }
         return result.stream()

@@ -40,3 +40,46 @@ not approval bypass. The Manager must remain active for its recovery watchdog.
 Migration backups are protected but may contain sensitive historical settings.
 Keep complete stopped backups until acceptance passes. Never concurrently run old
 and new Manager versions against the same data directory.
+
+In 2.0.4 the relay redacts complete logical stdout/stderr lines before live/disk
+output. Lines exceeding 64 Ki characters are omitted in full, not partially exposed.
+This is best-effort pattern redaction, not a guarantee that all arbitrary personal
+information or secrets are recognized. Windows/Gateway native logs outside this
+relay keep their own logging and protection rules.
+
+## 2.1.0 runtime downloads
+
+Runtime installation is explicit and checks publisher hashes over TLS before executing
+the downloaded Java module probe. Only approved HTTPS locations are followed. Owned
+payload integrity is checked before launch/removal. Setup changes a shared installation
+file, so all sessions using it must be stopped; manually launched or separately managed
+processes must also be stopped by the operator. Private journals are not public logs.
+
+Removal preserves manual runtime folders and conflicting changes. It tracks both the
+profile UUID and data directory and keeps a hash receipt during partial deletion.
+Do not relocate an enabled owned installation or edit its journals to bypass checks.
+Publisher checksums establish transfer integrity, not IBKR certification or a guarantee
+against a compromised publisher. Native Windows/Java 25 acceptance is separate from
+Linux fixture tests. No Windows lock, RDP, VDD or authentication bypass is performed.
+
+## JavaFX repository checksum compatibility
+
+Maven SHA-256 is optional. Setup permits SHA-1 only on a direct, typed HTTP 404 for
+the exact selected JavaFX SHA-256 sidecar, fetched from the approved HTTPS publisher.
+No response-body/message parsing converts an error into permission to downgrade.
+Invalid/mismatched SHA-256, other status codes, transport failures and missing JARs
+fail closed. SHA-1 is not collision-resistant and is not a publisher signature;
+transport authenticity relies on TLS and the repository. No MD5 fallback exists.
+The local SHA-256 audit manifest continues to protect later reuse from byte changes.
+
+## Managed-runtime publisher checksum availability (2.1.0)
+
+The explicitly consented workaround may now install JBR or JavaFX artifacts whose
+publisher checksum cannot be downloaded. Available SHA-512/SHA-256/SHA-1 checksums
+are still checked; disagreement or malformed successful responses are not bypassed.
+Unavailable checksum downloads are disclosed in progress, the log and provenance.
+Only approved HTTPS resources are used. TLS identity failures, unsafe redirects,
+required artifacts and compatibility checks remain blocking. Local SHA-256 hashes
+protect subsequent integrity checks but do not establish publisher authenticity.
+This exception does not apply to Manager's Microsoft-Java prerequisite bootstrap,
+embedded-engine verification, build/test gates, or already-installed payload hashes.

@@ -81,6 +81,13 @@ public final class ControllerTests implements TestSuite {
                         this::unknownApiListenerState),
                 new NamedTest("login-completed and error log states are reported", this::runningAndErrorStates),
                 new NamedTest("command-server readiness is reported while login is pending", this::commandReadyState),
+                new NamedTest("repeated one-minute child failures reach one bounded full recovery", this::repeatedChildRecovery),
+                new NamedTest("failed child loop after recovery stays failed without another force restart", this::repeatedFreshFailure),
+                new NamedTest("disabled recovery reports aggregate failure rather than restarting", this::repeatedRecoveryDisabled),
+                new NamedTest("owned API progress clears stale startup age before later restarts", this::apiResetsEpisode),
+                new NamedTest("late authentication in a replacement child cancels stale cleanup", this::replacementLoginProgress),
+                new NamedTest("exited failed child is not mistaken for recovery progress", this::queuedChildFailure),
+                new NamedTest("unrelated API port never permits cleanup of an overdue retry loop", this::repeatedUnrelatedListener),
                 new NamedTest("a launch with no login or API progress becomes an explicit startup stall",
                         this::startupStall),
                 new NamedTest("failed graceful stop of a startup stall preserves an actionable recovery state",
@@ -134,6 +141,8 @@ public final class ControllerTests implements TestSuite {
                         this::normalScheduledExit),
                 new NamedTest("exact IBC 3.24.2 error-exit marker survives to final failure state",
                         this::reportedErrorExit),
+                new NamedTest("JVM dependency error is ERROR despite wrapper zero exit and normal footer", this::javaBootstrapError),
+                new NamedTest("server invalid twsInfo remains ERROR while alive and after zero-code exit", this::invalidTwsInfo),
                 new NamedTest("IBC error marker outranks StartIBC's generic normal-exit footer",
                         this::reportedErrorWithNormalFooter),
                 new NamedTest("configuration commits are blocked throughout recovery including cooldown", this::configurationDuringRecovery),
@@ -142,6 +151,14 @@ public final class ControllerTests implements TestSuite {
                 new NamedTest("manager exit leaves active wrapper configuration to the detached relay", this::prepareExit),
                 new NamedTest("failed final runtime-config cleanup remains visible and blocks exit", this::scrubFailure),
                 new NamedTest("controller reattaches to an exact live process identity", this::reattach),
+                new NamedTest("reattached Force Stop tolerates a delayed parent Process exit observation",
+                        this::reattachDelayedObservation),
+                new NamedTest("reattachment exit verification rejects a still-live child within its deadline",
+                        this::exitObservationRejectsLiveProcess),
+                new NamedTest("reattachment exit verification accepts an already-exited child",
+                        this::exitObservationAcceptsExitedProcess),
+                new NamedTest("reattachment exit verification propagates an interrupted wait",
+                        this::exitObservationPreservesInterruption),
                 new NamedTest("runtime registry sorts updates and removes stopped controllers", this::registryProfiles),
                 new NamedTest("runtime registry retains omitted running controllers", this::registryRetainsRunning),
                 new NamedTest("runtime registry defers profile replacement during automatic recovery",
@@ -547,6 +564,126 @@ public final class ControllerTests implements TestSuite {
         }
     }
 
+    private static void childLaunch(Fixture f) throws Exception {
+        f.appendLog("Starting IBC with this command: fixture child");
+        f.appendLog("IBC: Starting Gateway");
+        f.controller.refresh();
+    }
+
+    private static void repeatedChildFailures(Fixture f) throws Exception {
+        for (int i = 0; i < 5; i++) {
+            childLaunch(f);
+            f.clock.advance(Duration.ofSeconds(60));
+            f.appendLog("IBC: Exiting after error with exit code=1112");
+            f.appendLog("Program has exited");
+            f.appendLog("IBC will restart shortly due to login dialog display timeout");
+            f.controller.refresh();
+            f.clock.advance(Duration.ofSeconds(2));
+        }
+        childLaunch(f);
+    }
+
+    private void repeatedChildRecovery() throws Exception {
+        try (Fixture f = new Fixture(CredentialMode.MANUAL)) {
+            f.profile = f.profile.toBuilder().autoRecoverStartupStall(true).build(); f.rebuildController();
+            f.controller.start(); repeatedChildFailures(f);
+            Assertions.equals(RuntimeState.STARTUP_STALLED, f.controller.status().state(), "overall episode classified");
+            Assertions.contains(f.controller.status().message(), "6 Gateway child launches", "attempts exposed");
+            Assertions.equals(1, f.recoveryExecutor.size(), "one bounded recovery task");
+            f.process.exitOnWait = true;
+            FakeProcess replacement = new FakeProcess(); f.launcher.nextProcess = replacement;
+            f.recoveryExecutor.runNext(); f.process = replacement; f.ports.apiOwnerPid = replacement.pid();
+            Assertions.equals(2, f.launcher.calls, "one new wrapper, not six new Manager launches");
+            Assertions.equals(List.of(IbcCommand.STOP), f.commands.commands, "one graceful stop");
+            f.ports.apiOpen = true; f.controller.refresh();
+            Assertions.equals(RuntimeState.API_LISTENER_DETECTED, f.controller.status().state(), "healthy replacement recognized");
+            Assertions.isFalse(f.controller.recoveryRequiresManualIntervention(), "successful recovery clears pending record");
+        }
+    }
+
+    private void repeatedFreshFailure() throws Exception {
+        try (Fixture f = automaticRecoveryFixture()) {
+            f.process.exitOnWait = true;
+            FakeProcess replacement = new FakeProcess(); f.launcher.nextProcess = replacement;
+            f.recoveryExecutor.runNext(); f.process = replacement; f.ports.apiOwnerPid = replacement.pid();
+            repeatedChildFailures(f);
+            Assertions.equals(RuntimeState.RECOVERY_FAILED, f.controller.status().state(), "fresh loop is not endless STARTING_FRESH");
+            Assertions.equals(0, f.recoveryExecutor.size(), "pending recovery forbids another destructive attempt");
+            Assertions.equals(2, f.launcher.calls, "no duplicate wrapper");
+            f.appendLog("IBC: Exiting after error with exit code=1112");
+            f.appendLog("Program has exited");
+            f.appendLog("IBC will restart shortly due to login dialog display timeout");
+            f.controller.refresh();
+            Assertions.equals(RuntimeState.RECOVERY_FAILED, f.controller.status().state(), "between-child retry cannot hide failure");
+            f.clock.advance(Duration.ofSeconds(65)); childLaunch(f);
+            Assertions.equals(RuntimeState.RECOVERY_FAILED, f.controller.status().state(), "further inner retries cannot hide failure");
+            Assertions.equals(0, f.recoveryExecutor.size(), "still no second recovery");
+            f.appendLog("Second Factor Authentication initiated"); f.controller.refresh();
+            Assertions.equals(RuntimeState.WAITING_FOR_SECOND_FACTOR, f.controller.status().state(), "real progress remains protected");
+            Assertions.isTrue(replacement.isAlive(), "no forced kill during legitimate approval");
+        }
+    }
+
+    private void repeatedRecoveryDisabled() throws Exception {
+        try (Fixture f = startedFixture(CredentialMode.MANUAL)) {
+            repeatedChildFailures(f);
+            Assertions.equals(RuntimeState.STARTUP_STALLED, f.controller.status().state(), "aggregate failure visible");
+            Assertions.equals(0, f.recoveryExecutor.size(), "disabled is respected");
+            Assertions.equals(List.of(), f.commands.commands, "no command automatically sent");
+        }
+    }
+
+    private void apiResetsEpisode() throws Exception {
+        try (Fixture f = startedFixture(CredentialMode.MANUAL)) {
+            childLaunch(f); f.clock.advance(Duration.ofSeconds(299));
+            f.ports.apiOpen = true; f.controller.refresh();
+            f.clock.advance(Duration.ofHours(8)); f.ports.apiOpen = false;
+            f.controller.refresh();
+            Assertions.isFalse(f.controller.status().state() == RuntimeState.STARTUP_STALLED,
+                    "old successful startup cannot become a stall after listener disappears");
+            childLaunch(f); f.clock.advance(Duration.ofSeconds(299)); f.controller.refresh();
+            Assertions.isFalse(f.controller.status().state() == RuntimeState.STARTUP_STALLED, "later child has its own new episode");
+            f.clock.advance(Duration.ofSeconds(1)); f.controller.refresh();
+            Assertions.equals(RuntimeState.STARTUP_STALLED, f.controller.status().state(), "future failure still detected");
+        }
+    }
+
+    private void queuedChildFailure() throws Exception {
+        try (Fixture f = automaticRecoveryFixture()) {
+            f.appendLog("IBC: Exiting after error with exit code=1112");
+            f.appendLog("Program has exited");
+            f.appendLog("IBC will restart shortly due to login dialog display timeout");
+            f.recoveryExecutor.runNext();
+            assertRecoveryFailedWithoutTermination(f);
+            Assertions.equals(List.of(), f.commands.commands, "do not send stale STOP to the next child");
+            Assertions.isTrue(new RecoveryHistoryStore(f.paths).snapshot(f.profile.id(), f.clock.instant()).awaitingHealthy(),
+                    "timeout exit does not clear the unresolved recovery");
+        }
+    }
+
+    private void replacementLoginProgress() throws Exception {
+        try (Fixture f = automaticRecoveryFixture()) {
+            f.process.onWait = ignored -> {
+                appendUnchecked(f, "Starting IBC with this command: replacement");
+                appendUnchecked(f, "IBC: Starting Gateway");
+                appendUnchecked(f, "Second Factor Authentication initiated");
+            };
+            f.recoveryExecutor.runNext();
+            assertPreservedRecoveryProcess(f, RuntimeState.WAITING_FOR_SECOND_FACTOR);
+        }
+    }
+
+    private void repeatedUnrelatedListener() throws Exception {
+        try (Fixture f = new Fixture(CredentialMode.MANUAL)) {
+            f.profile = f.profile.toBuilder().autoRecoverStartupStall(true).build(); f.rebuildController();
+            f.controller.start(); repeatedChildFailures(f);
+            f.ports.apiOpen = true; f.ports.apiOwnerPid = 987654;
+            f.recoveryExecutor.runNext();
+            assertRecoveryFailedWithoutTermination(f);
+            Assertions.equals(List.of(), f.commands.commands, "unrelated listener stops even graceful cleanup");
+        }
+    }
+
     private void startupStall() throws Exception {
         try (Fixture fixture = startedFixture(CredentialMode.MANUAL)) {
             fixture.appendLog("Starting IBC with this command: java -cp IBC.jar ibcalpha.ibc.IbcGateway");
@@ -719,7 +856,15 @@ public final class ControllerTests implements TestSuite {
                 appendUnchecked(fixture, "IBC: Starting Gateway");
             };
             fixture.recoveryExecutor.runNext();
-            assertPreservedRecoveryProcess(fixture, RuntimeState.STARTING);
+            assertRecoveryFailedWithoutTermination(fixture);
+            Assertions.equals(0, fixture.recoveryExecutor.size(), "replacement does not recursively enqueue recovery");
+            Assertions.isTrue(new RecoveryHistoryStore(fixture.paths)
+                    .snapshot(fixture.profile.id(), fixture.clock.instant()).awaitingHealthy(),
+                    "child replacement alone is not healthy progress");
+            fixture.controller.refresh();
+            Assertions.equals(RuntimeState.RECOVERY_FAILED, fixture.controller.status().state(),
+                    "overdue replacement remains actionable without a second destructive task");
+            Assertions.equals(0, fixture.recoveryExecutor.size(), "refresh cannot repeat cleanup");
         }
     }
 
@@ -1187,6 +1332,41 @@ public final class ControllerTests implements TestSuite {
         }
     }
 
+    private void invalidTwsInfo() throws Exception {
+        try (Fixture fixture = startedFixture(CredentialMode.ENCRYPTED)) {
+            fixture.appendLog("Starting IBC with this command:");
+            fixture.appendLog("IBC: Starting Gateway");
+            fixture.appendLog("Login dialog WINDOW_OPENED:");
+            fixture.appendLog("2026-10-11 19:31:57.466 ERROR [JTS-LogonDispatcherS2-28] - LogonDispatcher received reject(probably running an old ccp version), reason [invalid twsInfo]");
+            fixture.controller.refresh();
+            Assertions.equals(RuntimeState.ERROR, fixture.controller.status().state(), "actual rejection is not login waiting");
+            Assertions.contains(fixture.controller.status().message(), "invalid twsInfo", "actionable error while dialog is open");
+            fixture.appendLog("Program has exited"); fixture.appendLog("Normal exit"); fixture.appendLog("Gateway finished at 19:32");
+            fixture.controller.refresh(); fixture.process.completeExit(0);
+            Assertions.equals(RuntimeState.ERROR, fixture.controller.status().state(), "exit zero cannot hide server rejection");
+            Assertions.contains(fixture.controller.status().message(), "invalid twsInfo", "reason retained after cleanup");
+            Assertions.isFalse(fixture.controller.runtimeConfigurationPresent(), "temporary credentials cleaned normally");
+            Assertions.equals(1, fixture.launcher.calls, "no blind retry or second launch");
+        }
+    }
+
+    private void javaBootstrapError() throws Exception {
+        try (Fixture fixture = startedFixture(CredentialMode.ENCRYPTED)) {
+            fixture.appendLog("Starting IBC with this command:");
+            fixture.appendLog("Error occurred during initialization of boot layer");
+            fixture.appendLog("java.lang.module.FindException: Module jdk.jsobject not found, required by javafx.web");
+            fixture.appendLog("Program has exited"); fixture.appendLog("Error level is 1");
+            fixture.appendLog("Normal exit"); fixture.appendLog("Gateway finished at 18:56");
+            fixture.controller.refresh();
+            fixture.process.completeExit(0);
+            Assertions.equals(RuntimeState.ERROR, fixture.controller.status().state(), "wrapper footer cannot label failed bootstrap a normal shutdown");
+            Assertions.contains(fixture.controller.status().message(), "Module jdk.jsobject not found", "specific dependency failure remains visible");
+            Assertions.isFalse(fixture.controller.status().processAlive(), "no false running process");
+            Assertions.isFalse(fixture.controller.runtimeConfigurationPresent(), "terminated startup credentials cleaned");
+            Assertions.equals(1, fixture.launcher.calls, "no repeated invalid launch command");
+        }
+    }
+
     private void reportedErrorWithNormalFooter() throws Exception {
         try (Fixture fixture = startedFixture(CredentialMode.ENCRYPTED)) {
             fixture.appendLog("Exiting after error with exit code=4");
@@ -1292,9 +1472,20 @@ public final class ControllerTests implements TestSuite {
     }
 
     private void reattach() throws Exception {
+        reattach(false);
+    }
+
+    private void reattachDelayedObservation() throws Exception {
+        reattach(true);
+    }
+
+    private void reattach(boolean delayedObservation) throws Exception {
         Path root = TestSupport.tempDirectory("controller-reattach");
-        Process raw = new ProcessBuilder(TestSupport.javaCommand("sleep", "30000")).start();
+        Process nativeProcess = new ProcessBuilder(TestSupport.javaCommand("sleep", "30000")).start();
+        Process raw = delayedObservation ? new DelayedExitObservationProcess(nativeProcess) : nativeProcess;
+        Process unrelated = null;
         try {
+            unrelated = new ProcessBuilder(TestSupport.javaCommand("sleep", "30000")).start();
             AppPaths paths = new AppPaths(root.resolve("data"));
             Profile profile = TestSupport.validProfile(root.resolve("install"));
             ProcessIdentityStore identities = new ProcessIdentityStore(paths);
@@ -1321,13 +1512,111 @@ public final class ControllerTests implements TestSuite {
             Assertions.equals(1, ports.commandCalls,
                     "periodic refresh after reattachment must not repeat the command-port probe");
             controller.forceStop();
-            Assertions.isFalse(raw.isAlive(), "force stop must terminate reattached process");
+            Assertions.isFalse(nativeProcess.toHandle().isAlive(),
+                    "Force Stop must stop the native handle before returning");
+            if (delayedObservation) {
+                Assertions.isTrue(raw.isAlive(), "fixture must retain an independent pending exit observation");
+            }
+            // Reattachment uses ProcessHandle, while this test also owns the original Process.
+            // Their exit observations need not become visible at the same instant. Synchronize
+            // with the original Process instead of treating a transient isAlive result as failure.
+            assertProcessExitObserved(raw, Duration.ofSeconds(5));
+            Assertions.equals(RuntimeState.STOPPED, controller.status().state(), "controller must finish stopped");
+            Assertions.isFalse(controller.status().processAlive(), "controller must not retain a live session");
+            Assertions.isTrue(identities.load(profile.id()).isEmpty(), "stopped process identity must be removed");
+            Assertions.isFalse(controller.runtimeConfigurationPresent(), "runtime lease must be closed");
             Assertions.isFalse(Files.exists(runtime), "reattached runtime config must be scrubbed on stop");
+            Assertions.isTrue(unrelated.isAlive(), "Force Stop must preserve an unrelated process");
         } finally {
             raw.destroyForcibly();
             raw.waitFor(2, TimeUnit.SECONDS);
+            if (unrelated != null) {
+                unrelated.destroyForcibly();
+                unrelated.waitFor(2, TimeUnit.SECONDS);
+            }
             TestSupport.deleteTree(root);
         }
+    }
+
+    private static void assertProcessExitObserved(Process process, Duration timeout) throws InterruptedException {
+        Assertions.isTrue(process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS),
+                "original Process exit observation must complete within " + timeout.toMillis() + " ms");
+        Assertions.isFalse(process.isAlive(), "force stop must terminate reattached process");
+        Assertions.isFalse(process.toHandle().isAlive(), "native process must remain stopped after the wait");
+        process.exitValue(); // A successful observation must also expose a completed exit value.
+    }
+
+    private void exitObservationRejectsLiveProcess() throws Exception {
+        Process raw = new ProcessBuilder(TestSupport.javaCommand("sleep", "30000")).start();
+        try {
+            AssertionError failure = Assertions.throwsType(AssertionError.class,
+                    () -> assertProcessExitObserved(raw, Duration.ofMillis(25)),
+                    "a still-running process must not pass the new bounded wait");
+            Assertions.contains(failure.getMessage(), "exit observation", "timeout must be explicit");
+            Assertions.isTrue(raw.isAlive(), "verification must not kill a process to make a test pass");
+            Assertions.isTrue(raw.toHandle().isAlive(), "the negative-control native process must still be alive");
+        } finally {
+            raw.destroyForcibly();
+            raw.waitFor(2, TimeUnit.SECONDS);
+        }
+    }
+
+    private void exitObservationAcceptsExitedProcess() throws Exception {
+        Process raw = new ProcessBuilder(TestSupport.javaCommand("exit", "7")).start();
+        try {
+            Assertions.isTrue(raw.waitFor(5, TimeUnit.SECONDS), "control child must complete");
+            assertProcessExitObserved(raw, Duration.ZERO);
+            Assertions.equals(7, raw.exitValue(), "completed nonzero exit code must be retained");
+        } finally {
+            raw.destroyForcibly();
+            raw.waitFor(2, TimeUnit.SECONDS);
+        }
+    }
+
+    private void exitObservationPreservesInterruption() throws Exception {
+        Process raw = new ProcessBuilder(TestSupport.javaCommand("sleep", "30000")).start();
+        try {
+            Thread.currentThread().interrupt();
+            Assertions.throwsType(InterruptedException.class,
+                    () -> assertProcessExitObserved(raw, Duration.ofSeconds(5)),
+                    "an interrupted observer must not be reported as a stopped process");
+            Assertions.isTrue(raw.toHandle().isAlive(), "interruption must not kill the observed child");
+        } finally {
+            Thread.interrupted(); // Do not leak the deliberate test interruption to cleanup or other cases.
+            raw.destroyForcibly();
+            raw.waitFor(2, TimeUnit.SECONDS);
+        }
+    }
+
+    /** Preserve a real native handle while delaying only this test observer's exit report. */
+    private static final class DelayedExitObservationProcess extends Process {
+        private final Process delegate;
+        private boolean exitObserved;
+
+        private DelayedExitObservationProcess(Process delegate) { this.delegate = delegate; }
+        @Override public java.io.OutputStream getOutputStream() { return delegate.getOutputStream(); }
+        @Override public java.io.InputStream getInputStream() { return delegate.getInputStream(); }
+        @Override public java.io.InputStream getErrorStream() { return delegate.getErrorStream(); }
+        @Override public long pid() { return delegate.pid(); }
+        @Override public ProcessHandle toHandle() { return delegate.toHandle(); }
+        @Override public ProcessHandle.Info info() { return delegate.info(); }
+        @Override public boolean isAlive() { return !exitObserved || delegate.isAlive(); }
+        @Override public int exitValue() {
+            if (!exitObserved) throw new IllegalThreadStateException("Test observer has not synchronized yet");
+            return delegate.exitValue();
+        }
+        @Override public int waitFor() throws InterruptedException {
+            int result = delegate.waitFor();
+            exitObserved = true;
+            return result;
+        }
+        @Override public boolean waitFor(long timeout, TimeUnit unit) throws InterruptedException {
+            boolean exited = delegate.waitFor(timeout, unit);
+            if (exited) exitObserved = true;
+            return exited;
+        }
+        @Override public void destroy() { delegate.destroy(); }
+        @Override public Process destroyForcibly() { delegate.destroyForcibly(); return this; }
     }
 
     private void registryProfiles() throws Exception {

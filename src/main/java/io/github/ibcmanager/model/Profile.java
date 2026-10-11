@@ -8,6 +8,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 public final class Profile {
+    private final boolean managedHeadlessRuntime;
     private final UUID id;
     private final String name;
     private final boolean enabled;
@@ -36,6 +37,7 @@ public final class Profile {
 
     private Profile(Builder builder) {
         profileOnlyConfiguration = builder.profileOnlyConfiguration;
+        managedHeadlessRuntime = builder.managedHeadlessRuntime;
         id = Objects.requireNonNull(builder.id, "id");
         name = normalize(builder.name);
         enabled = builder.enabled;
@@ -76,6 +78,7 @@ public final class Profile {
         return value == null ? Path.of("") : value.normalize();
     }
 
+    public boolean managedHeadlessRuntime() { return managedHeadlessRuntime; }
     public UUID id() { return id; }
     public String name() { return name; }
     public boolean enabled() { return enabled; }
@@ -104,6 +107,7 @@ public final class Profile {
 
     public Builder toBuilder() {
         return new Builder()
+                .managedHeadlessRuntime(managedHeadlessRuntime)
                 .profileOnlyConfiguration(profileOnlyConfiguration)
                 .id(id)
                 .name(name)
@@ -139,6 +143,7 @@ public final class Profile {
         // False identifies in-memory legacy import records. The app creates and
         // migrates every active profile with profileOnlyConfiguration(true).
         private boolean profileOnlyConfiguration;
+        private boolean managedHeadlessRuntime;
         private UUID id = UUID.randomUUID();
         private String name = "New profile";
         private boolean enabled = true;
@@ -164,6 +169,7 @@ public final class Profile {
         private int gracefulStopTimeoutSeconds = 90;
         private Map<String, String> settings = new LinkedHashMap<>();
 
+        public Builder managedHeadlessRuntime(boolean value) { managedHeadlessRuntime = value; return this; }
         public Builder profileOnlyConfiguration(boolean value) { profileOnlyConfiguration = value; return this; }
         public Builder id(UUID value) { id = value; return this; }
         public Builder name(String value) { name = value; return this; }
@@ -203,7 +209,8 @@ public final class Profile {
     public boolean equals(Object other) {
         if (this == other) return true;
         if (!(other instanceof Profile profile)) return false;
-        return profileOnlyConfiguration == profile.profileOnlyConfiguration
+        return managedHeadlessRuntime == profile.managedHeadlessRuntime
+                && profileOnlyConfiguration == profile.profileOnlyConfiguration
                 && enabled == profile.enabled
                 && apiPort == profile.apiPort
                 && commandServerPort == profile.commandServerPort
@@ -232,7 +239,7 @@ public final class Profile {
 
     @Override
     public int hashCode() {
-        return Objects.hash(profileOnlyConfiguration, id, name, enabled, targetType, tradingMode, twsMajorVersion, ibcPath,
+        return Objects.hash(managedHeadlessRuntime, profileOnlyConfiguration, id, name, enabled, targetType, tradingMode, twsMajorVersion, ibcPath,
                 twsPath, twsSettingsPath, baseConfigPath, ibcJavaPath, apiPort, commandServerPort,
                 bindAddress, username, credentialMode, twoFactorTimeoutAction,
                 reloginAfterSecondFactorTimeout, forceApiPortAtLaunch, autoStart,

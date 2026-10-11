@@ -1,75 +1,72 @@
-# User guide - IBC Manager 2.0.3
+# User guide - IBC Manager 2.1.0
 
-Install the official offline IB Gateway separately. Extract the normal release
-and run `run.bat`, or use the native Windows installer/portable application built
-from this source. There is no separate IBC install step.
+Use the root README for installation, profile creation and Windows packaging.
+Manager uses Microsoft OpenJDK 25. The optional JetBrains runtime is a separate
+choice for the TWS/Gateway process.
 
-The profile tab has an included-engine revision label and a Gateway installation
-detection button. Set the Gateway root/version/settings folder, paper or live
-mode, username and credential mode. Select distinct API and command ports for
-each simultaneous profile. Leave the Java override empty to use the Gateway
-runtime selected by the included StartIBC script. A supplied override is checked
-against the chosen Gateway generation. Follow the path field's CMD restrictions.
+## Configuration
 
-Saved-password mode uses Windows DPAPI. Manual mode cannot reliably finish
-unattended relogins without password entry. All configuration is in the Profile editor. Earlier existing/base and Managed
-Config values are imported once into format 6. The old generated config.ini is
-not read as a current configuration input. Gateway settings shows generated
-values and their source; unknown compatible engine properties remain editable
-there, and unused/unsupported controls are hidden. `SecondFactorDevice` chooses a registered device; it is not a TOTP seed.
+Edit Profile has three tabs: Profile, TWS / Gateway settings, and Windows startup.
+This is the only configuration editor. Supported non-secret engine options show
+their effective value and source. Generated config.ini files are diagnostic output.
+Windows startup-task controls are shared by Manager and take effect immediately;
+the runtime workaround, by contrast, is only applied when the profile is saved.
 
-Start, Stop, Restart, Pause and Force Stop require explicit manual confirmation.
-Cancel is the default. Reconnect controls are unavailable before login and main
-window readiness. The TWS-only Enable API action has been removed.
+Choose IB Gateway or Trader Workstation. Default Live/Paper API ports are 4001/4002
+for Gateway and 7496/7497 for TWS. Switching the application or trading mode adjusts
+a default port but preserves a custom port. The engine command port is separate.
+Use distinct ports and settings directories for concurrent profiles.
 
-Green reads "Gateway running - API listener available" and means an owned API
-listener was detected on Windows. The API row tooltip explains that your trading
-application verifies its own connection/account. The always-visible disclaimer is
-removed. Yellow is pending/paused/uncertain; red means
-stopped/error/stalled/failed recovery. Read the explicit state and log detail,
-not the color alone. Engine events revoke stale readiness across replacement
-JVMs. A command acknowledgement still must be reconciled with the actual
-lifecycle; PAUSING is not PAUSED.
+TWS discovery, startup, read-only login, server-settings options and main-window
+handling are restored. Its Enable API command requires the appropriate session
+state and explicit confirmation before changing persistent settings. Read-only
+login is not supported for Gateway. FIX and separate IBC installations remain
+unsupported.
 
-With notification retry enabled, the maintained engine arms a 300-second
-monotonic timer when it recognizes the second-factor challenge. The deadline
-fires even if the challenge window remains open. It clicks one unambiguous
-Cancel in that exact window when still visible, restores the ordinary login
-fields before waiting for Log In to enable, and submits without duplicate writes.
-The recognized form may be reconstructed and registered by the engine; an old
-hidden challenge heading is not treated as a visible authentication request. Each newly detected challenge starts a new interval.
-Approval cancels pending work; duplicate window events do not extend the timer.
-Disabling the option is respected; there is no extra migration or reset of the
-stored choice during the profile migration.
+## Copying a profile
 
-No request is approved automatically, and phone delivery is not a real-time
-guarantee. Missing credentials, unsupported/ambiguous Cancel controls or an
-unavailable login form produce a visible blocked-retry message without killing
-Gateway. Manual password mode needs manual action. See SECOND_FACTOR_RETRY.md.
+Copy opens an independently editable configuration with a new UUID, unused ports,
+a unique name, disabled status and auto-start off. Credentials revert to manual
+entry; no encrypted password association is shared. Active processes, recovery
+history, tokens, logs and settings-directory files are not copied.
 
-Startup-stall recovery remains separate: after a confirmed five-minute no-progress
-startup it can perform exact-tree cleanup and a fresh start within persistent
-limits. An observed 2FA challenge is progress, not grounds for that forced cleanup.
+The original settings-directory value remains for review. Select a separate
+settings directory before running copies simultaneously. Select encrypted mode
+and enter a password when required. Cancelling the copy editor saves nothing.
 
-Leave Manager running for automatic stalled-start recovery. If closing Manager
-while its wrapper remains alive, the engine/relay may continue, but the Manager
-watchdog does not. Stop profiles before upgrading, editing their program tree,
-or removing engine caches.
+## Managed headless workaround
 
-The cache under Gateway settings is automatically created from the embedded
-payload. Do not edit its scripts or JAR. A checksum failure is a safety error,
-not a reason to bypass validation. Stop affected profiles and diagnose package
-integrity; recreating an intact cache must not replace an active installation.
+The checkbox below IBC Java override explains the JBR 25/JavaFX 25 download and
+asks permission. All known sessions using the installation must be stopped. Save
+performs setup; Cancel makes no change. A progress window permits cooperative
+cancellation before the short commit phase. Unknown or conflicting files are
+preserved instead of being overwritten.
 
-Use diagnostic export when reporting problems. It includes the integrated engine
-revision and labels obsolete external IBC paths as ignored. See UPGRADE_GUIDE.md
-and WINDOWS_VALIDATION_CHECKLIST.md for acceptance and rollback.
+Deselect, confirm and Save to restore the previous override and module options.
+Shared runtime files remain until the last registered profile releases them.
+Manual Java/JavaFX installations are never deleted. Disable and save before
+changing the application, installation root or version, or deleting the profile.
+See [managed runtime details](MANAGED_RUNTIME.md) for ownership and recovery rules.
 
-## Console tools and acknowledgements
+The helper does not change Windows locking, RDP configuration or display drivers.
+Verify a scheduled restart while RDP is disconnected and Windows remains locked;
+success must be recorded before reconnecting. An already-running process merely
+surviving disconnection is not that test.
 
-The user-facing run/build/test/validate/package batch files pause on completion,
-including error exits. `run.bat` keeps the selected console Java process attached
-until the GUI closes. Set `IBC_MANAGER_NO_PAUSE=1` for automation; a defined `CI`
-also skips waiting. The original exit code is retained. Internal Gateway wrappers
-and scheduled native/JAR startup do not pause. About includes explicit thanks to
-Richard L King and the upstream contributors.
+## Runtime controls and diagnostics
+
+Start, Stop, Restart, Pause and Force Stop retain confirmation dialogs. Normal
+Stop does not silently force termination. Restart performs a controlled Stop and
+fresh Start, not a persistent daily-schedule edit. Start resumes a paused profile.
+
+Green means a verified owned local API listener, not a verified bot/account
+session. Specific errors remain visible in Details and Logs. Two-factor approval
+remains manual; notification delivery cannot be guaranteed. The failed-start
+watchdog retains its overall deadline across child replacements while genuine
+login, 2FA and API progress prevent unsafe recovery. Leave Manager running for it.
+
+Logs normally flush in 60-second batches. Diagnostics includes the live buffer
+and bounded stderr with best-effort redaction; review before public sharing.
+Saved passwords use Windows DPAPI. Runtime configuration may contain the decrypted
+password in an owner-restricted file for the launcher's lifetime. Do not publish
+these files. See [retained reliability safeguards](V2_0_4_RELIABILITY.md).

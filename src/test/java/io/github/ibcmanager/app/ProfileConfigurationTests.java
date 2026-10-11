@@ -31,7 +31,7 @@ public final class ProfileConfigurationTests implements TestSuite {
     @Override public String name() { return "Single Profile configuration and one-time legacy import"; }
     @Override public List<NamedTest> tests() {
         return List.of(
-                new NamedTest("format six requires profile ownership and rejects external sources", this::codec),
+                new NamedTest("format seven requires profile ownership and rejects external sources", this::codec),
                 new NamedTest("legacy managed values and credentials are preserved without decryption", this::managed),
                 new NamedTest("base-file values become visible self-contained profile values", this::baseImport),
                 new NamedTest("sparse legacy configuration preserves engine fallbacks", this::sparseImport),
@@ -55,7 +55,7 @@ public final class ProfileConfigurationTests implements TestSuite {
     private void codec() throws Exception {
         Profile p = Profile.builder().profileOnlyConfiguration(true).build();
         String text = new ProfileCodec().encode(p);
-        Assertions.contains(text, "formatVersion=6", "current format");
+        Assertions.contains(text, "formatVersion=7", "current format");
         Assertions.equals(p, new ProfileCodec().decode(text), "round trip");
         Assertions.throwsType(IllegalArgumentException.class,
                 () -> new ProfileCodec().decode(text.replace("configuration=profile", "configuration=external")), "ownership required");
@@ -271,7 +271,7 @@ public final class ProfileConfigurationTests implements TestSuite {
     private void table() {
         ProfileSettingsTableModel model = new ProfileSettingsTableModel(Map.of("LoginDialogDisplayTimeout", "120"));
         Assertions.equals("120", model.getValueAt(row(model, "LoginDialogDisplayTimeout"), 2), "effective value shown");
-        for (String key : List.of("SecondFactorAuthenticationExitInterval", "StoreSettingsOnServer", "ReadOnlyLogin", "ConfirmOrderIdReset")) {
+        for (String key : List.of("SecondFactorAuthenticationExitInterval")) {
             Assertions.equals(-1, row(model, key), "unused key removed: " + key);
         }
         Assertions.isTrue(row(model, "ReadOnlyApi") >= 0, "API permission control is retained");

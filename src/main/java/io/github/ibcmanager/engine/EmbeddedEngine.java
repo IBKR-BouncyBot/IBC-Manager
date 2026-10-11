@@ -40,12 +40,12 @@ public final class EmbeddedEngine {
     /** No external installation path is accepted, including from imported 1.x profiles. */
     public static Path ensureFor(Profile profile) throws IOException {
         if (profile.twsSettingsPath().toString().isBlank()) {
-            throw new IOException("A Gateway settings directory is required for the integrated engine");
+            throw new IOException("A TWS/Gateway settings directory is required for the integrated engine");
         }
         return ensureUnder(profile.twsSettingsPath());
     }
 
-    /** Extract below the validated Gateway settings tree, avoiding unquoted CMD user-home paths. */
+    /** Extract below the validated TWS/Gateway settings tree, avoiding unquoted CMD user-home paths. */
     public static synchronized Path ensureUnder(Path settingsDirectory) throws IOException {
         Bundle bundle = readBundle();
         Path parent = settingsDirectory.toAbsolutePath().normalize().resolve(".ibc-manager-engine");

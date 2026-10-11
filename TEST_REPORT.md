@@ -1,62 +1,63 @@
-# IBC Manager 2.0.3 test report
+# IBC Manager 2.1.0 - pinned runtime and diagnostics validation
 
-## Scope and measured results
+## Scope and baseline
 
-This release changes status presentation, the Overview footer, README, screenshot,
-version metadata and test/documentation support. It retains the existing GPL licences.
-The engine source/resources, engine revision 3.24.2-manager.3, profile format 6,
-credential handling, command/recovery logic and API monitoring behavior are unchanged.
+Input: the latest JavaFX-complete 2.1.0 Source ZIP, SHA-256
+`ac7ae9bcfdff71f0f6685a1e64ae9a37472bab984f431d9ae0253bb8d4df4ef3`.
+The baseline was compiled and tested: 973 named cases / 27,426 assertions passed.
+This update pins JBR25.0.4-b508.27, adds specific invalid twsInfo rejection reporting
+and bounded read-only external diagnostics. Engine revision is 3.24.2-manager.6.
 
-Baseline 2.0.2 was independently compiled and tested before edits: 639 headless
-cases / 8,684 assertions passed on this host.
+## New coverage
 
-The updated suite contains 644 named headless tests. The final measured assertion
-count and complete per-run outcomes are recorded in FINAL_VALIDATION and the logs.
-Compilation is strict for both Manager and the engine:
-`--release 17 -encoding UTF-8 -g -Xlint:all -Werror`.
-Compiled source counts: 113 Manager production files, 87 engine production files,
-and 33 test/helper files. Compilation reported no warnings; warnings are treated as errors.
+Runtime tests check the exact coordinates, no latest-release scan/substitution,
+rejecting mismatched downloaded version/build metadata, no silent reuse of a
+non-pinned owned/shared installation, and safe removal followed by a pinned install.
+All prior optional checksum/probe, JavaFX graph, CDN, transaction and recovery cases remain.
 
-The real Manager Swing smoke verifies the existing Profile-only interface, session
-confirmations, About credit and disposal, plus absent permanent API notice and a
-present on-demand tooltip. The screenshot gate repeats these checks and captures
-an actual window with visibly labelled demo paper profiles. Its display-only
-process fixture cannot launch or terminate a process and is not packaged in the JAR.
+Rejection tests use incident-derived error lines plus validated current/stale engine
+events. They check error precedence over normal/zero-code shutdown, no false success,
+no blind relaunch, and recovery only through a new observed generation. The actual
+Swing engine test checks the untitled exact-message/OK dialog, unrelated dialogs,
+HTML whitespace, repeat notifications, no button clicks, failed login state and
+registration in the real handler list.
 
-The engine GUI fixtures pass: 4 scenarios / 26 checks and 23 second-factor scenarios /
-64 checks. These use actual engine code with synthetic controls, not IBKR Gateway
-binaries. The virtual-time deadline tests remain in the headless suite.
+Diagnostic tests exercise the actual ZIP export: current/rotated/child-directory logs,
+TWS/Gateway layouts, missing/non-text/locked-access equivalents, count/byte/depth bounds,
+source immutability, link isolation, UTF-8/UTF-16, partial/oversized lines, compound
+credential fields and crash-log environment secrets, and runtime/options/provenance.
+Native EXE identity fixtures cover ASCII, UTF-16LE alignment and chunk boundaries;
+installer metadata fixtures check decoding-before-redaction and unsupported-entity
+omission. Only allowlisted information is reported, never applied as startup arguments.
+The real Manager GUI Diagnostics callback exports a buffer-only marker and a redacted
+launcher.log fixture. Consent shows the exact JBR pin.
 
-## New regression coverage
+One intermediate regression exposed a redaction ordering issue when a secret value
+ended in '-TOKEN'; the generic filter could consume the following Authorization label.
+Sensitive external fields are now masked before generic command-argument filtering;
+the negative secret-disclosure test remains in the final suite.
 
-Five headless cases add friendly labels for every existing state, qualification
-only in the API tooltip, unknown-vs-absent listener wording, exact supplied support
-section/GPL bytes, and test-only screenshot/permanent-footer architecture checks.
-The existing controller success-state test now requires factual listener-availability
-wording instead of presenting an unperformed handshake as a startup failure.
+## Executed gates and reports
 
-State selection, listener ownership checks and colour mapping were retained. The
-runtime-controller diff contains only message string/concatenation changes.
+Final counts and per-run hashes are in the accompanying FINAL_VALIDATION record and
+VALIDATION_LOGS.zip, derived from completed runs. The release process performs strict
+compilation, complete headless tests, packaged Manager/engine/2FA GUI tests, three clean
+builds, extracted-source rebuild/retest and source/engine patch reproduction. No compiler
+warnings are accepted. The prior same-version main-window screenshot is unchanged;
+it remains explicitly labelled simulated paper data, not live broker evidence.
 
-## Reproducibility and evidence
+## Limits
 
-The final release procedure repeats clean test/JAR/smoke/archive builds three times,
-compares hashes, rebuilds an extracted source ZIP, executes the extracted release,
-reproduces the source patch and verifies archive safety, engine payload identity,
-licence identity, support-section identity, screenshot equality and script line endings.
-Actual final outcomes and artifact hashes are in the distributed FINAL_VALIDATION
-record and VALIDATION_LOGS.zip, not inferred from older release reports.
+Host: Linux/OpenJDK21.0.12.1, compilation target Java17 using
+`--release 17 -encoding UTF-8 -g -Xlint:all -Werror`. Windows launch/build scripts
+still select Microsoft Java25. Native Windows-conditional subchecks were not run
+here. No Windows EXE/WiX/DPAPI/Task Scheduler operation, real JBR25/JavaFX native
+execution, RDP session, authentication or trading action was performed.
 
-## Validation limits
-
-Host: Linux, OpenJDK 21.0.12.1, Java 17 compilation target. Linux is a development
-host, not a supported operational platform. Windows-conditional assertions are not
-executed here; the headless count must not be treated as native Windows coverage.
-The supplied user's earlier Windows 2.0.1 log is not a 2.0.3 acceptance result.
-
-No real account, credential, Gateway login, push delivery or live order is used.
-A new full-duration 300-second test is not required or claimed for this display-only
-release: the complete engine payload is byte-identical to 2.0.2. Actual Windows
-CMD/PowerShell, DPAPI, NTFS ACLs, Task Scheduler, jpackage/WiX and Gateway lifecycle
-checks remain in docs/WINDOWS_VALIDATION_CHECKLIST.md. No native Windows EXE or
-_windows.zip is represented as generated by this Linux release run.
+Publisher URLs were verified in the official release listing; direct downloads from
+the build host failed DNS resolution. HTTP, installed-runtime and native-launcher
+bytes in automated tests are fixtures, not completed Internet installation or IBKR
+compatibility proof. The pin is the requested return to the previously successful
+manual JBR build; it does not identify the server's rejected field or certify the
+new automated combination. The identity example was not applied to runtime arguments.
+Encrypted Gateway logs are not automatically decrypted or included unredacted.

@@ -17,6 +17,11 @@ public final class SecretRedactor {
     private static final Pattern QUERY_SECRET = Pattern.compile(
             "(?i)([?&](?:password|passwd|passphrase|token|secret|api[_-]?key)=)([^&#\\s]*)");
 
+    private static final Pattern INLINE_SECRET = Pattern.compile(
+            "(?i)(?<![\\w])((?:-D)?(?:IbPassword|FIXPassword|Password|Passwd|Passphrase|"
+                    + "SessionToken|Token|Secret|Api[_-]?Key)\\s*[=:]\\s*)"
+                    + "(?![\"'])(\\[REDACTED\\]|[^,;&#\\s\\]\\}]+)");
+
     private SecretRedactor() { }
 
     public static String redact(String input) {
@@ -24,7 +29,8 @@ public final class SecretRedactor {
         String redacted = CONFIG_PASSWORD.matcher(input).replaceAll("$1[REDACTED]");
         redacted = COMMAND_PASSWORD.matcher(redacted).replaceAll("$1[REDACTED]");
         redacted = replaceStructured(redacted);
-        return QUERY_SECRET.matcher(redacted).replaceAll("$1[REDACTED]");
+        redacted = QUERY_SECRET.matcher(redacted).replaceAll("$1[REDACTED]");
+        return INLINE_SECRET.matcher(redacted).replaceAll("$1[REDACTED]");
     }
 
     private static String replaceStructured(String input) {

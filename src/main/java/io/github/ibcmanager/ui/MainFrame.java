@@ -5,6 +5,7 @@ import io.github.ibcmanager.app.StartupCommand;
 import io.github.ibcmanager.app.Version;
 import io.github.ibcmanager.model.CredentialMode;
 import io.github.ibcmanager.model.Profile;
+import io.github.ibcmanager.model.TargetType;
 import io.github.ibcmanager.model.ProfileStatus;
 import io.github.ibcmanager.model.RuntimeState;
 import io.github.ibcmanager.model.Severity;
@@ -87,10 +88,12 @@ public final class MainFrame extends JFrame {
     private final JButton forceStopButton = new JButton("Force Stop");
     private final JButton restartButton = new JButton("Restart");
     private final JButton pauseButton = new JButton("Pause");
+    private final JButton copyButton = new JButton("Copy");
     private final JButton editButton = new JButton("Edit");
     private final JButton validateButton = new JButton("Validate");
     private final JMenuItem editProfileMenu = new JMenuItem("Edit selected profile...");
     private final JButton diagnosticsButton = new JButton("Diagnostics");
+    private final JButton enableApiButton = new JButton("Enable API");
     private final JButton reconnectDataButton = new JButton("Reconnect data");
     private final JButton reconnectAccountButton = new JButton("Reconnect account");
     private final Timer uiTimer;
@@ -183,6 +186,9 @@ public final class MainFrame extends JFrame {
         JToolBar sessionToolbar = toolbarRow();
         JButton newButton = new JButton("New");
         newButton.addActionListener(event -> editProfile(null));
+        copyButton.setName("copyProfileButton");
+        copyButton.setToolTipText("Duplicate settings into an editable, disabled profile; stored password is not copied");
+        copyButton.addActionListener(event -> copySelected());
         editButton.addActionListener(event -> editSelected());
         ProfileSessionAction.START.configureButton(startButton);
         ProfileSessionAction.STOP.configureButton(stopButton);
@@ -200,6 +206,7 @@ public final class MainFrame extends JFrame {
         diagnosticsButton.addActionListener(event -> exportDiagnostics());
         profileToolbar.add(newButton);
         profileToolbar.add(editButton);
+        profileToolbar.add(copyButton);
         profileToolbar.addSeparator();
         profileToolbar.add(validateButton);
         profileToolbar.add(diagnosticsButton);
@@ -314,7 +321,7 @@ public final class MainFrame extends JFrame {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
         JLabel notice = new JLabel("<html>These controls use the selected profile's local IBC command server. "
-                + "They are enabled after IBC reports that the command server is ready; status monitoring does not "
+                + "Reconnect/API controls require completed login and the application's main window. Status monitoring does not "
                 + "open a recurring command connection.</html>");
         panel.add(notice, BorderLayout.NORTH);
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 12));
@@ -322,6 +329,15 @@ public final class MainFrame extends JFrame {
         reconnectAccountButton.addActionListener(event -> runCommand("Reconnect account", ProfileRuntimeController::reconnectAccount));
         buttons.add(reconnectDataButton);
         buttons.add(reconnectAccountButton);
+        enableApiButton.setName("enableApiButton");
+        enableApiButton.addActionListener(event -> selectedController().ifPresent(controller -> {
+            if (!controller.canExecute(io.github.ibcmanager.runtime.IbcCommand.ENABLEAPI)) return;
+            if (JOptionPane.showConfirmDialog(this, "Enable socket/API access in this TWS installation? This changes TWS settings.",
+                    "Enable TWS API", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION) {
+                runCommand("Enable TWS API", ProfileRuntimeController::enableApi);
+            }
+        }));
+        buttons.add(enableApiButton);
         panel.add(buttons, BorderLayout.CENTER);
         return panel;
     }
@@ -359,9 +375,23 @@ public final class MainFrame extends JFrame {
         }
     }
 
-    private void editProfile(Profile current) {
+    private void copySelected() {
+        Profile selected = profilesList.getSelectedValue();
+        if (busy || selected == null) return;
+        Profile duplicate = io.github.ibcmanager.app.ProfileCopyService.copy(selected, profiles);
+        JOptionPane.showMessageDialog(this, "A separate disabled copy will open for editing. Stored passwords, active sessions, "
+                + "and managed runtime ownership are not copied. Review the settings directory, ports and credentials "
+                + "before enabling it. Nothing is saved if you cancel.", "Copy profile", JOptionPane.INFORMATION_MESSAGE);
+        editProfile(null, duplicate);
+    }
+
+    private void editProfile(Profile current) { editProfile(current, current); }
+
+    private void editProfile(Profile current, Profile editorSeed) {
+        if (busy) return;
         Optional<ProfileEditResult> edited = ProfileEditorDialog.showDialog(
-                this, current, services.credentialStore().isAvailable(), this::installStartupTask, this::removeStartupTask);
+                this, editorSeed, services.credentialStore().isAvailable(), this::installStartupTask, this::removeStartupTask,
+                current == null && editorSeed != null);
         if (edited.isEmpty()) return;
         try (ProfileEditResult result = edited.get()) {
             Profile candidate = result.profile();
@@ -392,27 +422,43 @@ public final class MainFrame extends JFrame {
                 }
             }
             char[] password = result.passwordCopy();
-            try {
-                Optional<ProfileRuntimeController> controller = services.runtimeRegistry().controller(candidate.id());
-                if (controller.isPresent()) {
-                    controller.get().editConfiguration(current, () -> {
-                        services.profileSaveService().save(current, candidate, password);
-                        controller.get().updateProfile(candidate);
+            RuntimeSetupProgress progress = (candidate.managedHeadlessRuntime()
+                    || (current != null && current.managedHeadlessRuntime())) ? new RuntimeSetupProgress(this) : null;
+            if (progress != null) progress.setVisible(true);
+            runAsync("Saving profile / preparing runtime", () -> {
+                try {
+                    return services.managedRuntimeService().save(current, candidate, (previous, effective) -> {
+                        Optional<ProfileRuntimeController> controller = services.runtimeRegistry().controller(effective.id());
+                        if (controller.isPresent()) {
+                            controller.get().editConfiguration(previous, () -> {
+                                services.profileSaveService().save(previous, effective, password);
+                                controller.get().updateProfile(effective);
+                            });
+                        } else services.profileSaveService().save(previous, effective, password);
+                    }, services::requireInstallationStopped,
+                    message -> javax.swing.SwingUtilities.invokeLater(() -> {
+                        setStatus(message);
+                        if (progress != null) progress.updateMessage(message);
+                    }),
+                    () -> Thread.currentThread().isInterrupted() || (progress != null && progress.cancelled()));
+                } finally {
+                    Arrays.fill(password, '\0');
+                    SwingUtilities.invokeLater(() -> {
+                        if (progress != null) progress.dispose();
+                        try { loadProfiles(); } catch (IOException ex) { setStatus("Profile reload failed: " + ex.getMessage()); }
                     });
-                } else services.profileSaveService().save(current, candidate, password);
-            } finally {
-                Arrays.fill(password, '\0');
-            }
-            services.runtimeRegistry().upsert(candidate);
-            loadProfiles();
-            selectProfile(candidate.id());
-            setStatus("Saved profile '" + candidate.name() + "'");
-        } catch (IOException | CredentialStoreException ex) {
-            UiUtil.showError(this, "Could not save profile", ex);
+                }
+            }, saved -> {
+                services.runtimeRegistry().upsert(saved);
+                try { loadProfiles(); selectProfile(saved.id()); }
+                catch (IOException ex) { UiUtil.showError(this, "Reload saved profiles", ex); }
+                setStatus("Saved profile '" + saved.name() + "'");
+            });
         }
     }
 
     private void deleteSelected() {
+        if (busy) return;
         Profile profile = profilesList.getSelectedValue();
         if (profile == null) return;
         if (selectedController().map(controller -> controller.status().processAlive()
@@ -519,7 +565,8 @@ public final class MainFrame extends JFrame {
         Optional<ProfileRuntimeController> controller = selectedController();
         if (profile == null || controller.isEmpty()) return;
         runAsync("Creating diagnostic bundle", () ->
-                services.diagnosticBundleService().create(profile, controller.get().status()), path -> {
+                services.diagnosticBundleService().create(profile, controller.get().status(),
+                        controller.get().logs().snapshot()), path -> {
             setStatus("Diagnostic bundle created: " + path);
             int open = JOptionPane.showConfirmDialog(this,
                     "Diagnostic bundle created:\n" + path + "\n\nOpen its folder?",
@@ -565,7 +612,7 @@ public final class MainFrame extends JFrame {
             return;
         }
         ProfileStatus status = controller.get().status();
-        profileStatusIndicator.updateStatus(status);
+        profileStatusIndicator.updateStatus(status, profile.targetType());
         nameValue.setText(profile.name());
         stateValue.setText(formatState(status.state()));
         stateValue.setToolTipText("Diagnostic state: " + status.state().name());
@@ -585,7 +632,7 @@ public final class MainFrame extends JFrame {
                     + ":" + profile.apiPort() + " (PID " + apiObservation.owningPid() + ")";
             case NOT_LISTENING -> "Not available (127.0.0.1:" + profile.apiPort() + ")";
             case UNKNOWN -> apiObservation.state() == io.github.ibcmanager.model.PortListenerState.LISTENING
-                    ? "Port in use; Gateway ownership not confirmed"
+                    ? "Port in use; application ownership not confirmed"
                             + (apiObservation.ownershipAvailable() ? " (PID " + apiObservation.owningPid() + ")" : "")
                     : "Unable to check listener (127.0.0.1:" + profile.apiPort() + ")";
         });
@@ -615,6 +662,7 @@ public final class MainFrame extends JFrame {
         restartButton.setEnabled(!busy && controller != null && controller.canRestartSession());
         pauseButton.setEnabled(!busy && controller != null && controller.canExecute(io.github.ibcmanager.runtime.IbcCommand.PAUSE));
         editButton.setEnabled(!busy && selected && !running && !recovering);
+        copyButton.setEnabled(!busy && selected);
         validateButton.setEnabled(!busy && selected && !recovering);
         editProfileMenu.setEnabled(editButton.isEnabled());
         diagnosticsButton.setEnabled(!busy && selected);
@@ -622,6 +670,8 @@ public final class MainFrame extends JFrame {
                 && controller.canExecute(io.github.ibcmanager.runtime.IbcCommand.RECONNECTDATA));
         reconnectAccountButton.setEnabled(!busy && controller != null
                 && controller.canExecute(io.github.ibcmanager.runtime.IbcCommand.RECONNECTACCOUNT));
+        enableApiButton.setVisible(controller != null && controller.profile().targetType() == TargetType.TWS);
+        enableApiButton.setEnabled(!busy && controller != null && controller.canExecute(io.github.ibcmanager.runtime.IbcCommand.ENABLEAPI));
 
     }
 
@@ -664,6 +714,11 @@ public final class MainFrame extends JFrame {
     }
 
     private void requestClose() {
+        if (busy) {
+            JOptionPane.showMessageDialog(this, "Wait for the current operation to finish before closing Manager.",
+                    "Operation in progress", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
         long running = services.runtimeRegistry().controllers().stream()
                 .filter(controller -> controller.status().processAlive()
                         || controller.automaticRecoveryInProgress()).count();
@@ -738,7 +793,7 @@ public final class MainFrame extends JFrame {
                         .map(ProfileRuntimeController::status).orElse(null);
                 RuntimeState state = status == null ? RuntimeState.STOPPED : status.state();
                 StatusIndicator.Presentation presentation = status == null
-                        ? StatusIndicator.presentationFor(state) : StatusIndicator.presentationForStatus(status);
+                        ? StatusIndicator.presentationFor(state) : StatusIndicator.presentationForStatus(status, profile.targetType());
                 label.setIcon(StatusIndicator.iconFor(state, 12));
                 label.setIconTextGap(7);
                 label.setText("<html>" + html(profile.name()) + "<br><small>"

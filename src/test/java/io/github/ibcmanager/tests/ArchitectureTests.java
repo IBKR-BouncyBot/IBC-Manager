@@ -384,7 +384,7 @@ public final class ArchitectureTests implements TestSuite {
         Assertions.notContains(installerUi, "ibcPathField", "external directory selector removed");
         Assertions.isFalse(Files.exists(ROOT.resolve("src/main/java/io/github/ibcmanager/install/IbcInstallerService.java")),
                 "obsolete external installer removed from source");
-        Assertions.contains(installerUi, ".targetType(TargetType.GATEWAY)", "only Gateway offered");
+        Assertions.contains(installerUi, "new JComboBox<>(TargetType.values())", "both supported application types offered");
         String services = source("src/main/java/io/github/ibcmanager/app/AppServices.java");
         Assertions.isTrue(services.indexOf("deletionService.cleanupStaleTransactions();")
                         < services.indexOf("new LegacyUpgradeService(paths).migrate();"),
@@ -447,6 +447,7 @@ public final class ArchitectureTests implements TestSuite {
     private void screenshotScope() throws Exception {
         String main = source("src/main/java/io/github/ibcmanager/ui/MainFrame.java");
         Assertions.notContains(main, "JLabel apiNotice", "no persistent API footer");
+        Assertions.contains(main, "controller.get().logs().snapshot()", "GUI diagnostic export includes live output");
         Assertions.contains(main, "Startup requested for", "launch request must not imply completed login");
         Assertions.contains(main, "Stop requested for", "graceful stop may still be pending");
         Assertions.notContains(main, "API listener detected means", "no always-visible API disclaimer");
@@ -517,11 +518,11 @@ public final class ArchitectureTests implements TestSuite {
         int releaseArchive = canonical.indexOf("windows-release-zip");
         Assertions.isTrue(releaseArchive > exePackaging,
                 "the Windows release ZIP must be assembled only after EXE installer creation");
-        Assertions.contains(canonical, "IBC_Manager_2.0.3_Release_windows.zip",
+        Assertions.contains(canonical, "IBC_Manager_2.1.0_Release_windows.zip",
                 "Windows release ZIP must use the requested versioned filename");
         Assertions.contains(canonical, "--main-class io.github.ibcmanager.app.IbcManagerApp",
                 "packaging must use the production entry point");
-        Assertions.contains(canonical, "IBC-Manager-2.0.3.jar",
+        Assertions.contains(canonical, "IBC-Manager-2.1.0.jar",
                 "packaging must use the versioned release JAR");
         String driver = Files.readString(
                 ROOT.resolve("src/build/java/io/github/ibcmanager/build/BuildProject.java"),

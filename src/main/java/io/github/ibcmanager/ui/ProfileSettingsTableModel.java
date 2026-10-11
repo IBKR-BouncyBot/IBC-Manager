@@ -89,7 +89,7 @@ public final class ProfileSettingsTableModel extends AbstractTableModel {
         // Reuse the actual configuration-key validation, not a looser UI regex.
         IbcConfigDocument.parse("").set(key, value == null ? "" : value);
         if (!ProfileConfiguration.editableEngineSetting(key)) {
-            throw new IllegalArgumentException("This property is generated, sensitive or not supported by Gateway");
+            throw new IllegalArgumentException("This property is generated, sensitive or not supported by the engine");
         }
         if (definitions.stream().noneMatch(d -> d.key().equals(key))) {
             definitions.add(customDefinition(key));

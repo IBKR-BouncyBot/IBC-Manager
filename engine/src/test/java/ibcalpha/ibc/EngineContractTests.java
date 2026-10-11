@@ -35,7 +35,7 @@ public final class EngineContractTests implements TestSuite {
                 new NamedTest("structured events reject arbitrary strings", this::eventBounds),
                 new NamedTest("actual trading-mode provider honors settings and arguments", this::tradingMode),
                 new NamedTest("actual command channel preserves OK ERROR and line framing", this::channel),
-                new NamedTest("TWS entry is rejected before any IBKR launch", this::twsRejected),
+                new NamedTest("TWS entrypoint routes to LoginFrame without proprietary build dependencies", this::twsRejected),
                 new NamedTest("Gateway bootstrap environment initializes without starting a session", this::environment),
                 new NamedTest("randomized Manager output is consumed by actual IBC settings", this::roundTrips));
     }
@@ -170,8 +170,11 @@ public final class EngineContractTests implements TestSuite {
             }
         });
     }
-    private void twsRejected() {
-        Assertions.throwsType(UnsupportedOperationException.class, () -> IbcTws.main(new String[0]), "TWS entry disabled");
+    private void twsRejected() throws Exception {
+        jclient.LoginFrame.received = null;
+        try { TwsEntrypoint.invoke(new String[] {"test-settings"}); }
+        catch (Throwable failure) { throw new Exception("TWS entrypoint failed", failure); }
+        Assertions.equals("test-settings", jclient.LoginFrame.received[0], "TWS settings argument retained");
     }
     private void environment() throws Exception {
         Path file = Files.createTempFile("engine-environment-", ".ini");
@@ -181,8 +184,9 @@ public final class EngineContractTests implements TestSuite {
             Assertions.isTrue(SessionManager.isGateway(), "Gateway context");
             Assertions.isFalse(Settings.settings().getBoolean("FIX", true), "API, not FIX");
             Assertions.equals(LoginManager.LoginState.LOGGED_OUT, LoginManager.loginManager().getLoginState(), "no premature login");
-            Assertions.throwsType(UnsupportedOperationException.class,
-                    () -> IbcTws.setupDefaultEnvironment(new String[] {file.toString()}, false), "TWS setup disabled");
+            IbcTws.setupDefaultEnvironment(new String[] {file.toString()}, false);
+            Assertions.isFalse(SessionManager.isGateway(), "TWS context restored");
+            IbcTws.setupDefaultEnvironment(new String[] {file.toString()}, true);
         } finally { Files.deleteIfExists(file); }
     }
     private void roundTrips() throws Exception {

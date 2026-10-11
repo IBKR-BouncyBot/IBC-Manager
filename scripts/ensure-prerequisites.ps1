@@ -11,7 +11,7 @@ param(
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
-$MinimumJavaMajor = 17
+$MinimumJavaMajor = 25
 $WixPackageId = 'WiXToolset.WiXToolset'
 $WixMinimumVersion = [Version] '3.0.0'
 $ProjectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -37,7 +37,7 @@ function Get-ManagedToolsRoot {
 }
 
 $ManagedToolsRoot = Get-ManagedToolsRoot
-$ManagedJdkHome = Join-Path $ManagedToolsRoot 'microsoft-jdk-17'
+$ManagedJdkHome = Join-Path $ManagedToolsRoot 'microsoft-jdk-25'
 
 function Get-JavaMajorFromVersionText {
     param([Parameter(Mandatory = $true)][string] $Text)
@@ -256,7 +256,10 @@ function Get-JavaInfo {
             return $null
         }
         $major = Get-JavaMajorFromVersionText $result.Text
-        if ($null -eq $major -or $major -lt $MinimumJavaMajor) {
+        if ($null -eq $major -or $major -ne $MinimumJavaMajor) {
+            return $null
+        }
+        if ($result.Text -notmatch 'Microsoft') {
             return $null
         }
         return [PSCustomObject]@{
@@ -377,7 +380,7 @@ function Invoke-Download {
         $headers = @{
             'Cache-Control' = 'no-cache'
             'Pragma' = 'no-cache'
-            'User-Agent' = 'IBC-Manager-Prerequisite-Bootstrap/2.0.3'
+            'User-Agent' = 'IBC-Manager-Prerequisite-Bootstrap/2.1.0'
         }
         Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $OutFile -TimeoutSec $TimeoutSeconds `
             -Headers $headers | Out-Null
@@ -452,18 +455,18 @@ function Complete-ManagedDirectoryInstall {
 
 function Install-ManagedJdk {
     $architecture = Get-WindowsArchitectureName
-    $url = "https://aka.ms/download-jdk/microsoft-jdk-17-windows-$architecture.zip"
+    $url = "https://aka.ms/download-jdk/microsoft-jdk-25-windows-$architecture.zip"
     $checksumUrl = $url + '.sha256sum.txt'
     $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ('IBCManager-JDK-' + [Guid]::NewGuid().ToString('N'))
     $archive = Join-Path $temporaryRoot 'jdk.zip'
     $checksumFile = Join-Path $temporaryRoot 'jdk.sha256'
     $extract = Join-Path $temporaryRoot 'extract'
-    $stagedDestination = Join-Path $ManagedToolsRoot ('microsoft-jdk-17.new-' + [Guid]::NewGuid().ToString('N'))
+    $stagedDestination = Join-Path $ManagedToolsRoot ('microsoft-jdk-25.new-' + [Guid]::NewGuid().ToString('N'))
 
     try {
         New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
         New-Item -ItemType Directory -Path $ManagedToolsRoot -Force | Out-Null
-        Write-Status "Downloading Microsoft Build of OpenJDK 17 for Windows $architecture..."
+        Write-Status "Downloading Microsoft Build of OpenJDK 25 for Windows $architecture..."
         Invoke-Download $url $archive
         Invoke-Download $checksumUrl $checksumFile
         $expected = Get-ChecksumFromText (Get-Content -LiteralPath $checksumFile -Raw) 64
@@ -478,12 +481,12 @@ function Install-ManagedJdk {
         $jdkRoot = Split-Path -Parent (Split-Path -Parent $javaFiles[0].FullName)
         Move-Item -LiteralPath $jdkRoot -Destination $stagedDestination
         $verified = Get-JavaInfo $stagedDestination $true $true
-        if ($null -eq $verified -or $verified.Major -ne 17) {
-            throw 'The downloaded Microsoft JDK did not pass the Java 17/JDK tool verification.'
+        if ($null -eq $verified -or $verified.Major -ne 25) {
+            throw 'The downloaded Microsoft JDK did not pass the Java 25/JDK tool verification.'
         }
 
         Complete-ManagedDirectoryInstall $stagedDestination $ManagedJdkHome
-        Write-Status "Installed Microsoft OpenJDK 17 under $ManagedJdkHome"
+        Write-Status "Installed Microsoft OpenJDK 25 under $ManagedJdkHome"
     } finally {
         if (Test-Path -LiteralPath $stagedDestination) {
             Remove-Item -LiteralPath $stagedDestination -Recurse -Force -ErrorAction SilentlyContinue
@@ -513,12 +516,12 @@ function Install-WixWithWinget {
 function Get-JavaRequirementDescription {
     param([bool] $RequireDevelopmentTools, [bool] $RequireJpackage)
     if ($RequireJpackage) {
-        return 'Java 17 or newer JDK with javac, jar, and jpackage'
+        return 'Java 25 JDK with javac, jar, and jpackage'
     }
     if ($RequireDevelopmentTools) {
-        return 'Java 17 or newer JDK with javac and jar'
+        return 'Java 25 JDK with javac and jar'
     }
-    return 'Java 17 or newer runtime'
+    return 'Java 25 runtime'
 }
 
 function Confirm-PrerequisiteInstallation {
@@ -535,7 +538,7 @@ function Confirm-PrerequisiteInstallation {
     Write-Host ''
     Write-Host 'With your permission, this script will:'
     if ($Missing -contains $JavaRequirement) {
-        Write-Host "  - download Microsoft OpenJDK 17, verify its SHA-256 checksum, and install it only under $ManagedJdkHome"
+        Write-Host "  - download Microsoft OpenJDK 25, verify its SHA-256 checksum, and install it only under $ManagedJdkHome"
         Write-Host '    Existing Java 8 installations and the system PATH will not be removed or changed.'
     }
     if ($Missing -contains 'WiX Toolset 3.x') {
@@ -648,7 +651,7 @@ function Invoke-SelfTest {
     if ($escaped -ne 'C:\Tools\100%%^^safe') {
         throw "Batch escaping self-test failed: $escaped"
     }
-    if ((Get-JavaRequirementDescription $false $false) -ne 'Java 17 or newer runtime') {
+    if ((Get-JavaRequirementDescription $false $false) -ne 'Java 25 runtime') {
         throw 'Runtime prerequisite description self-test failed.'
     }
     if ((Get-JavaRequirementDescription $true $true) -notmatch 'jpackage') {

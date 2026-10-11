@@ -28,7 +28,7 @@ public final class EmbeddedEngineTests implements TestSuite {
                 new NamedTest("missing engine helper is rejected", this::missing),
                 new NamedTest("unexpected cache file is rejected", this::extra),
                 new NamedTest("external IBC profile path never reaches launch", this::externalIgnored),
-                new NamedTest("legacy TWS profile cannot launch", this::twsRejected),
+                new NamedTest("TWS launch uses the integrated engine without the Gateway switch", this::twsRejected),
                 new NamedTest("engine events require completed login AND main window", this::events),
                 new NamedTest("duplicate and stale engine events cannot restore readiness", this::staleEvents),
                 new NamedTest("malformed events do not change state", this::badEvents),
@@ -43,8 +43,8 @@ public final class EmbeddedEngineTests implements TestSuite {
             Path engine = EmbeddedEngine.ensureUnder(root);
             Assertions.equals(Version.ENGINE_VERSION, Files.readString(engine.resolve("engine-version")).trim(), "revision");
             try (JarFile jar = new JarFile(engine.resolve("IBC.jar").toFile())) {
-                for (String name : List.of("IbcGateway", "IbcTws", "EngineEvents", "GatewayEntrypoint",
-                        "GatewayLoginFrameHandler", "SecondFactorAuthenticationDialogHandler",
+                for (String name : List.of("IbcGateway", "IbcTws", "EngineEvents", "GatewayEntrypoint", "TwsEntrypoint",
+                        "GatewayLoginFrameHandler", "SecondFactorAuthenticationDialogHandler", "InvalidTwsInfoDialogHandler",
                         "GatewayMainWindowFrameHandler", "CommandDispatcher", "RestartTask",
                         "SecondFactorRetry", "SecondFactorRetryTarget")) {
                     Assertions.isTrue(jar.getEntry("ibcalpha/ibc/" + name + ".class") != null, "real engine class " + name);
@@ -106,9 +106,12 @@ public final class EmbeddedEngineTests implements TestSuite {
         Path root = TestSupport.tempDirectory("engine-tws-reject");
         try {
             var profile = TestSupport.validProfile(root).toBuilder().targetType(TargetType.TWS).build();
-            Assertions.throwsType(IOException.class,
-                    () -> new LaunchScriptFactory(new AppPaths(root.resolve("data")), OperatingSystem.WINDOWS)
-                            .create(profile, root.resolve("runtime.ini")), "TWS is not launchable");
+            TestSupport.createOfflineTwsInstallation(profile.twsPath(), profile.twsMajorVersion());
+            var spec = new LaunchScriptFactory(new AppPaths(root.resolve("data")), OperatingSystem.WINDOWS)
+                    .create(profile, root.resolve("runtime.ini"));
+            String script = Files.readString(spec.launchScript());
+            Assertions.notContains(script, "/Gateway", "TWS does not select the Gateway entrypoint");
+            Assertions.contains(script, ".ibc-manager-engine", "TWS uses the maintained engine");
         } finally { TestSupport.deleteTree(root); }
     }
     private static String event(String generation, int sequence, String name) {

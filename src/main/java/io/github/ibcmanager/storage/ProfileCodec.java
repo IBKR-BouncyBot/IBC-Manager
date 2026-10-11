@@ -18,12 +18,15 @@ import java.util.TreeMap;
 import java.util.UUID;
 
 public final class ProfileCodec {
-    public static final int FORMAT_VERSION = 6;
+    public static final int FORMAT_VERSION = 7;
     public static final int INTEGRATED_LEGACY_FORMAT = 5;
     public static final int MAX_ENCODED_BYTES = 1024 * 1024;
 
     public String encode(Profile profile) {
         Objects.requireNonNull(profile, "profile");
+        if (profile.managedHeadlessRuntime() && !profile.profileOnlyConfiguration()) {
+            throw new IllegalArgumentException("Managed runtime ownership requires profile-owned format 7 configuration");
+        }
         List<String> lines = new ArrayList<>();
         lines.add("formatVersion=" + (profile.profileOnlyConfiguration() ? FORMAT_VERSION : INTEGRATED_LEGACY_FORMAT));
         if (profile.profileOnlyConfiguration()) {
@@ -32,6 +35,7 @@ public final class ProfileCodec {
                 throw new IllegalArgumentException("Profile-owned configuration cannot depend on an external config file");
             }
             lines.add("configuration=profile");
+            lines.add("managedHeadlessRuntime=" + profile.managedHeadlessRuntime());
         }
         lines.add("id=" + profile.id());
         lines.add("name=" + escape(profile.name()));
@@ -97,6 +101,7 @@ public final class ProfileCodec {
         }
         return Profile.builder()
                 .profileOnlyConfiguration(version >= 6)
+                .managedHeadlessRuntime(version >= 7 && parseBoolean(required(values, "managedHeadlessRuntime"), "managedHeadlessRuntime"))
                 .id(UUID.fromString(required(values, "id")))
                 .name(required(values, "name"))
                 .enabled(parseBoolean(required(values, "enabled"), "enabled"))

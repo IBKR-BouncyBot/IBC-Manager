@@ -42,6 +42,7 @@ public final class ProfileDeletionService {
 
     public synchronized void delete(Profile profile) throws IOException, CredentialStoreException {
         Objects.requireNonNull(profile, "profile");
+        if (profile.managedHeadlessRuntime()) throw new IOException("Disable and save the managed JBR workaround before deleting this profile");
         FilePermissionHardener.hardenDirectory(paths.deletions());
         Path transaction = paths.deletions().resolve(profile.id() + "-" + UUID.randomUUID());
         FilePermissionHardener.hardenDirectory(transaction);

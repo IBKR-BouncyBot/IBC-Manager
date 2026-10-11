@@ -1,7 +1,6 @@
 package io.github.ibcmanager.validation;
 
 import io.github.ibcmanager.engine.EmbeddedEngine;
-import io.github.ibcmanager.model.TargetType;
 
 import io.github.ibcmanager.config.ConfigValueValidator;
 import io.github.ibcmanager.config.IbcCompatibilityPolicy;
@@ -78,12 +77,9 @@ public final class ProfileValidator {
         rejectUnsafeControls(profile.bindAddress(), "bindAddress", issues);
         rejectUnsafeControls(profile.username(), "username", issues);
         if (!profile.twsMajorVersion().matches("[0-9]{3,5}")) {
-            error(issues, "twsMajorVersion", "Use the numeric offline IB Gateway major version, for example 1045");
+            error(issues, "twsMajorVersion", "Use the numeric offline TWS/Gateway major version, for example 1045");
         }
 
-        if (profile.targetType() != TargetType.GATEWAY) {
-            error(issues, "targetType", "TWS is no longer supported; this legacy profile cannot be started");
-        }
         validatePath(profile.twsPath(), "twsPath", true, issues, requireInstalledFiles);
         validatePath(profile.twsSettingsPath(), "twsSettingsPath", true, issues, requireInstalledFiles);
         validatePath(profile.baseConfigPath(), "baseConfigPath", false, issues, false);

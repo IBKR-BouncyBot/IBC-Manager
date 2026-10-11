@@ -117,15 +117,22 @@ final class SecondFactorRetryTarget implements SecondFactorRetry.Target {
         if (user == null || password == null || !user.isShowing() || !password.isShowing()
                 || !user.isEnabled() || !password.isEnabled()
                 || !user.isEditable() || !password.isEditable()) return false;
-        return usableGatewaySelectors(frame) && existingLoginButtonIsUsable(frame, requireEnabledButton)
+        return usableLoginSelectors(frame) && existingLoginButtonIsUsable(frame, requireEnabledButton)
                 && visibleLoginButtons(frame) == 1;
     }
 
-    private boolean usableGatewaySelectors(JFrame frame) {
-        JToggleButton api = SwingUtils.findToggleButton(frame, "IB API");
-        if (api == null) api = SwingUtils.findToggleButton(frame, "TWS/API");
-        if (api == null || !api.isShowing() || !api.isEnabled() || !api.isSelected()) return false;
-        if (SwingUtils.findLabel(frame, "Trading Mode") != null) {
+    private boolean usableLoginSelectors(JFrame frame) {
+        if (SessionManager.isGateway()) {
+            JToggleButton api = SwingUtils.findToggleButton(frame, "IB API");
+            if (api == null) api = SwingUtils.findToggleButton(frame, "TWS/API");
+            if (api == null || !api.isShowing() || !api.isEnabled() || !api.isSelected()) return false;
+        } else if (!(handler instanceof LoginFrameHandler)) {
+            return false; // Do not treat an unknown handler as an ordinary TWS login.
+        }
+        // TWS has no Gateway IB API selector. Its real login handler does require
+        // both trading-mode buttons; validate them before invoking initialise(),
+        // which otherwise requests a cold restart for a deconstructed form.
+        if (!SessionManager.isGateway() || SwingUtils.findLabel(frame, "Trading Mode") != null) {
             JToggleButton live = SwingUtils.findToggleButton(frame, "Live Trading");
             JToggleButton paper = SwingUtils.findToggleButton(frame, "Paper Trading");
             if (live == null || paper == null || !live.isShowing() || !paper.isShowing()
@@ -172,7 +179,7 @@ final class SecondFactorRetryTarget implements SecondFactorRetry.Target {
         if (isChallengeShowing()) return "challenge remains visible or Cancel is missing/ambiguous";
         JFrame frame = owner.getLoginFrame();
         if (frame == null || !frame.isShowing()) return "registered login frame is not visible";
-        if (!isLoginFormUsable(frame, false)) return "login form or API selector is unavailable/ambiguous";
+        if (!isLoginFormUsable(frame, false)) return "login form or required selector is unavailable/ambiguous";
         if (!existingLoginButtonIsUsable(frame, true)) return "login button remained disabled after credential restoration";
         return "login attempt changed before submission";
     }
@@ -197,7 +204,7 @@ final class SecondFactorRetryTarget implements SecondFactorRetry.Target {
     }
 
     private static boolean hasOtherModalWindow(Window permitted) {
-        // This enumerates only this Gateway JVM's Swing windows, not the desktop
+        // This enumerates only this TWS/Gateway JVM's Swing windows, not the desktop
         // or other profiles. Never click behind a competing modal message.
         for (Window window : Window.getWindows()) {
             if (window != permitted && window instanceof JDialog dialog

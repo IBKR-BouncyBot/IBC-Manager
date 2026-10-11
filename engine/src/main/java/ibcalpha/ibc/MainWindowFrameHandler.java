@@ -38,6 +38,7 @@ class MainWindowFrameHandler implements WindowHandler {
         if (eventID != WindowEvent.WINDOW_OPENED) return;
 
         SessionManager.setMainWindow((JFrame) window);
+        EngineEvents.emit("MAIN_WINDOW_READY");
     }
 
     @Override

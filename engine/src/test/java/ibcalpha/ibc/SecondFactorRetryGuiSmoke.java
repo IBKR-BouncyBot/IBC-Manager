@@ -48,6 +48,12 @@ public final class SecondFactorRetryGuiSmoke {
             TradingModeManager.initialise(new DefaultTradingModeManager("live"));
             if (args.length == 1 && args[0].equals("--real-five-minutes")) {
                 openChallenge(300);
+            } else if (args.length == 1 && args[0].equals("--tws-regressions")) {
+                twsRetry(false, false);
+                twsRetry(false, true);
+                twsRetry(true, false);
+                twsApproval();
+                twsMissingMode();
             } else if (args.length == 1 && args[0].equals("--returned-login-regressions")) {
                 clearedCredentialForm();
                 replacedLoginFrame();
@@ -78,6 +84,11 @@ public final class SecondFactorRetryGuiSmoke {
                 inlineWithoutLoginHeading();
                 delayedCredentialValidation();
                 hiddenOldChallengeHeading();
+                twsRetry(false, false);
+                twsRetry(false, true);
+                twsRetry(true, false);
+                twsApproval();
+                twsMissingMode();
             }
             console.println("SECOND FACTOR GUI SMOKE PASSED: " + scenarios + " scenarios, " + checks + " checks");
         } finally {
@@ -472,6 +483,57 @@ public final class SecondFactorRetryGuiSmoke {
         scenarios++;
     }
 
+    private static void twsRetry(boolean paper, boolean returned) throws Exception {
+        settings(true, true, 1);
+        TradingModeManager.initialise(new DefaultTradingModeManager(paper ? "paper" : "live"));
+        try (Fixture f = new Fixture(true)) {
+            onEdt(() -> {
+                f.requireFilledFields = true;
+                f.asyncValidation = true;
+                f.paper = paper;
+                f.loginControls();
+                f.showChallenge("Cancel", !returned);
+            });
+            waitFor(() -> f.openedAt.get() != 0, 5_000, "TWS challenge detected");
+            if (returned) onEdt(() -> f.challenge.dispose());
+            waitFor(() -> f.logins.get() == 1, 12_000, "TWS native login retry without a Gateway selector");
+            require(f.cancels.get() == (returned ? 0 : 1), "TWS cancels only a still-visible challenge");
+            require(f.passwordEdits.get() == 1, "TWS credentials restored once before asynchronous validation");
+            require(f.owner.getLoginState() == LoginManager.LoginState.LOGGING_IN, "TWS native login state reached");
+            require(f.uiOffEdt.get() == 0, "TWS mutation stays on the event thread");
+        } finally { TradingModeManager.initialise(new DefaultTradingModeManager("live")); }
+        scenarios++;
+    }
+
+    private static void twsApproval() throws Exception {
+        settings(true, true, 1);
+        try (Fixture f = new Fixture(true)) {
+            onEdt(() -> f.showChallenge("Cancel", false));
+            waitFor(() -> f.openedAt.get() != 0, 5_000, "TWS approval test armed");
+            onEdt(() -> { f.owner.setLoginState(LoginManager.LoginState.LOGGED_IN); f.challenge.dispose(); });
+            Thread.sleep(1_200);
+            require(f.logins.get() == 0 && f.cancels.get() == 0, "TWS approval invalidates the pending retry");
+        }
+        scenarios++;
+    }
+
+    private static void twsMissingMode() throws Exception {
+        settings(true, true, 1);
+        try (Fixture f = new Fixture(true)) {
+            int blocked = eventCount("SECOND_FACTOR_RETRY_BLOCKED");
+            onEdt(() -> {
+                ((JPanel) f.frame.getContentPane()).remove(0);
+                f.frame.pack();
+                f.showChallenge("Cancel", false);
+            });
+            waitFor(() -> eventCount("SECOND_FACTOR_RETRY_BLOCKED") > blocked, 16_000,
+                    "TWS missing trading-mode selector is blocked");
+            require(f.logins.get() == 0 && f.cancels.get() == 1,
+                    "unknown TWS form is not passed to the handler's cold-restart path");
+        }
+        scenarios++;
+    }
+
     private static int eventCount(String event) {
         String suffix = "|" + event;
         return (int) TRACE.toString(StandardCharsets.UTF_8).lines()
@@ -491,18 +553,26 @@ public final class SecondFactorRetryGuiSmoke {
 
     private static final class Fixture implements AutoCloseable {
         final DefaultLoginManager owner = new DefaultLoginManager();
-        final GatewayLoginFrameHandler handler = new GatewayLoginFrameHandler();
+        final AbstractLoginHandler handler;
+        final boolean tws;
+        final Path twsIni;
         final AtomicInteger cancels = new AtomicInteger(), logins = new AtomicInteger(), passwordEdits = new AtomicInteger();
         final AtomicInteger closedBeforeCancel = new AtomicInteger(), uiOffEdt = new AtomicInteger();
         final AtomicLong openedAt = new AtomicLong(), cancelAt = new AtomicLong();
         JFrame frame;
         JDialog challenge;
-        boolean approveDuringCancel, newPromptAfterLogin, inline, requireFilledFields, omitLoginHeading, asyncValidation;
-        Fixture() throws Exception {
+        boolean approveDuringCancel, newPromptAfterLogin, inline, requireFilledFields, omitLoginHeading, asyncValidation, paper;
+        Fixture() throws Exception { this(false); }
+        Fixture(boolean tws) throws Exception {
+            this.tws = tws;
+            handler = tws ? new LoginFrameHandler() : new GatewayLoginFrameHandler();
+            twsIni = tws ? Files.createTempFile("tws-retry-fixture-", ".ini") : null;
             onEdt(() -> {
+                SessionManager.initialise(!tws);
+                if (tws) JtsIniManager.initialise(twsIni.toString());
                 LoginManager.initialise(owner);
                 owner.setLoginHandler(handler);
-                frame = new JFrame("IB Gateway");
+                frame = new JFrame(tws ? "Login" : "IB Gateway");
                 owner.setLoginFrame(frame);
                 loginControls();
                 frame.setVisible(true);
@@ -511,12 +581,18 @@ public final class SecondFactorRetryGuiSmoke {
         void loginControls() {
             JPanel panel = new JPanel();
             if (inline && !omitLoginHeading) panel.add(new JLabel("LOGIN"));
-            panel.add(new JToggleButton("IB API", true));
+            if (tws) {
+                JToggleButton live = new JToggleButton("Live Trading", !paper);
+                JToggleButton paperMode = new JToggleButton("Paper Trading", paper);
+                javax.swing.ButtonGroup mode = new javax.swing.ButtonGroup();
+                mode.add(live); mode.add(paperMode);
+                panel.add(live); panel.add(paperMode);
+            } else panel.add(new JToggleButton("IB API", true));
             JTextField user = new JTextField(12);
             JPasswordField password = new JPasswordField(12);
             panel.add(user);
             panel.add(password);
-            JButton login = new JButton("Log In");
+            JButton login = new JButton(tws && paper ? "Paper Log In" : "Log In");
             if (requireFilledFields) {
                 login.setEnabled(false);
                 javax.swing.event.DocumentListener listener = new javax.swing.event.DocumentListener() {
@@ -586,7 +662,9 @@ public final class SecondFactorRetryGuiSmoke {
                     owner.cancelSecondFactorRetry();
                     if (challenge != null) challenge.dispose();
                     frame.dispose();
+                    SessionManager.initialise(true);
                 });
+                if (twsIni != null) Files.deleteIfExists(twsIni);
             } catch (Exception failure) { throw new AssertionError(failure); }
         }
     }

@@ -94,11 +94,11 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
     private void javaEightRejected() throws Exception {
         String bootstrap = read("scripts/ensure-prerequisites.ps1");
         String run = read("scripts/run.bat");
-        Assertions.contains(bootstrap, "$MinimumJavaMajor = 17",
-                "minimum runtime must remain Java 17");
+        Assertions.contains(bootstrap, "$MinimumJavaMajor = 25",
+                "minimum runtime must remain Java 25");
         Assertions.contains(bootstrap, "'java version \"1.8.0_401\"' = 8",
                 "legacy Java version parsing must have a regression case");
-        Assertions.contains(bootstrap, "$major -lt $MinimumJavaMajor",
+        Assertions.contains(bootstrap, "$major -ne $MinimumJavaMajor",
                 "incompatible Java must be rejected during discovery");
         Assertions.contains(run, "call \"%~dp0bootstrap.bat\" Run",
                 "run must check Java before starting the release JAR");
@@ -288,7 +288,7 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
         String script = read("scripts/ensure-prerequisites.ps1");
         Assertions.contains(script, "$env:LOCALAPPDATA", "managed tools must prefer current-user storage");
         Assertions.contains(script, "IBCManager\\tools", "managed tools must use a dedicated directory");
-        Assertions.contains(script, "$ManagedJdkHome = Join-Path $ManagedToolsRoot 'microsoft-jdk-17'",
+        Assertions.contains(script, "$ManagedJdkHome = Join-Path $ManagedToolsRoot 'microsoft-jdk-25'",
                 "managed Java must have a stable private location");
         Assertions.contains(script, "No Java 8 installation was removed.",
                 "failure output must explicitly preserve Java 8");
@@ -299,7 +299,7 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
 
     private void downloadsAreVerified() throws Exception {
         String script = read("scripts/ensure-prerequisites.ps1");
-        Assertions.contains(script, "https://aka.ms/download-jdk/microsoft-jdk-17-windows-$architecture.zip",
+        Assertions.contains(script, "https://aka.ms/download-jdk/microsoft-jdk-25-windows-$architecture.zip",
                 "Java must come from Microsoft's stable OpenJDK endpoint");
         Assertions.contains(script, ".sha256sum.txt", "Microsoft's published SHA-256 file must be downloaded");
         Assertions.contains(script, "Assert-FileChecksum $archive 'SHA256' $expected",
@@ -338,11 +338,11 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
                 "jpackage must be required only for packaging");
         Assertions.contains(script, "$requiresWix = $Mode -eq 'Package'",
                 "WiX must be required only for Windows installer packaging");
-        Assertions.contains(script, "Java 17 or newer runtime",
+        Assertions.contains(script, "Java 25 runtime",
                 "run-mode requirement must be described accurately");
-        Assertions.contains(script, "Java 17 or newer JDK with javac and jar",
+        Assertions.contains(script, "Java 25 JDK with javac and jar",
                 "build-mode requirement must be described accurately");
-        Assertions.contains(script, "Java 17 or newer JDK with javac, jar, and jpackage",
+        Assertions.contains(script, "Java 25 JDK with javac, jar, and jpackage",
                 "package-mode requirement must be described accurately");
         Assertions.contains(script, "Apache Ant is intentionally not a prerequisite.",
                 "bootstrap must explicitly document the removed Ant requirement");
@@ -439,7 +439,7 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
         Assertions.contains(driver, "ToolProvider.getSystemJavaCompiler()",
                 "driver must require the selected full JDK compiler");
         Assertions.contains(driver, "\"--release\", \"17\"",
-                "driver must target Java 17 bytecode");
+                "driver must target Java 25 bytecode");
         Assertions.contains(driver, "\"-Xlint:all\"",
                 "driver must enable all compiler warnings");
         Assertions.contains(driver, "\"-Werror\"",
@@ -517,7 +517,7 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
         }
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         Assertions.equals(0, process.exitValue(), "build-driver self-test failed: " + output);
-        Assertions.contains(output, "Build-driver self-test passed for version 2.0.3",
+        Assertions.contains(output, "Build-driver self-test passed for version 2.1.0",
                 "build-driver self-test must report the current release version");
     }
 
@@ -561,7 +561,7 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
         String validation = read("scripts/validate-windows.bat");
         Assertions.contains(script, "function Invoke-SelfTest", "bootstrap must expose deterministic self-tests");
         Assertions.contains(script, "1.8.0_401", "self-tests must cover legacy Java 8 syntax");
-        Assertions.contains(script, "17.0.12", "self-tests must cover Java 17 syntax");
+        Assertions.contains(script, "17.0.12", "self-tests must cover Java 25 syntax");
         Assertions.contains(script, "21.0.5", "self-tests must cover later LTS Java syntax");
         Assertions.contains(script, "Windows Installer XML Toolset Compiler version 3.14.1.8722",
                 "self-tests must cover WiX output parsing");
@@ -710,7 +710,7 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
         Assertions.contains(pack, "runtime\\bin\\java.exe",
                 "package-windows.bat must fail before release assembly when the Java launcher is absent");
         Assertions.contains(pack,
-                "set \"WINDOWS_RELEASE_ZIP=dist\\IBC_Manager_2.0.3_Release_windows.zip\"",
+                "set \"WINDOWS_RELEASE_ZIP=dist\\IBC_Manager_2.1.0_Release_windows.zip\"",
                 "Windows release ZIP filename must equal the normal release name plus _windows");
         Assertions.contains(driver,
                 "IBC_Manager_\" + releaseVersion + \"_Release_windows.zip",
@@ -730,14 +730,14 @@ public final class PrerequisiteBootstrapTests implements TestSuite {
         String build = read("build.xml");
         String run = read("scripts/run.bat");
         String pack = read("scripts/package-windows.bat");
-        Assertions.contains(version, "VERSION = \"2.0.3\"", "application version must be 2.0.3");
-        Assertions.contains(build, "name=\"app.version\" value=\"2.0.3\"",
-                "optional Ant release version must be 2.0.3");
-        Assertions.contains(run, "IBC-Manager-2.0.3.jar", "run JAR must be version 2.0.3");
-        Assertions.contains(pack, "--app-version 2.0.3", "Windows package version must be 2.0.3");
-        Assertions.contains(pack, "IBC-Manager-2.0.3.jar", "packaged JAR must be version 2.0.3");
-        Assertions.contains(pack, "IBC_Manager_2.0.3_Release_windows.zip",
-                "Windows release ZIP must be version 2.0.3");
+        Assertions.contains(version, "VERSION = \"2.1.0\"", "application version must be 2.1.0");
+        Assertions.contains(build, "name=\"app.version\" value=\"2.1.0\"",
+                "optional Ant release version must be 2.1.0");
+        Assertions.contains(run, "IBC-Manager-2.1.0.jar", "run JAR must be version 2.1.0");
+        Assertions.contains(pack, "--app-version 2.1.0", "Windows package version must be 2.1.0");
+        Assertions.contains(pack, "IBC-Manager-2.1.0.jar", "packaged JAR must be version 2.1.0");
+        Assertions.contains(pack, "IBC_Manager_2.1.0_Release_windows.zip",
+                "Windows release ZIP must be version 2.1.0");
     }
 
     private static int count(String source, String token) {

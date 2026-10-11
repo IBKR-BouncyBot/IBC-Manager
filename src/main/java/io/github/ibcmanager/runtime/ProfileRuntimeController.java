@@ -413,6 +413,22 @@ public final class ProfileRuntimeController {
         Optional<IbcLogStateParser.StateHint> hint = stateParser.latest();
 
         if (apiListening || stateParser.loginCompleted()) markAutomaticRecoveryHealthy();
+        if (apiListening && !stateParser.restartPending() && !stateParser.childExitObserved()) {
+            startupStallDetector.observe(stateParser);
+            startupStallDetector.recordProgress();
+        }
+
+        if (status.state() == RuntimeState.RECOVERY_FAILED && !automaticRecoveryTaskActive
+                && expectedTermination == ExpectedTermination.NONE && !apiListening && !stateParser.loginCompleted()
+                && (hint.isEmpty() || hint.get().state() == RuntimeState.STARTING
+                        || hint.get().state() == RuntimeState.RESTARTING || hint.get().state() == RuntimeState.UNKNOWN)) {
+            // Wrapper retries are not successful recovery. Preserve the failure
+            // across their between-child messages while continuing to observe
+            // genuine login/2FA/API progress and explicit operator actions.
+            setStatus(RuntimeState.RECOVERY_FAILED, true, commandOpen, apiListener, process.pid(),
+                    process.startInstant().orElse(status.startedAt()), null, status.message());
+            return;
+        }
 
         if (automaticRecoveryTaskActive) {
             if (expectedTermination == ExpectedTermination.NONE
@@ -467,7 +483,7 @@ public final class ProfileRuntimeController {
             message = hint.get().message();
         } else if (apiListening) {
             nextState = RuntimeState.API_LISTENER_DETECTED;
-            message = "Gateway's API listener is available" + listenerDetails(observedApi) + ".";
+            message = applicationName() + "'s API listener is available" + listenerDetails(observedApi) + ".";
         } else if (observedApi.state() == PortListenerState.LISTENING) {
             nextState = RuntimeState.UNKNOWN;
             message = observedApi.ownershipAvailable()
@@ -481,8 +497,8 @@ public final class ProfileRuntimeController {
         } else if (hint.isPresent() && hint.get().state() == RuntimeState.RUNNING) {
             nextState = RuntimeState.RUNNING;
             message = apiListener == PortListenerState.UNKNOWN
-                    ? "Gateway login completed; API listener status is temporarily unavailable"
-                    : "Gateway login completed; waiting for the API listener to become available";
+                    ? applicationName() + " login completed; API listener status is temporarily unavailable"
+                    : applicationName() + " login completed; waiting for the API listener to become available";
         } else if (commandOpen) {
             nextState = freshRecoveryStartActive ? RuntimeState.STARTING_FRESH : RuntimeState.STARTING;
             message = freshRecoveryStartActive
@@ -494,12 +510,14 @@ public final class ProfileRuntimeController {
         } else {
             nextState = freshRecoveryStartActive ? RuntimeState.STARTING_FRESH : RuntimeState.STARTING;
             message = freshRecoveryStartActive
-                    ? "Starting a new Gateway session"
-                    : hint.map(IbcLogStateParser.StateHint::message).orElse("Starting the included Gateway engine");
+                    ? "Starting a new " + applicationName() + " session"
+                    : hint.map(IbcLogStateParser.StateHint::message).orElse("Starting the included " + applicationName() + " engine");
         }
         setStatus(nextState, true, commandOpen, apiListener, process.pid(),
                 process.startInstant().orElse(status.startedAt()), null, message);
     }
+
+    private String applicationName() { return profile.targetType() == io.github.ibcmanager.model.TargetType.TWS ? "TWS" : "Gateway"; }
 
     private String secondFactorWaitingMessage(boolean freshStart, String fallback) {
         String base = freshStart
@@ -520,6 +538,10 @@ public final class ProfileRuntimeController {
         String baseMessage = "Startup has made no progress for " + minutes + " minutes after IBC reported "
                 + "'Starting " + application + "'. No login window, second-factor window, or verified API "
                 + "listener was observed.";
+        if (startupStallDetector.launchAttempts() > 1) {
+            baseMessage += " This includes " + startupStallDetector.launchAttempts()
+                    + " " + application + " child launches; failed replacements do not reset the deadline.";
+        }
         long generation = stateParser.sessionGeneration();
         if (!profile.autoRecoverStartupStall()) {
             boolean firstObservation = status.state() != RuntimeState.STARTUP_STALLED;
@@ -846,8 +868,20 @@ public final class ProfileRuntimeController {
         }
         // Drain the owned process output here even when the regular refresh has not run yet.
         readNewLogLines();
-        if (stateParser.sessionGeneration() != generation || !startupStallDetector.isStalled(stateParser)) {
-            abandonEscalationForProgress();
+        boolean stillStalled = startupStallDetector.isStalled(stateParser);
+        if (stateParser.sessionGeneration() != generation || !stillStalled) {
+            if (startupStallDetector.deadlineExceeded()
+                    && !stateParser.normalExitConfirmed() && !stateParser.pauseConfirmed()) {
+                // A failed/exited/replaced child is not genuine progress, but
+                // the captured cleanup target is no longer actionable. Do not
+                // kill its replacement or recursively queue a new cleanup.
+                // Retain the pending record until actual health or manual action.
+                setRecoveryFailed("Automatic recovery stopped because the Gateway child exited or changed "
+                        + "without login/API progress while recovery was pending. No further process "
+                        + "termination was performed. Check Gateway; use Force Stop then Start if it remains stalled.");
+            } else {
+                abandonEscalationForProgress();
+            }
             return false;
         }
         portProbe.invalidate();
@@ -1087,6 +1121,8 @@ public final class ProfileRuntimeController {
             } else if (termination == ExpectedTermination.AUTO_RECOVERY) {
                 cleanupTerminatedState(RuntimeState.AUTO_RECOVERY_FORCE_CLEANUP,
                         "The stalled process exited during automatic recovery; verifying cleanup", exitCode);
+            } else if (stateParser.logonRejection().isPresent()) {
+                cleanupTerminatedState(RuntimeState.ERROR, stateParser.logonRejection().orElseThrow(), exitCode);
             } else if (freshRecoveryStartActive) {
                 String message = "The fresh automatic-recovery start exited before login/API health was restored";
                 if (code != null) message += " with code " + code;
@@ -1096,7 +1132,9 @@ public final class ProfileRuntimeController {
                 cleanupStoppedState("IBC completed a normal or scheduled shutdown", exitCode);
             } else {
                 String message;
-                if (stateParser.errorExitConfirmed()) {
+                if (stateParser.bootstrapFailure().isPresent()) {
+                    message = "Gateway/TWS did not start: " + stateParser.bootstrapFailure().orElseThrow();
+                } else if (stateParser.errorExitConfirmed()) {
                     message = "IBC exited after reporting an error";
                 } else if (stateParser.restartPending()) {
                     message = "The StartIBC wrapper exited while an automatic restart was pending";

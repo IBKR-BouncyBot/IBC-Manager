@@ -12,10 +12,10 @@ import java.util.List;
 import java.util.Map;
 
 public final class InstallationDiscoveryTests implements TestSuite {
-    @Override public String name() { return "Windows IB Gateway-only installation discovery"; }
+    @Override public String name() { return "Windows TWS and IB Gateway discovery"; }
     @Override public List<NamedTest> tests() {
         return List.of(new NamedTest("Gateway detected without any external IBC", this::gateway),
-                new NamedTest("TWS installations are excluded", this::tws),
+                new NamedTest("TWS installations are restored without an external IBC", this::tws),
                 new NamedTest("duplicate roots and external IBC candidates cannot duplicate Gateway", this::dedup),
                 new NamedTest("Windows discovery remains unavailable on non-Windows hosts", this::platform),
                 new NamedTest("uppercase Gateway JARS accepted, malformed versions rejected", this::uppercase));
@@ -34,7 +34,9 @@ public final class InstallationDiscoveryTests implements TestSuite {
         Path root = TestSupport.tempDirectory("discovery-no-tws");
         try {
             Path jts = TestSupport.createOfflineTwsInstallation(root.resolve("Jts"), "1050");
-            Assertions.isTrue(InstallationDiscoveryService.discover(List.of(), List.of(jts)).isEmpty(), "no TWS offered");
+            var found = InstallationDiscoveryService.discover(List.of(), List.of(jts));
+            Assertions.equals(1, found.size(), "TWS found");
+            Assertions.equals(TargetType.TWS, found.get(0).targetType(), "correct application type");
         } finally { TestSupport.deleteTree(root); }
     }
     private void dedup() throws Exception {

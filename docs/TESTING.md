@@ -51,3 +51,14 @@ replacement frame, missing initial LOGIN heading, asynchronous credential valida
 and a hidden retired inline challenge heading. The real-duration path uses cleared
 credentials and asynchronous validation. The Profile-only suite tests migration,
 missing sparse values, rollback, one authority and editor/save guards.
+
+
+## Reattached-process exit observation
+
+The controller reattachment case verifies the native handle is stopped, then uses
+a bounded waitFor on its independently held Process before checking final state.
+Do not replace this with an immediate Process.isAlive assertion or a fixed sleep.
+The deterministic delayed-observer regression must remain enabled, as must the
+still-live-child, already-exited and interrupted-wait controls. A live native handle
+on Force Stop return, a timed-out wait, or an unrelated killed process must fail.
+See REATTACH_TEST_FIX.md for the reported Windows failure and local reproduction.

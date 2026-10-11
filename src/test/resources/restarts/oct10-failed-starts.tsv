@@ -1,0 +1,117 @@
+# Sanitized selected stdout milestones; milliseconds relative to first printed timestamp.
+0	Starting IBC with this command:
+0	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000001|1|ENGINE_STARTED
+28	2026-10-10 20:13:49:088 IBC: CommandServer started and is ready to accept commands
+28	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000001|2|COMMAND_SERVER_READY
+122	2026-10-10 20:13:49:182 IBC: Starting session: will exit if login dialog is not displayed within 60 seconds
+137	2026-10-10 20:13:49:197 IBC: Starting Gateway
+137	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000001|3|GATEWAY_STARTING
+60132	2026-10-10 20:14:49:192 IBC: IBC closing after TWS/Gateway failed to display login dialog
+60132	2026-10-10 20:14:49:192 IBC: Exiting after error with exit code=1112
+60132	Program has exited
+60132	Error level is 1112
+60132	IBC will restart shortly due to login dialog display timeout
+60132	Starting IBC with this command:
+60132	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000002|1|ENGINE_STARTED
+62153	2026-10-10 20:14:51:213 IBC: CommandServer started and is ready to accept commands
+62153	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000002|2|COMMAND_SERVER_READY
+62249	2026-10-10 20:14:51:309 IBC: Starting session: will exit if login dialog is not displayed within 60 seconds
+62259	2026-10-10 20:14:51:319 IBC: Starting Gateway
+62259	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000002|3|GATEWAY_STARTING
+122268	2026-10-10 20:15:51:328 IBC: IBC closing after TWS/Gateway failed to display login dialog
+122268	2026-10-10 20:15:51:328 IBC: Exiting after error with exit code=1112
+122268	Program has exited
+122268	Error level is 1112
+122268	IBC will restart shortly due to login dialog display timeout
+122268	Starting IBC with this command:
+122268	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000003|1|ENGINE_STARTED
+124240	2026-10-10 20:15:53:300 IBC: CommandServer started and is ready to accept commands
+124240	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000003|2|COMMAND_SERVER_READY
+124331	2026-10-10 20:15:53:391 IBC: Starting session: will exit if login dialog is not displayed within 60 seconds
+124342	2026-10-10 20:15:53:402 IBC: Starting Gateway
+124342	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000003|3|GATEWAY_STARTING
+184346	2026-10-10 20:16:53:406 IBC: IBC closing after TWS/Gateway failed to display login dialog
+184346	2026-10-10 20:16:53:406 IBC: Exiting after error with exit code=1112
+184346	Program has exited
+184346	Error level is 1112
+184346	IBC will restart shortly due to login dialog display timeout
+184346	Starting IBC with this command:
+184346	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000004|1|ENGINE_STARTED
+186355	2026-10-10 20:16:55:415 IBC: CommandServer started and is ready to accept commands
+186355	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000004|2|COMMAND_SERVER_READY
+186449	2026-10-10 20:16:55:509 IBC: Starting session: will exit if login dialog is not displayed within 60 seconds
+186460	2026-10-10 20:16:55:520 IBC: Starting Gateway
+186460	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000004|3|GATEWAY_STARTING
+246464	2026-10-10 20:17:55:524 IBC: IBC closing after TWS/Gateway failed to display login dialog
+246464	2026-10-10 20:17:55:524 IBC: Exiting after error with exit code=1112
+246464	Program has exited
+246464	Error level is 1112
+246464	IBC will restart shortly due to login dialog display timeout
+246464	Starting IBC with this command:
+246464	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000005|1|ENGINE_STARTED
+248455	2026-10-10 20:17:57:515 IBC: CommandServer started and is ready to accept commands
+248455	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000005|2|COMMAND_SERVER_READY
+248550	2026-10-10 20:17:57:610 IBC: Starting session: will exit if login dialog is not displayed within 60 seconds
+248561	2026-10-10 20:17:57:621 IBC: Starting Gateway
+248561	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000005|3|GATEWAY_STARTING
+308561	2026-10-10 20:18:57:621 IBC: IBC closing after TWS/Gateway failed to display login dialog
+308561	2026-10-10 20:18:57:621 IBC: Exiting after error with exit code=1112
+308561	Program has exited
+308561	Error level is 1112
+308561	IBC will restart shortly due to login dialog display timeout
+308561	Starting IBC with this command:
+308561	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000006|1|ENGINE_STARTED
+310566	2026-10-10 20:18:59:626 IBC: CommandServer started and is ready to accept commands
+310566	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000006|2|COMMAND_SERVER_READY
+310655	2026-10-10 20:18:59:715 IBC: Starting session: will exit if login dialog is not displayed within 60 seconds
+310669	2026-10-10 20:18:59:729 IBC: Starting Gateway
+310669	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000006|3|GATEWAY_STARTING
+370664	2026-10-10 20:19:59:724 IBC: IBC closing after TWS/Gateway failed to display login dialog
+370667	2026-10-10 20:19:59:727 IBC: Exiting after error with exit code=1112
+370667	Program has exited
+370667	Error level is 1112
+370667	IBC will restart shortly due to login dialog display timeout
+370667	Starting IBC with this command:
+370667	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000007|1|ENGINE_STARTED
+372642	2026-10-10 20:20:01:702 IBC: CommandServer started and is ready to accept commands
+372642	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000007|2|COMMAND_SERVER_READY
+372743	2026-10-10 20:20:01:803 IBC: Starting session: will exit if login dialog is not displayed within 60 seconds
+372754	2026-10-10 20:20:01:814 IBC: Starting Gateway
+372754	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000007|3|GATEWAY_STARTING
+432759	2026-10-10 20:21:01:819 IBC: IBC closing after TWS/Gateway failed to display login dialog
+432759	2026-10-10 20:21:01:819 IBC: Exiting after error with exit code=1112
+432759	Program has exited
+432759	Error level is 1112
+432759	IBC will restart shortly due to login dialog display timeout
+432759	Starting IBC with this command:
+432759	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000008|1|ENGINE_STARTED
+434705	2026-10-10 20:21:03:765 IBC: CommandServer started and is ready to accept commands
+434705	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000008|2|COMMAND_SERVER_READY
+434795	2026-10-10 20:21:03:855 IBC: Starting session: will exit if login dialog is not displayed within 60 seconds
+434805	2026-10-10 20:21:03:865 IBC: Starting Gateway
+434805	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000008|3|GATEWAY_STARTING
+494805	2026-10-10 20:22:03:865 IBC: IBC closing after TWS/Gateway failed to display login dialog
+494805	2026-10-10 20:22:03:865 IBC: Exiting after error with exit code=1112
+494805	Program has exited
+494805	Error level is 1112
+494805	IBC will restart shortly due to login dialog display timeout
+494805	Starting IBC with this command:
+494805	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000009|1|ENGINE_STARTED
+496763	2026-10-10 20:22:05:823 IBC: CommandServer started and is ready to accept commands
+496763	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000009|2|COMMAND_SERVER_READY
+496862	2026-10-10 20:22:05:922 IBC: Starting session: will exit if login dialog is not displayed within 60 seconds
+496873	2026-10-10 20:22:05:933 IBC: Starting Gateway
+496873	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-000000000009|3|GATEWAY_STARTING
+556868	2026-10-10 20:23:05:928 IBC: IBC closing after TWS/Gateway failed to display login dialog
+556869	2026-10-10 20:23:05:929 IBC: Exiting after error with exit code=1112
+556869	Program has exited
+556869	Error level is 1112
+556869	IBC will restart shortly due to login dialog display timeout
+556869	Starting IBC with this command:
+556869	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-00000000000a|1|ENGINE_STARTED
+558933	2026-10-10 20:23:07:993 IBC: CommandServer started and is ready to accept commands
+558933	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-00000000000a|2|COMMAND_SERVER_READY
+559069	2026-10-10 20:23:08:129 IBC: Starting session: will exit if login dialog is not displayed within 60 seconds
+559082	2026-10-10 20:23:08:142 IBC: Starting Gateway
+559082	IBC_MANAGER_EVENT|1|00000000-0000-0000-0000-00000000000a|3|GATEWAY_STARTING
+564559	2026-10-10 20:23:13:619 IBC: Login dialog WINDOW_OPENED: LoginState is LOGGED_OUT

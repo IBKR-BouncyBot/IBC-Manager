@@ -1,4 +1,4 @@
-# Batch files in IBC Manager 2.0.3
+# Batch files in IBC Manager 2.1.0
 
 This description follows the actual commands in `scripts/`. The matching root
 files delegate to them; use the root files for normal operation.
@@ -30,5 +30,5 @@ User-facing scripts pause on both success and failure and preserve the exit code
 Internal bootstrap, engine and scheduled-launch paths do not pause.
 
 The root and canonical script have the same effect; running both repeats work.
-Prerequisites are requested with consent. Running needs Java 17+, development
+Prerequisites are requested with consent. Running needs Microsoft Java 25+, development
 needs a JDK, and native installer packaging also needs the configured WiX toolchain.

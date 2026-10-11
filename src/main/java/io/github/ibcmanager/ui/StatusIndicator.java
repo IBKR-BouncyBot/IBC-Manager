@@ -66,8 +66,10 @@ final class StatusIndicator extends JPanel {
         updateStatus(null);
     }
 
-    void updateStatus(ProfileStatus status) {
-        presentation = presentationForStatus(status);
+    void updateStatus(ProfileStatus status) { updateStatus(status, io.github.ibcmanager.model.TargetType.GATEWAY); }
+
+    void updateStatus(ProfileStatus status, io.github.ibcmanager.model.TargetType target) {
+        presentation = presentationForStatus(status, target);
         dot.setIcon(icon(presentation.color(), LARGE_DOT_SIZE));
         headline.setText(presentation.headline());
         headline.setForeground(presentation.color());
@@ -91,6 +93,12 @@ final class StatusIndicator extends JPanel {
 
     Presentation presentation() {
         return presentation;
+    }
+
+    static Presentation presentationForStatus(ProfileStatus status, io.github.ibcmanager.model.TargetType target) {
+        Presentation result = presentationForStatus(status);
+        return target == io.github.ibcmanager.model.TargetType.TWS
+                ? new Presentation(result.tone(), result.color(), result.headline().replace("Gateway", "TWS")) : result;
     }
 
     static Presentation presentationForStatus(ProfileStatus status) {

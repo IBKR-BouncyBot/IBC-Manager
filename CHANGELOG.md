@@ -1,4 +1,79 @@
-# 2.0.2 - returned-login retry and profile-only configuration
+# Changelog
+
+## 2.1.0 - Java 25, managed headless workaround, profile copy and TWS
+
+- Move Manager bootstrap/native runtime to Microsoft OpenJDK 25 without replacing
+  unrelated Java installations. Keep Java 17 engine compatibility for older IBKR builds.
+- Add explicit-consent pinned JBR 25.0.4-b508.27 + JavaFX 25 modular-library installation,
+  checksums, private native cache, reversible .vmoptions and prior-override restoration.
+  Share installation ownership; journal commit/removal; preserve manual changes/files.
+- Add independently editable Copy profiles, new UUIDs and unused ports and safe disabled,
+  non-autostart/manual-password defaults. No session/settings files are copied.
+- Restore TWS discovery, reflective startup, settings, main-window events and guarded
+  Enable API. FIX remains excluded; legacy TWS is not silently re-enabled.
+- Make 2FA retries validate TWS trading-mode controls rather than requiring a Gateway
+  API selector; retain existing Gateway checks and all deadline/approval protections.
+- Retain the exact-artifact JetBrains CDN redirect permission for JBR downloads.
+- Identify the exact failing HTTP resource in errors, without printing URI queries.
+- Synchronize the reattached-process Force Stop test with the original Process exit
+  observation after independently checking the native handle is stopped. Keep the
+  production stop/recovery code unchanged; add delayed-observation and failure controls.
+- Preserve all 2.0.4 startup-watchdog, command, 2FA, race-safety and logging fixes.
+- Document the user-confirmed disconnected-RDP workaround and its validation scope;
+  refresh the real GUI screenshot. Existing GPL and support/acknowledgement text retained.
+- Permit setup when publisher checksum files cannot be downloaded: try JavaFX SHA-256
+  then SHA-1, and record per-artifact SKIPPED status if neither is available (JBR SHA-512
+  similarly optional when unavailable). Retain TLS, content, compatibility and rollback checks.
+- Remove "1050 / " from the workaround checkbox and permission heading; document reduced
+  checksum assurance before Save. Existing runtime/version compatibility is unchanged.
+- Treat an unavailable Java/JavaFX inventory probe as a warning: failure to launch or
+  capture output, timeout, nonzero exit without a recognized fatal JVM diagnostic, or no
+  usable inventory no longer blocks setup. Known module-resolution failures remain fatal.
+  Record SKIPPED plus bounded, redacted stdout/stderr instead of a blank error.
+- Shorten enable/removal confirmation text. Keep checksum fallback, known-invalid-file
+  checks, safe extraction, consent, cancellation, ownership and rollback unchanged.
+
+- Include OpenJFX's eighth module, jdk.jsobject, using the same-version Windows
+  jdk-jsobject artifact; the seven javafx.* JARs alone are not a complete WebView setup.
+- Validate downloaded module descriptors and reject an explicit boot-layer/FindException
+  result rather than calling a known broken runtime an unavailable optional check.
+- Recognize fatal pre-IBC JVM bootstrap output and retain ERROR across a wrapper's generic
+  Normal exit footer, with the actual dependency failure visible in Details.
+- Detect old seven-library managed payloads, require safe disable/Save then enable/Save,
+  and preserve their existing last-owner removal path, including the native cache.
+- Add compiled-descriptor, real JPMS-resolution, full setup/removal, older-payload
+  restoration and incident-derived controller regressions.
+
+- Pin the managed JBR download to 25.0.4-b508.27. Never substitute a moving latest
+  build; older managed installs require explicit disable/Save and reinstallation.
+- Recognize the exact untitled invalid twsInfo/OK dialog without dismissing it or
+  retrying login. Emit a bounded engine failure event and retain ERROR across
+  generic wrapper completion. Existing authentication/recovery safeguards remain.
+- Include accessible launcher/rotated/application/API/crash/exported text logs and
+  runtime/VM-options/provenance metadata in Diagnostics with strict read-only bounds,
+  redaction and an omission inventory. Encrypted logs are inventoried, not decrypted.
+- Add allowlisted read-only identity hints from the selected native launcher and
+  installed javaOptions. Do not apply example TWS flags to Gateway or infer build data.
+- Maintained engine revision 3.24.2-manager.6; profile format remains 7.
+
+## 2.0.4 - 2026-10-11 - restart supervision and diagnostics
+
+- Retain the five-minute no-progress deadline across failed Gateway child replacements.
+  Real login/2FA/API progress ends the episode; later legitimate restarts get a new budget.
+- Preserve generation, exact-process-tree and listener-ownership safety checks. If the
+  captured child changes/exits while cleanup is pending without real progress, cancel
+  destructive escalation and retain the unresolved recovery instead of requeuing it.
+- Keep a failed recovery visible across further wrapper retry messages. Existing rate
+  limits and manual recovery controls remain; this does not enable unbounded force restarts.
+- Include the live runtime snapshot in GUI diagnostic exports with existing bounds/redaction.
+- Remove graphics-dependent static initialization from engine command dispatch. Headless
+  reconnects are explicitly rejected while STOP/EXIT can still be processed.
+- Capture stderr in all Windows Java-launch branches; redact bounded complete lines before
+  both live delivery and the 60-second disk buffer, including inline secret assignments.
+- Add incident-derived failed-start and successful warm-restart fixtures, headless command,
+  controller, GUI-export and stream-redaction regression tests.
+- Engine revision 3.24.2-manager.4. Profile format 6, GPL licences and authentication
+  behavior retained. Does not repair Java/Windows RDP desktop availability itself.
 
 ## 2.0.3 - status wording and GitHub README
 
@@ -15,6 +90,8 @@
   BouncyBot Thank me section and preserve existing GPL licences and credits.
 - Keep engine 3.24.2-manager.3 and profile format 6 unchanged. No authentication,
   supervision, migration, credential, command or trading behavior change.
+
+## 2.0.2 - returned-login retry and profile-only configuration
 
 - Restore credentials before waiting for the returned Gateway Log In button.
 - Adopt only engine-registered reconstructed login frames, retaining the challenge deadline.

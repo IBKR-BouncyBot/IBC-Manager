@@ -28,10 +28,16 @@ import javax.swing.SwingUtilities;
 /** Exercises maintained engine handlers with real Swing widgets, without Gateway binaries. */
 public final class EngineGuiSmoke {
     private static int checks;
+    private static final java.io.ByteArrayOutputStream RECORDING = new java.io.ByteArrayOutputStream();
 
     private EngineGuiSmoke() { }
 
     public static void main(String[] args) throws Exception {
+        // Utils deliberately retains the initial stream even after Gateway redirects
+        // System.out. Capture before any engine initialization, not around one late call.
+        java.io.PrintStream originalOutput = System.out;
+        java.io.PrintStream capture = new java.io.PrintStream(RECORDING, true, StandardCharsets.UTF_8);
+        System.setOut(capture);
         Path config = Files.createTempFile("ibc-engine-gui-", ".ini");
         try {
             Files.writeString(config, "SuppressInfoMessages=yes\nCommandPrompt=\n", StandardCharsets.ISO_8859_1);
@@ -46,12 +52,60 @@ public final class EngineGuiSmoke {
             SwingUtilities.invokeAndWait(() -> testBlindWarning(config));
             main.window = null;
             testDispatcher();
-            System.out.println("ENGINE GUI SMOKE PASSED: 4 scenarios, " + checks + " checks");
+            SessionManager.initialise(false);
+            SwingUtilities.invokeAndWait(() -> testTwsMainWindow(main));
+            main.window = null;
+            testTwsEarlyDispatcher();
+            SwingUtilities.invokeAndWait(EngineGuiSmoke::testInvalidTwsInfo);
+            System.out.println("ENGINE GUI SMOKE PASSED: 7 scenarios, " + checks + " checks");
         } finally {
             SwingUtilities.invokeAndWait(() -> {
                 for (Window window : Window.getWindows()) window.dispose();
             });
             Files.deleteIfExists(config);
+            System.setOut(originalOutput);
+            originalOutput.print(RECORDING.toString(StandardCharsets.UTF_8));
+            capture.close();
+        }
+    }
+
+    private static void testInvalidTwsInfo() {
+        InvalidTwsInfoDialogHandler handler = new InvalidTwsInfoDialogHandler();
+        JDialog dialog = new JDialog();
+        JPanel panel = new JPanel();
+        JLabel message = new JLabel("invalidTwsinfo");
+        AtomicInteger clicks = new AtomicInteger();
+        JButton ok = new JButton("OK"); ok.addActionListener(event -> clicks.incrementAndGet());
+        panel.add(message); panel.add(ok); dialog.add(panel); dialog.pack(); dialog.setVisible(true);
+        LoginManager previous = LoginManager.loginManager();
+        try {
+            LoginManager.initialise(new DefaultLoginManager());
+            LoginManager.loginManager().setLoginState(LoginManager.LoginState.LOGGING_IN);
+            require(handler.recogniseWindow(dialog), "untitled rejection dialog recognized");
+            require(handler.filterEvent(dialog, WindowEvent.WINDOW_OPENED), "open event accepted");
+            require(!handler.filterEvent(dialog, WindowEvent.WINDOW_CLOSED), "closing events cannot invent rejection");
+            message.setText("<html>invalid&nbsp;twsInfo</html>");
+            require(handler.recogniseWindow(dialog), "HTML label spacing supported");
+            message.setText("A different error");
+            require(!handler.recogniseWindow(dialog), "generic untitled dialogs not intercepted");
+            message.setText("invalid twsInfo");
+            int start = RECORDING.size();
+            handler.handleWindow(dialog, WindowEvent.WINDOW_OPENED);
+            handler.handleWindow(dialog, WindowEvent.WINDOW_ACTIVATED);
+            String log = new String(RECORDING.toByteArray(), start, RECORDING.size() - start, StandardCharsets.UTF_8);
+            require(log.contains("|LOGIN_REJECTED_TWSINFO"), "specific machine-readable failure");
+            require(log.indexOf("|LOGIN_REJECTED_TWSINFO") == log.lastIndexOf("|LOGIN_REJECTED_TWSINFO"), "duplicate activation not spammed");
+            require(clicks.get() == 0 && dialog.isShowing(), "dialog is not dismissed, no automatic login retry");
+            require(LoginManager.loginManager().getLoginState() == LoginManager.LoginState.LOGIN_FAILED, "auth retry cancelled by failed state");
+            java.util.List<WindowHandler> handlers;
+            try {
+                var factory = IbcTws.class.getDeclaredMethod("createWindowHandlers"); factory.setAccessible(true);
+                @SuppressWarnings("unchecked") java.util.List<WindowHandler> list = (java.util.List<WindowHandler>) factory.invoke(null);
+                handlers = list;
+            } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
+            require(handlers.get(0) instanceof InvalidTwsInfoDialogHandler, "registered before generic handlers");
+        } finally {
+            if (previous != null) LoginManager.initialise(previous); dialog.dispose();
         }
     }
 
@@ -174,6 +228,50 @@ public final class EngineGuiSmoke {
             require(replies.get(2).startsWith("ERROR ENABLEAPI is not valid"), "Gateway excludes TWS-only command");
             require(replies.get(3).equals("ERROR Command invalid"), "unknown command rejected");
             require(replies.get(4).equals("OK Goodbye"), "EXIT acknowledged");
+        }
+    }
+
+    private static void testTwsMainWindow(TestMainWindow main) {
+        MainWindowFrameHandler handler = new MainWindowFrameHandler();
+        JFrame frame = new JFrame("TWS fixture");
+        java.lang.reflect.Field sequence;
+        try { sequence = EngineEvents.class.getDeclaredField("sequence"); sequence.setAccessible(true); }
+        catch (ReflectiveOperationException error) { throw new AssertionError(error); }
+        try {
+            require(!handler.recogniseWindow(frame), "a random window is not TWS");
+            JMenuBar bar = new JMenuBar();
+            JMenu file = new JMenu("File");
+            file.add(new JMenuItem("Lock Application"));
+            bar.add(file); frame.setJMenuBar(bar);
+            require(handler.recogniseWindow(frame), "upstream TWS main-window signature restored");
+            require(handler.filterEvent(frame, WindowEvent.WINDOW_OPENED), "TWS open accepted");
+            require(!handler.filterEvent(frame, WindowEvent.WINDOW_CLOSED), "TWS close rejected");
+            long before;
+            try { before = sequence.getLong(null); }
+            catch (IllegalAccessException error) { throw new AssertionError(error); }
+            handler.handleWindow(frame, WindowEvent.WINDOW_OPENED);
+            require(main.window == frame, "TWS handler registers the actual main window");
+            try { require(sequence.getLong(null) == before + 1, "TWS emits one structured readiness milestone"); }
+            catch (IllegalAccessException error) { throw new AssertionError(error); }
+        } finally { frame.dispose(); }
+    }
+
+    private static void testTwsEarlyDispatcher() throws Exception {
+        try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
+                Socket client = new Socket(InetAddress.getLoopbackAddress(), server.getLocalPort());
+                Socket accepted = server.accept()) {
+            client.setSoTimeout(5000); accepted.setSoTimeout(5000);
+            Thread dispatch = new Thread(() -> new CommandDispatcher(new CommandChannel(accepted)).run(), "tws-command-test");
+            dispatch.setDaemon(true); dispatch.start();
+            client.getOutputStream().write("ENABLEAPI\nEXIT\n".getBytes(StandardCharsets.US_ASCII));
+            client.getOutputStream().flush();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(client.getInputStream(), StandardCharsets.US_ASCII));
+            String answer = reader.readLine();
+            require(answer != null && answer.startsWith("ERROR") && !answer.contains("not valid"),
+                    "TWS accepts ENABLEAPI command identity but guards absent main window");
+            require("OK Goodbye".equals(reader.readLine()), "TWS dispatcher remains usable after guarded command");
+            dispatch.join(5000);
+            require(!dispatch.isAlive(), "TWS command dispatcher finishes without a hang");
         }
     }
 

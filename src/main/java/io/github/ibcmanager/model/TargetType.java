@@ -2,7 +2,7 @@ package io.github.ibcmanager.model;
 
 public enum TargetType {
     GATEWAY("IB Gateway", "/Gateway"),
-    TWS("Unsupported legacy TWS profile", "");
+    TWS("Trader Workstation", "");
 
     private final String displayName;
     private final String launcherSwitch;

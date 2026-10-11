@@ -1,0 +1,16 @@
+{
+  "oct10-failed-starts.tsv": {
+    "source": "IBC-Manager-Diagnostics-IB-Gateway-1050-20261010-182348(1).zip",
+    "sha256": "d2e531b9353bd2693e1cb5e2a5dddcb47eb470be3d5ad6c401644095d3a3c527",
+    "member": "profile-log-tail.txt",
+    "lines_retained": 116,
+    "transformations": "Allowlisted lifecycle lines; engine UUIDs replaced with sequential test UUIDs. Untimestamped lines use the last printed time. Absolute local timestamps in selected lines retained. No credentials, paths, account identifiers or launch commands."
+  },
+  "oct11-warm-success.tsv": {
+    "source": "IBC-Manager-Diagnostics-IB-Gateway-1050-20261011-111457.zip",
+    "sha256": "f1e7d3e49b0efec40015f2b23b8a32f9da28ee9fdd55161fe62f65a1bf06e2a7",
+    "member": "profile-log-tail.txt",
+    "lines_retained": 17,
+    "transformations": "Allowlisted lifecycle lines; engine UUIDs replaced with sequential test UUIDs. Untimestamped lines use the last printed time. Absolute local timestamps in selected lines retained. No credentials, paths, account identifiers or launch commands."
+  }
+}

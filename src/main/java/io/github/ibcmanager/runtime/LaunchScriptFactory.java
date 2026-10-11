@@ -46,9 +46,7 @@ public final class LaunchScriptFactory implements LaunchSpecFactory {
         if (operatingSystem != OperatingSystem.WINDOWS) {
             throw new IOException("IBC Manager supports Windows only");
         }
-        if (profile.targetType() != TargetType.GATEWAY) {
-            throw new IOException("Only IB Gateway profiles can be launched; legacy TWS profiles are retained for reference");
-        }
+        io.github.ibcmanager.workaround.ManagedRuntimeService.checkBeforeStart(profile, paths);
         WindowsCommandSafety.requireSafeExternalArgument(profile.twsSettingsPath().toString());
         Path engineDirectory = EmbeddedEngine.ensureFor(profile);
         Optional<IbcJavaRuntimeResolver.ResolvedJava> resolvedJava = javaRuntimeResolver.resolve(profile);

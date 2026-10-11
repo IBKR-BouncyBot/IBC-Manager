@@ -28,15 +28,19 @@ public final class IbcLogStateParser {
     private boolean restartPending;
     private boolean normalExitConfirmed;
     private boolean errorExitConfirmed;
+    private String bootstrapFailure;
+    private String logonRejection;
+    public static final String INVALID_TWSINFO_MESSAGE = "IBKR rejected Gateway/TWS startup information (invalid twsInfo). "
+            + "Check the JBR compatibility build and installed application metadata; export Diagnostics.";
     private long sessionGeneration;
     private String engineGeneration;
     private long engineSequence;
     private boolean mainWindowObserved;
     private final Set<String> retiredEngineGenerations = new LinkedHashSet<>();
     private static final String EVENT_PREFIX = "IBC_MANAGER_EVENT|1|";
-    private static final Set<String> EVENTS = Set.of("ENGINE_STARTED", "GATEWAY_STARTING", "MAIN_WINDOW_READY",
+    private static final Set<String> EVENTS = Set.of("ENGINE_STARTED", "GATEWAY_STARTING", "TWS_STARTING", "MAIN_WINDOW_READY",
             "LOGIN_LOGGED_OUT", "LOGIN_LOGGING_IN", "LOGIN_AWAITING_CREDENTIALS", "LOGIN_TWO_FA_IN_PROGRESS",
-            "LOGIN_LOGGED_IN", "LOGIN_LOGIN_FAILED", "COMMAND_SERVER_READY", "COMMAND_SERVER_CLOSED",
+            "LOGIN_LOGGED_IN", "LOGIN_LOGIN_FAILED", "LOGIN_REJECTED_TWSINFO", "COMMAND_SERVER_READY", "COMMAND_SERVER_CLOSED",
             "SECOND_FACTOR_RETRY_ARMED", "SECOND_FACTOR_RETRY_DUE",
             "SECOND_FACTOR_RETRY_STARTED", "SECOND_FACTOR_RETRY_BLOCKED");
 
@@ -58,6 +62,21 @@ public final class IbcLogStateParser {
             return Optional.empty();
         }
 
+        if (launchCommandObserved && (lower.contains("reason [invalid twsinfo]")
+                || lower.contains("login rejected: invalid twsinfo")
+                || lower.contains("reject text cannot be translated: invalid twsinfo"))) {
+            return rejectTwsInfo();
+        }
+        if (launchCommandObserved && !applicationLaunchObserved) {
+            Optional<String> failure = JavaBootstrapFailure.message(line);
+            if (failure.isPresent()) {
+                bootstrapFailure = failure.get();
+                errorExitConfirmed = true;
+                commandServerState = CommandServerState.CLOSED;
+                latest = hint(RuntimeState.UNKNOWN, bootstrapFailure);
+                return Optional.of(latest);
+            }
+        }
         updateCommandServerState(lower);
         StateHint hint = null;
         if (isRestartDecision(lower)) {
@@ -65,6 +84,7 @@ public final class IbcLogStateParser {
             childExitObserved = true;
             normalExitConfirmed = false;
             errorExitConfirmed = false;
+            bootstrapFailure = null;
             hint = hint(RuntimeState.RESTARTING, restartMessage(lower));
         } else if (containsAny(lower,
                 "second factor authentication initiated",
@@ -138,6 +158,14 @@ public final class IbcLogStateParser {
             errorExitConfirmed = true;
             hint = hint(RuntimeState.ERROR, line.trim());
         }
+        if (hint != null && bootstrapFailure != null && !restartPending) {
+            hint = hint(RuntimeState.UNKNOWN, bootstrapFailure);
+        }
+        if (logonRejection != null) {
+            loginCompleted = false;
+            errorExitConfirmed = true;
+            hint = hint(RuntimeState.ERROR, logonRejection);
+        }
         if (hint != null) latest = hint;
         return Optional.ofNullable(hint);
     }
@@ -176,6 +204,8 @@ public final class IbcLogStateParser {
     public synchronized boolean restartPending() { return restartPending; }
     public synchronized boolean normalExitConfirmed() { return normalExitConfirmed; }
     public synchronized boolean errorExitConfirmed() { return errorExitConfirmed; }
+    public synchronized Optional<String> logonRejection() { return Optional.ofNullable(logonRejection); }
+    public synchronized Optional<String> bootstrapFailure() { return Optional.ofNullable(bootstrapFailure); }
     public synchronized long sessionGeneration() { return sessionGeneration; }
 
     public synchronized void resetSessionState() {
@@ -189,6 +219,8 @@ public final class IbcLogStateParser {
         restartPending = false;
         normalExitConfirmed = false;
         errorExitConfirmed = false;
+        bootstrapFailure = null;
+        logonRejection = null;
     }
 
     public synchronized void reset() {
@@ -206,6 +238,8 @@ public final class IbcLogStateParser {
         restartPending = false;
         normalExitConfirmed = false;
         errorExitConfirmed = false;
+        bootstrapFailure = null;
+        logonRejection = null;
         sessionGeneration = 0;
     }
 
@@ -220,6 +254,8 @@ public final class IbcLogStateParser {
         restartPending = false;
         normalExitConfirmed = false;
         errorExitConfirmed = false;
+        bootstrapFailure = null;
+        logonRejection = null;
     }
 
     private void retireEngineGeneration() {
@@ -251,9 +287,11 @@ public final class IbcLogStateParser {
             if (sequence <= engineSequence) return Optional.empty();
             engineSequence = sequence;
         } catch (IllegalArgumentException ignored) { return Optional.empty(); }
+        if (fields[2].equals("LOGIN_REJECTED_TWSINFO")) return rejectTwsInfo();
+        if (logonRejection != null && !fields[2].startsWith("COMMAND_SERVER_")) return rejectTwsInfo();
         StateHint state = switch (fields[2]) {
             case "ENGINE_STARTED" -> hint(RuntimeState.STARTING, "Integrated IBC engine started");
-            case "GATEWAY_STARTING" -> {
+            case "GATEWAY_STARTING", "TWS_STARTING" -> {
                 applicationLaunchObserved = true;
                 yield hint(RuntimeState.STARTING, "Starting IB Gateway");
             }
@@ -297,6 +335,15 @@ public final class IbcLogStateParser {
         };
         if (state != null) latest = state;
         return Optional.ofNullable(state);
+    }
+
+    private Optional<StateHint> rejectTwsInfo() {
+        logonRejection = INVALID_TWSINFO_MESSAGE;
+        loginCompleted = false;
+        mainWindowObserved = false;
+        errorExitConfirmed = true;
+        latest = hint(RuntimeState.ERROR, logonRejection);
+        return Optional.of(latest);
     }
 
     private void updateCommandServerState(String lower) {

@@ -29,17 +29,17 @@ if exist "%INPUT%" rmdir /s /q "%INPUT%"
 if exist "%DEST%" rmdir /s /q "%DEST%"
 mkdir "%INPUT%" || exit /b 1
 mkdir "%DEST%" || exit /b 1
-copy /y "dist\IBC-Manager-2.0.3.jar" "%INPUT%\" >nul || exit /b 1
+copy /y "dist\IBC-Manager-2.1.0.jar" "%INPUT%\" >nul || exit /b 1
 
 "%IBC_MANAGER_JPACKAGE_EXE%" ^
   --type app-image ^
   --name "IBC Manager" ^
-  --app-version 2.0.3 ^
+  --app-version 2.1.0 ^
   --vendor "IBC Manager contributors" ^
-  --description "IB Gateway manager with an integrated IBC engine" ^
+  --description "TWS and IB Gateway manager with an integrated IBC engine" ^
   --input "%INPUT%" ^
-  --main-jar "IBC-Manager-2.0.3.jar" ^
-  --main-class io.github.ibcmanager.app.IbcManagerApp ^
+  --main-jar "IBC-Manager-2.1.0.jar" ^
+  --main-class io.github.ibcmanager.app.IbcManagerApp --add-modules java.base,java.desktop,java.logging,jdk.crypto.ec ^
   --dest "%DEST%" ^
   --jlink-options "%JLINK_OPTIONS%" ^
   --java-options "-Dfile.encoding=UTF-8"
@@ -58,15 +58,23 @@ for %%F in ("%DEST%\IBC Manager\runtime\bin\java.exe") do if %%~zF LEQ 0 (
   exit /b 1
 )
 
+"%DEST%\IBC Manager\runtime\bin\java.exe" -XshowSettings:properties -version > "%INPUT%\runtime-version.txt" 2>&1
+findstr /C:"java.specification.version = 25" "%INPUT%\runtime-version.txt" >nul
+if errorlevel 1 (
+  echo [IBC Manager] Native package did not contain Java 25; packaging stopped.
+  exit /b 1
+)
+del "%INPUT%\runtime-version.txt"
+
 "%IBC_MANAGER_JPACKAGE_EXE%" ^
   --type exe ^
   --name "IBC Manager" ^
-  --app-version 2.0.3 ^
+  --app-version 2.1.0 ^
   --vendor "IBC Manager contributors" ^
-  --description "IB Gateway manager with an integrated IBC engine" ^
+  --description "TWS and IB Gateway manager with an integrated IBC engine" ^
   --input "%INPUT%" ^
-  --main-jar "IBC-Manager-2.0.3.jar" ^
-  --main-class io.github.ibcmanager.app.IbcManagerApp ^
+  --main-jar "IBC-Manager-2.1.0.jar" ^
+  --main-class io.github.ibcmanager.app.IbcManagerApp --add-modules java.base,java.desktop,java.logging,jdk.crypto.ec ^
   --dest "%DEST%" ^
   --win-menu ^
   --win-shortcut ^
@@ -84,7 +92,7 @@ if errorlevel 1 (
   echo [IBC Manager] The Windows installer was created, but the Windows release ZIP could not be assembled.
   exit /b 1
 )
-set "WINDOWS_RELEASE_ZIP=dist\IBC_Manager_2.0.3_Release_windows.zip"
+set "WINDOWS_RELEASE_ZIP=dist\IBC_Manager_2.1.0_Release_windows.zip"
 if not exist "%WINDOWS_RELEASE_ZIP%" (
   echo [IBC Manager] Windows release ZIP creation reported success, but the archive was not found:
   echo [IBC Manager]   %WINDOWS_RELEASE_ZIP%

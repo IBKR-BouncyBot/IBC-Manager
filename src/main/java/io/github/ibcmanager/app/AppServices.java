@@ -39,6 +39,7 @@ import java.util.concurrent.TimeUnit;
 
 public final class AppServices implements AutoCloseable {
     private final AppPaths paths;
+    private final io.github.ibcmanager.workaround.ManagedRuntimeService managedRuntimeService;
     private final CredentialStore credentialStore;
     private final ProfileRepository profileRepository;
     private final ManagedConfigService managedConfigService;
@@ -58,6 +59,7 @@ public final class AppServices implements AutoCloseable {
             RuntimeRegistry runtimeRegistry, DiagnosticBundleService diagnosticBundleService,
             TaskSchedulerService taskSchedulerService, ExecutorService automaticRecoveryExecutor) {
         this.paths = paths;
+        this.managedRuntimeService = new io.github.ibcmanager.workaround.ManagedRuntimeService(paths, profileRepository);
         this.credentialStore = credentialStore;
         this.profileRepository = profileRepository;
         this.managedConfigService = managedConfigService;
@@ -93,6 +95,7 @@ public final class AppServices implements AutoCloseable {
         // Restore any older prepared deletion before converting the surviving profiles.
         new LegacyUpgradeService(paths).migrate();
         new ProfileConfigurationUpgradeService(paths, credentialStore).migrate();
+        new io.github.ibcmanager.workaround.ManagedRuntimeService(paths, repository).recoverPending();
         ProfileValidator validator = new ProfileValidator(credentialStore);
         ProfileSetValidator setValidator = new ProfileSetValidator();
         RuntimeConfigFactory runtimeConfigFactory = new RuntimeConfigFactory(paths, configService);
@@ -132,6 +135,37 @@ public final class AppServices implements AutoCloseable {
         TaskSchedulerService scheduler = new WindowsTaskSchedulerService();
         return new AppServices(paths, credentialStore, repository, configService, saveService, deletionService, validator,
                 setValidator, registry, diagnostics, scheduler, automaticRecoveryExecutor);
+    }
+
+    public io.github.ibcmanager.workaround.ManagedRuntimeService managedRuntimeService() { return managedRuntimeService; }
+
+    /** Never change shared vmoptions while any known session is active or starting. */
+    public void requireInstallationStopped(Profile requested) throws IOException {
+        Path program = new OfflineApplicationLayoutResolver().resolve(requested).programPath();
+        for (ProfileRuntimeController controller : runtimeRegistry.controllers()) {
+            Profile other = controller.profile();
+            Path otherProgram;
+            try { otherProgram = new OfflineApplicationLayoutResolver().resolve(other).programPath(); }
+            catch (IOException failure) { continue; }
+            if (!program.equals(otherProgram)) continue;
+            var status = controller.status();
+            boolean quiescent = switch (status.state()) {
+                case STOPPED, PAUSED, ERROR, RECOVERY_FAILED -> true;
+                default -> false;
+            };
+            if (status.processAlive() || !quiescent || controller.automaticRecoveryInProgress()) {
+                throw new IOException("Stop all profiles using this installation before changing the managed runtime: " + other.name());
+            }
+        }
+        ProcessIdentityStore identities = new ProcessIdentityStore(paths);
+        for (Profile other : profileRepository.loadAll().profiles()) {
+            Path otherProgram;
+            try { otherProgram = new OfflineApplicationLayoutResolver().resolve(other).programPath(); }
+            catch (IOException failure) { continue; }
+            if (program.equals(otherProgram) && identities.reattach(other.id()).isPresent()) {
+                throw new IOException("A tracked session still uses this installation: " + other.name());
+            }
+        }
     }
 
     public AppPaths paths() { return paths; }

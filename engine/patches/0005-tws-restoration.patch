@@ -1,0 +1,192 @@
+diff --git a/ibcalpha/ibc/CommandDispatcher.java b/ibcalpha/ibc/CommandDispatcher.java
+--- a/ibcalpha/ibc/CommandDispatcher.java
++++ b/ibcalpha/ibc/CommandDispatcher.java
+@@ -78,7 +78,20 @@
+             return;
+         }
+ 
+-        // run on the current thread
++        try {
++            if (GraphicsEnvironment.isHeadless()) {
++                mChannel.writeNack("ENABLEAPI requires an available graphical desktop");
++                return;
++            }
++            if (MainWindowManager.mainWindowManager().getMainWindow(1, TimeUnit.MILLISECONDS) == null) {
++                mChannel.writeNack("TWS main window is not ready");
++                return;
++            }
++        } catch (HeadlessException | AWTError unavailable) {
++            mChannel.writeNack("ENABLEAPI requires an available graphical desktop");
++            return;
++        }
++        // run on the current thread, only after TWS can display its configuration UI
+         (new ConfigurationTask(new EnableApiTask(mChannel))).execute();
+    }
+ 
+diff --git a/ibcalpha/ibc/EngineEvents.java b/ibcalpha/ibc/EngineEvents.java
+--- a/ibcalpha/ibc/EngineEvents.java
++++ b/ibcalpha/ibc/EngineEvents.java
+@@ -9,7 +9,7 @@
+     public static final String PREFIX = "IBC_MANAGER_EVENT|1|";
+     private static final String GENERATION = UUID.randomUUID().toString();
+     private static final Set<String> ALLOWED = Set.of(
+-            "ENGINE_STARTED", "GATEWAY_STARTING", "MAIN_WINDOW_READY",
++            "ENGINE_STARTED", "GATEWAY_STARTING", "TWS_STARTING", "MAIN_WINDOW_READY",
+             "LOGIN_LOGGED_OUT", "LOGIN_LOGGING_IN", "LOGIN_AWAITING_CREDENTIALS",
+             "LOGIN_TWO_FA_IN_PROGRESS", "LOGIN_LOGGED_IN", "LOGIN_LOGIN_FAILED",
+             "COMMAND_SERVER_READY", "COMMAND_SERVER_CLOSED",
+diff --git a/ibcalpha/ibc/IbcTws.java b/ibcalpha/ibc/IbcTws.java
+--- a/ibcalpha/ibc/IbcTws.java
++++ b/ibcalpha/ibc/IbcTws.java
+@@ -16,7 +16,7 @@
+ // You should have received a copy of the GNU General Public License
+ // along with IBC.  If not, see <http://www.gnu.org/licenses/>.
+ 
+-// IBC Manager integration: Gateway-only startup via reflection; no proprietary build dependency.
++// IBC Manager integration: TWS/Gateway startup via reflection; no proprietary build dependency.
+ package ibcalpha.ibc;
+ 
+ import java.awt.AWTEvent;
+@@ -209,14 +209,23 @@
+ 
+     private IbcTws() { }
+ 
+-    /** Kept for upstream source compatibility; TWS is not an executable product mode. */
++    /** Windows TWS entry; Gateway continues to use IbcGateway. */
+     public static void main(final String[] args) throws Exception {
+-        throw new UnsupportedOperationException("IBC Manager 2.0 supports IB Gateway only");
++        if (Thread.getDefaultUncaughtExceptionHandler() == null) {
++            Thread.setDefaultUncaughtExceptionHandler(new ibcalpha.ibc.UncaughtExceptionHandler());
++        }
++        if (!System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("windows")) {
++            throw new IllegalStateException("IBC Manager engine supports Windows only");
++        }
++        checkArguments(args);
++        setupDefaultEnvironment(args, false);
++        if (Settings.settings().getBoolean("FIX", false)) throw new IllegalArgumentException("FIX is not supported");
++        EngineEvents.emit("ENGINE_STARTED");
++        load();
+     }
+ 
+     static void setupDefaultEnvironment(final String[] args, final boolean isGateway) throws Exception {
+-        if (!isGateway) throw new UnsupportedOperationException("IB Gateway only");
+-        SessionManager.initialise(true);
++        SessionManager.initialise(isGateway);
+         Settings.initialise(new DefaultSettings(args));
+         LoginManager.initialise(new DefaultLoginManager(args));
+         MainWindowManager.initialise(new DefaultMainWindowManager());
+@@ -477,6 +486,18 @@
+         }
+     }
+ 
++    private static void startTws() {
++        if (Settings.settings().getBoolean("ShowAllTrades", false)) Utils.showTradesLogWindow();
++        try {
++            Utils.logToConsole("Starting TWS");
++            EngineEvents.emit("TWS_STARTING");
++            TwsEntrypoint.invoke(new String[] {getTWSSettingsDirectory()});
++        } catch (Throwable failure) {
++            Utils.logException(failure);
++            Utils.exitWithError(ErrorCodes.CANT_FIND_ENTRYPOINT);
++        }
++    }
++
+     private static void startCommandServer() {
+         MyCachedThreadPool.getInstance().execute(new CommandServer());
+     }
+@@ -508,8 +529,8 @@
+         Utils.logToConsole("TWS Settings directory is: " + getTWSSettingsDirectory());
+         SessionManager.startSession();
+         JtsIniManager.initialise(getJtsIniFilePath());
+-        if (!SessionManager.isGateway()) throw new UnsupportedOperationException("IB Gateway only");
+-        startGateway();
++        if (SessionManager.isGateway()) startGateway();
++        else startTws();
+ 
+         configureResetOrderIdsAtStart();
+         configureApiPort();
+diff --git a/ibcalpha/ibc/MainWindowFrameHandler.java b/ibcalpha/ibc/MainWindowFrameHandler.java
+--- a/ibcalpha/ibc/MainWindowFrameHandler.java
++++ b/ibcalpha/ibc/MainWindowFrameHandler.java
+@@ -38,6 +38,7 @@
+         if (eventID != WindowEvent.WINDOW_OPENED) return;
+ 
+         SessionManager.setMainWindow((JFrame) window);
++        EngineEvents.emit("MAIN_WINDOW_READY");
+     }
+ 
+     @Override
+diff --git a/ibcalpha/ibc/SecondFactorRetryTarget.java b/ibcalpha/ibc/SecondFactorRetryTarget.java
+--- a/ibcalpha/ibc/SecondFactorRetryTarget.java
++++ b/ibcalpha/ibc/SecondFactorRetryTarget.java
+@@ -117,15 +117,22 @@
+         if (user == null || password == null || !user.isShowing() || !password.isShowing()
+                 || !user.isEnabled() || !password.isEnabled()
+                 || !user.isEditable() || !password.isEditable()) return false;
+-        return usableGatewaySelectors(frame) && existingLoginButtonIsUsable(frame, requireEnabledButton)
++        return usableLoginSelectors(frame) && existingLoginButtonIsUsable(frame, requireEnabledButton)
+                 && visibleLoginButtons(frame) == 1;
+     }
+ 
+-    private boolean usableGatewaySelectors(JFrame frame) {
+-        JToggleButton api = SwingUtils.findToggleButton(frame, "IB API");
+-        if (api == null) api = SwingUtils.findToggleButton(frame, "TWS/API");
+-        if (api == null || !api.isShowing() || !api.isEnabled() || !api.isSelected()) return false;
+-        if (SwingUtils.findLabel(frame, "Trading Mode") != null) {
++    private boolean usableLoginSelectors(JFrame frame) {
++        if (SessionManager.isGateway()) {
++            JToggleButton api = SwingUtils.findToggleButton(frame, "IB API");
++            if (api == null) api = SwingUtils.findToggleButton(frame, "TWS/API");
++            if (api == null || !api.isShowing() || !api.isEnabled() || !api.isSelected()) return false;
++        } else if (!(handler instanceof LoginFrameHandler)) {
++            return false; // Do not treat an unknown handler as an ordinary TWS login.
++        }
++        // TWS has no Gateway IB API selector. Its real login handler does require
++        // both trading-mode buttons; validate them before invoking initialise(),
++        // which otherwise requests a cold restart for a deconstructed form.
++        if (!SessionManager.isGateway() || SwingUtils.findLabel(frame, "Trading Mode") != null) {
+             JToggleButton live = SwingUtils.findToggleButton(frame, "Live Trading");
+             JToggleButton paper = SwingUtils.findToggleButton(frame, "Paper Trading");
+             if (live == null || paper == null || !live.isShowing() || !paper.isShowing()
+@@ -172,7 +179,7 @@
+         if (isChallengeShowing()) return "challenge remains visible or Cancel is missing/ambiguous";
+         JFrame frame = owner.getLoginFrame();
+         if (frame == null || !frame.isShowing()) return "registered login frame is not visible";
+-        if (!isLoginFormUsable(frame, false)) return "login form or API selector is unavailable/ambiguous";
++        if (!isLoginFormUsable(frame, false)) return "login form or required selector is unavailable/ambiguous";
+         if (!existingLoginButtonIsUsable(frame, true)) return "login button remained disabled after credential restoration";
+         return "login attempt changed before submission";
+     }
+@@ -197,7 +204,7 @@
+     }
+ 
+     private static boolean hasOtherModalWindow(Window permitted) {
+-        // This enumerates only this Gateway JVM's Swing windows, not the desktop
++        // This enumerates only this TWS/Gateway JVM's Swing windows, not the desktop
+         // or other profiles. Never click behind a competing modal message.
+         for (Window window : Window.getWindows()) {
+             if (window != permitted && window instanceof JDialog dialog
+diff --git a/ibcalpha/ibc/TwsEntrypoint.java b/ibcalpha/ibc/TwsEntrypoint.java
+new file mode 100644
+--- /dev/null
++++ b/ibcalpha/ibc/TwsEntrypoint.java
+@@ -0,0 +1,19 @@
++// IBC Manager integration; GPL-3.0-or-later, like the upstream engine.
++package ibcalpha.ibc;
++
++import java.lang.reflect.InvocationTargetException;
++
++/** Loads IBKR's separately installed TWS, never a packaged substitute. */
++final class TwsEntrypoint {
++    private TwsEntrypoint() { }
++
++    static void invoke(String[] args) throws Throwable {
++        try {
++            Class<?> entry = Class.forName("jclient.LoginFrame");
++            entry.getMethod("main", String[].class).invoke(null, (Object) args);
++        } catch (InvocationTargetException ex) {
++            // Preserve the original TWS failure, rather than hiding it in reflection noise.
++            throw ex.getCause();
++        }
++    }
++}

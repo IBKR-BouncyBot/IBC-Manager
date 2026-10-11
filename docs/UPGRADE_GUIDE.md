@@ -1,45 +1,78 @@
-# Upgrading from 2.0.2 to 2.0.3
+## Same-version JavaFX dependency repair
 
-Stop profiles, exit Manager and back up its data directory. Replace the application
-with the complete new release; keep the same Windows account/computer and data
-folder. Engine revision 3.24.2-manager.3 and profile format 6 are unchanged. This is
-a status/screenshot/documentation update, not a new migration or retry policy.
+An older managed payload may omit jdk.jsobject.jar. Stop all profiles using its
+installation, disable and Save on each owning profile, then enable and Save with
+this corrected package. Do not copy a JAR into the owned payload or edit its hash
+receipt. Verify payload/javafx/jdk.jsobject.jar exists after successful setup and
+Gateway starts without FindException. Missing dependencies must be ERROR, not a
+normal scheduled shutdown. See [dependency details](JAVAFX_DEPENDENCY_FIX.md).
 
-The previous migration guidance is retained below for older installations.
+# Upgrade to IBC Manager 2.1.0
 
-# Upgrade to 2.0.2 (profile format 6)
+Stop all profiles, exit the old Manager, and back up its complete data directory.
+Extract the new application separately. Retain the same Windows account, computer
+and data directory so existing DPAPI credentials remain accessible.
 
-Stop all profiles and exit the old Manager first. Back up the complete data folder.
-Run under the same Windows account/computer and reuse the same default or custom
-`--data-dir`. Profile UUIDs and encrypted-password associations remain stable.
+The Windows native package contains Microsoft Java 25. The Java-release run.bat
+asks permission to install an isolated Microsoft OpenJDK 25 when required. It does
+not delete existing Java 17 installations or convert your manual Gateway JBR/JavaFX
+setup into managed ownership automatically.
 
-Existing formats are imported into one self-contained profile per Gateway. Old
-Managed Config/base values are folded into visible Profile settings. Legacy
-external-config credentials are read once and stored through Windows DPAPI;
-without a password the profile becomes Manual. Source files are never changed.
-Ordinary encrypted-mode credential bytes are preserved without decryption. A
-missing/invalid legacy source prevents migration rather than erasing data.
+## Replacing an earlier 2.1.0 or 2.1.1 package
 
-An owner-restricted `upgrade-profile-config-backup-<id>` and bounded pending journal
-protect each import. Partial transactions restore originals before retry. A live
-tracked session prevents conversion. After success there is no external/base config
-dependency, raw configuration editor or credentials-from-INI launch mode. The
-remaining config.ini is generated output only, not a second configuration source.
+This 2.1.0 distribution contains both download corrections. Its SHA-256 manifest
+identifies the new binaries despite the reused requested version number. Extract
+it to a fresh folder and use its run.bat, or rebuild its Windows portable package.
+Do not merge source/build folders or reuse a previously compiled JAR. Close all
+old Manager processes first; data format 7 and engine manager.5 are unchanged.
+The managed-runtime state is compatible in both directions across these packages.
+Do not delete manual JBR/JavaFX, Gateway files or .vmoptions merely to retry setup.
+A native installer may reject a version downgrade from 2.1.1; the fresh portable
+folder avoids that installer-version conflict. Back up data before replacement.
 
-Use Edit -> Profile / Gateway settings / Windows startup. Update the shared Windows
-startup task from its new location inside the Profile editor if the EXE/JAR path changed.
-Task changes are immediate; the Profile Save button controls the actual profile edits.
-Reset of an engine setting now means the included default, not an old hidden base.
+## Profiles and TWS
 
-The new engine is 3.24.2-manager.3 and deploys in a new content-addressed directory.
-Never replace an active engine cache in place. Keep the old release and the stopped
-full data backup for rollback. Do not run both versions against the same directory.
-Older applications cannot read format 6; restore the original full backup to roll back.
+Profile formats 1-6 remain readable. Saving now writes format 7, including the
+managed-runtime flag. Current format-6 profiles are not rewritten merely because
+they were loaded. Older versions must not write the new format-7 profiles.
 
-See `SINGLE_PROFILE_CONFIGURATION.md` for migration details.
+Previously disabled legacy TWS profiles remain disabled. Review their application,
+settings directory, ports, credentials and schedules before enabling them. The
+restored support does not start old TWS sessions without your decision.
 
-For 1.x installations, the integrated-engine import runs first and retains its
-original upgrade backup; the profile-only import then completes format 6. External
-IBC engine paths remain ignored metadata. TWS profiles are retained disabled rather
-than converted to Gateway. A custom data directory must still be supplied via
-`--data-dir`; arbitrary disks are not searched automatically.
+Copy creates a new configuration identity with unused ports, auto-start off,
+disabled status and manual credentials. No settings files or runtime state are
+copied. Select a separate settings directory for concurrent instances.
+
+## Runtime and engine
+
+The workaround checkbox is opt-in and changes the selected offline installation's
+.vmoptions and the selected profile override, not Manager's own runtime. Existing
+manual Java/JavaFX folders remain yours. On disable, the previous override and
+module options return; those may themselves describe your manual JBR setup.
+
+Engine 3.24.2-manager.6 preserves the 2.0.4 watchdog, command-dispatch and stderr
+fixes, restores TWS bootstrap/readiness, and adds full-line VM-options reading.
+Its versioned cache is separate from an active older engine cache.
+
+## Rollback
+
+While using 2.1.0 and with sessions stopped, disable managed setup for every owner
+and save. Then close Manager and restore the pre-upgrade data directory together
+with the previous application version. Do not point 2.0.4 at format-7 profiles.
+
+If setup reports an interrupted commit or removal, retain its journals and files.
+Reopening Manager can finish or undo a recognized transaction. Unexpected profile,
+VM-option or file changes require review; deleting the journal loses that evidence.
+
+## Pinned-runtime compatibility update within 2.1.0
+
+Use a fresh application folder because the release number is unchanged. Engine cache
+revision changes to 3.24.2-manager.6, but profile format remains 7. Back up Manager data
+and stop sessions before updating. Existing non-pinned managed runtimes are deliberately
+not modified on startup: disable and Save the workaround on all owners of that
+installation, then enable and Save to install JBR25.0.4-b508.27. Never substitute files
+inside the owned payload or edit its hashes. The removal path supports earlier recorded
+builds; manual runtime/settings/credentials are retained.
+
+See PINNED_RUNTIME_DIAGNOSTICS.md for exact changes and target-machine acceptance.

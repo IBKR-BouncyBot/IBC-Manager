@@ -16,7 +16,7 @@ import java.util.Set;
 /** Single source of active settings. Legacy INI files are inputs only during migration. */
 public final class ProfileConfiguration {
     private static final Set<String> INACTIVE = Set.of("secondfactorauthenticationexitinterval",
-            "storesettingsonserver", "readonlylogin", "confirmorderidreset", "logcomponents");
+            "logcomponents");
 
     private ProfileConfiguration() { }
 
@@ -55,8 +55,10 @@ public final class ProfileConfiguration {
         ManagedConfigService.applyProfileControlled(document, profile);
         // Imported obsolete controls are not another configuration path.
         document.set("SecondFactorAuthenticationExitInterval", "");
-        document.set("ReadOnlyLogin", "no");
-        document.set("StoreSettingsOnServer", "");
+        if (profile.targetType() == io.github.ibcmanager.model.TargetType.GATEWAY) {
+            document.set("ReadOnlyLogin", "no");
+            document.set("StoreSettingsOnServer", "");
+        }
         document.remove("LogComponents");
         IbcCompatibilityPolicy.applySafeRuntimeDefaults(document);
         String errors = new ConfigValueValidator().validateManagedConfig(document).stream()
