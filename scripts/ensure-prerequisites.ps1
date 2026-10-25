@@ -380,7 +380,7 @@ function Invoke-Download {
         $headers = @{
             'Cache-Control' = 'no-cache'
             'Pragma' = 'no-cache'
-            'User-Agent' = 'IBC-Manager-Prerequisite-Bootstrap/2.1.0'
+            'User-Agent' = 'IBC-Manager-Prerequisite-Bootstrap/2.3.0'
         }
         Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $OutFile -TimeoutSec $TimeoutSeconds `
             -Headers $headers | Out-Null

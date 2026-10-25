@@ -29,16 +29,16 @@ if exist "%INPUT%" rmdir /s /q "%INPUT%"
 if exist "%DEST%" rmdir /s /q "%DEST%"
 mkdir "%INPUT%" || exit /b 1
 mkdir "%DEST%" || exit /b 1
-copy /y "dist\IBC-Manager-2.1.0.jar" "%INPUT%\" >nul || exit /b 1
+copy /y "dist\IBC-Manager-2.3.0.jar" "%INPUT%\" >nul || exit /b 1
 
 "%IBC_MANAGER_JPACKAGE_EXE%" ^
   --type app-image ^
   --name "IBC Manager" ^
-  --app-version 2.1.0 ^
+  --app-version 2.3.0 ^
   --vendor "IBC Manager contributors" ^
   --description "TWS and IB Gateway manager with an integrated IBC engine" ^
   --input "%INPUT%" ^
-  --main-jar "IBC-Manager-2.1.0.jar" ^
+  --main-jar "IBC-Manager-2.3.0.jar" ^
   --main-class io.github.ibcmanager.app.IbcManagerApp --add-modules java.base,java.desktop,java.logging,jdk.crypto.ec ^
   --dest "%DEST%" ^
   --jlink-options "%JLINK_OPTIONS%" ^
@@ -69,11 +69,11 @@ del "%INPUT%\runtime-version.txt"
 "%IBC_MANAGER_JPACKAGE_EXE%" ^
   --type exe ^
   --name "IBC Manager" ^
-  --app-version 2.1.0 ^
+  --app-version 2.3.0 ^
   --vendor "IBC Manager contributors" ^
   --description "TWS and IB Gateway manager with an integrated IBC engine" ^
   --input "%INPUT%" ^
-  --main-jar "IBC-Manager-2.1.0.jar" ^
+  --main-jar "IBC-Manager-2.3.0.jar" ^
   --main-class io.github.ibcmanager.app.IbcManagerApp --add-modules java.base,java.desktop,java.logging,jdk.crypto.ec ^
   --dest "%DEST%" ^
   --win-menu ^
@@ -92,7 +92,7 @@ if errorlevel 1 (
   echo [IBC Manager] The Windows installer was created, but the Windows release ZIP could not be assembled.
   exit /b 1
 )
-set "WINDOWS_RELEASE_ZIP=dist\IBC_Manager_2.1.0_Release_windows.zip"
+set "WINDOWS_RELEASE_ZIP=dist\IBC_Manager_2.3.0_Release_windows.zip"
 if not exist "%WINDOWS_RELEASE_ZIP%" (
   echo [IBC Manager] Windows release ZIP creation reported success, but the archive was not found:
   echo [IBC Manager]   %WINDOWS_RELEASE_ZIP%

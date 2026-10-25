@@ -1,4 +1,4 @@
-IBC Manager 2.1.0
+IBC Manager 2.3.0
 Copyright (C) 2026 IBC Manager contributors.
 Manager is distributed under the GNU General Public License, version 3.
 
@@ -11,12 +11,13 @@ version, as specified in those files. See engine/LICENSE.txt in the source packa
 and legal/IBC-LICENSE.txt inside the Manager JAR.
 
 The complete source ZIP supplied with this release contains the maintained engine,
-its upstream snapshot, integration patch, tests and all Manager build scripts.
+its upstream snapshot, integration patches, tests and all Manager build scripts.
 No official IBC release JAR is copied into the product: the engine is compiled from
-source. Original Windows launcher scripts are included as engine resources.
+source. Maintained Windows launcher scripts are included as engine resources; their
+original snapshots and integration patches are retained in the source.
 No IB Gateway or proprietary IBKR class is redistributed or supplied as a stub.
 
 IBC Manager is not affiliated with, endorsed by, or supported by Interactive Brokers
 or the upstream IBC authors. Changes made for this integration are documented in
-engine/patches/0001-manager-integration.patch and docs/ENGINE_INTEGRATION.md.
+engine/patches/series and docs/ENGINE_INTEGRATION.md.
 IBKR and IB Gateway names belong to their respective owners.

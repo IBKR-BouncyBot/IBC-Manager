@@ -1,6 +1,6 @@
 # Maintaining the included engine
 
-Engine revision 3.24.2-manager.6 derives from supplied IBC 3.24.2. The exact
+Engine revision 3.24.2-manager.8 derives from supplied IBC 3.24.2. The exact
 archive hashes and tag commit are in PROVENANCE.json. Keep engine revisioning
 independent from the Manager application version.
 
@@ -122,3 +122,63 @@ Existing authentication timers and the Windows resource patch series are unchang
 EngineGuiSmoke covers detection, HTML whitespace, unrelated dialogs, duplicate events,
 no dismissal, failure state and registration before generic handlers. Manager tests
 verify the event generation and terminal reason surviving the wrapper's normal footer.
+
+## 3.24.2-manager.7 expired-token recovery
+
+The seventh Java patch adds a dedicated Gateway autorestart-expiry handler before
+the generic handler. It reads bounded noneditable display documents, including the
+JTextPane verified in Gateway 10.50.1e, and recognizes the explicit expiry/manual-login
+message. A per-engine claim and deferred EDT owner/generation/state checks protect
+normal authentication and Stop. The existing StopTask cold-restart marker is reused;
+its duplicate-null-channel guard is corrected. Windows resources remain unchanged.
+
+The fixed LOGIN_RESTART_TOKEN_EXPIRED event adds generation-checked reporting;
+general login/2FA watchdog behavior is unchanged. Run ExpiredSessionTokenTests,
+ExpiredTokenEventTests and the display-dependent ExpiredSessionTokenGuiSmoke along
+with all prior gates. See EXPIRED_SESSION_TOKEN_FIX.md for exact scope and current
+validation limits. Preserve the immutable upstream snapshot and patch reproducibility.
+
+## 3.24.2-manager.8 established-session expiry and cold restart
+
+The eighth Java patch extends the exact expired-token handler to the observed
+`IBKR Gateway` title and an established `LOGGED_IN` session. A completed session
+may expire regardless of whether its original launch used `-Drestart`. The
+pre-login branch still requires an actual autorestart and `LOGGED_OUT`; unrelated
+errors, fresh-login waits and active 2FA remain outside this recovery.
+
+`ExpiredSessionTokenRecovery` claims shutdown on the EDT after the existing
+owner/generation/message recheck, writes only its session-specific `TOKENEXPIRED`
+request, and performs established-session File/Close on a worker. An EDT
+continuation allows a nested modal opened by the verified OK callback to process
+the close. A 30-second independent deadline can halt only the current Gateway JVM
+after checking that its request marker remains a regular file. It does not kill
+other processes or falsify LoginState. Failed preparation leaves the process
+running; loss of the marker cancels queued close work and releases the shutdown
+claim. An already-running close action cannot be rolled back.
+
+Stop and Pause/Restart claims are arbitrated at a shared boundary, and the
+Re-login dialog handler does not submit another login during claimed shutdown.
+The existing normal StopTask shutdown policy remains unchanged.
+
+The fixed events are `LOGIN_RESTART_TOKEN_EXPIRED` for the retained pre-login
+branch, `SESSION_TOKEN_EXPIRED` for established-session expiry,
+`SESSION_TOKEN_RECOVERY_FAILED` for preparation/completion failure, and
+`SESSION_TOKEN_RECOVERY_GUARD_FAILED` when a successful replacement login cannot
+clear its recovery guard. No event contains credentials or arbitrary dialog text.
+
+The third resource patch handles `TOKENEXPIRED<ibcsessionid>` before searching
+for a warm-restart descriptor. It clears the warm-launch option, creates
+`TOKENEXPIREDPENDING<ibcsessionid>`, and starts a fresh child. A pending Pause
+prevents the automatic restart. Failure to consume/create the marker is reported
+as wrapper error 1009. Successful replacement `LOGGED_IN` deletes only the matching
+pending marker. A replacement exit before successful login is reported as a
+failed recovery instead of returning to stale warm authentication. Existing
+2FA/login-display timeout retries retain their preceding wrapper branches.
+Ordinary daily warm restart and generic `COLDRESTART` ordering are unchanged.
+
+Reproduction was verified on 25 October 2026: all 89 archived upstream file hashes
+match the unchanged manifest; all eight Java patches reproduce the 91 maintained
+Java files byte-for-byte; all three resource patches reproduce both Windows script
+resources byte-for-byte after LF-to-CRLF restoration. No archival upstream bytes
+were modified. See the current TEST_REPORT.md for runtime/GUI test results; patch
+reproduction alone does not establish native Windows or live IBKR acceptance.

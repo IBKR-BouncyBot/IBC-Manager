@@ -36,6 +36,7 @@ public class ReloginDialogHandler implements WindowHandler {
 
     @Override
     public void handleWindow(Window window, int eventID) {
+        if (StopTask.shutdownInProgress()) return;
         Utils.logToConsole("Re-login to session");
         if (SwingUtils.clickButton(window, "Re-login"))  {
             LoginManager.loginManager().setLoginState(LoginManager.LoginState.LOGGING_IN);

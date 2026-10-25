@@ -1,0 +1,30 @@
+IBC Manager 2.2.0 validation environment probe — 2026-10-18
+
+Command: java ProcessProbe.java
+No Manager or Gateway classes are loaded. The temporary sleep child is forcibly
+stopped and awaited in the finally block.
+
+Observed output (full /proc stat reduced to its PID field):
+self PID=5 alive=false info=[] start=Optional.empty parent=Optional.empty
+/proc/self/stat first field (PID)=10006
+stat through ProcessHandle PID exists=false
+child PID=32 processalive=true handlealive=false info=[] parent=Optional.empty
+child stat through Process PID exists=false
+children=[] descendants=[]
+
+Probe source:
+import java.nio.file.*;
+public class ProcessProbe {
+    public static void main(String[] args) throws Exception {
+        ProcessHandle self=ProcessHandle.current();
+        System.out.println("self PID="+self.pid()+" alive="+self.isAlive()+" info="+self.info()+" start="+self.info().startInstant()+" parent="+self.parent());
+        System.out.println("stat through self="+Files.readString(Path.of("/proc/self/stat")));
+        System.out.println("stat through ProcessHandle PID exists="+Files.exists(Path.of("/proc/"+self.pid()+"/stat")));
+        Process p=new ProcessBuilder("/usr/bin/sleep","15").start();
+        try {
+          System.out.println("child PID="+p.pid()+" processalive="+p.isAlive()+" handlealive="+p.toHandle().isAlive()+" info="+p.info()+" parent="+p.toHandle().parent());
+          System.out.println("child stat through Process PID exists="+Files.exists(Path.of("/proc/"+p.pid()+"/stat")));
+          System.out.println("children="+self.children().toList()+" descendants="+self.descendants().toList());
+        } finally {p.destroyForcibly();p.waitFor();}
+    }
+}

@@ -1,21 +1,31 @@
-# 2.1.0 architecture update
+# 2.3.0 architecture update
 
-Manager's Windows runtime is Microsoft Java 25. TWS and Gateway both use the included
-engine 3.24.2-manager.6; TWS startup and readiness are restored through upstream
-handlers with a reflection-only entrypoint. FIX remains excluded. Format 7 adds
-managed-runtime ownership while preserving existing format-6 data and credentials.
+Manager's Windows runtime remains Microsoft Java 25. TWS and Gateway both use
+included engine **3.24.2-manager.8**. The embedded engine recognizes Gateway's
+explicit expired-token dialog during startup of a warm child or after completed
+login. It owns dialog handling and bounded shutdown; its Windows wrapper owns
+replacement startup. Manager consumes fixed, generation-checked recovery/failure
+events and revokes stale readiness. Active login/2FA, prior shutdown claims, stale
+queued actions and unrelated dialogs do not trigger this recovery.
 
-The new consent-based runtime service resolves and verifies JBR 25 and OpenJFX 25,
-stages installation, shares ownership, journals VM-option/profile commits and
-supports safe removal. It is separate from engine caching and normal startup.
+Normal token-based warm restart remains supported. The launcher now gives a
+dedicated token-expiry marker priority over warm-descriptor discovery. A pending
+guard prevents a failed fresh authentication from falling back to stale warm data;
+successful engine login clears only that session's guard. The Java-options helper
+is unchanged. See [restart modes](RESTART_MODES.md) and
+[implementation evidence and validation](ESTABLISHED_SESSION_EXPIRY_FIX.md).
+
+The managed Gateway runtime is pinned to JBR 25.0.4-b508.27 and JavaFX 25.0.4;
+Manager selects and validates both exact versions. Profile format remains 7. TWS startup/readiness, consent-based
+managed runtime installation/removal, ownership journals, full-line VM options,
+stderr handling and prior watchdog safeguards are retained. FIX remains excluded.
 See [managed runtime](MANAGED_RUNTIME.md) and [engine maintenance](ENGINE_MAINTENANCE.md).
-The maintained launcher now preserves complete VM-option lines as well as stderr.
-Existing startup/recovery/2FA/security boundaries remain.
 
 ## Historical 2.0.4 design below
 
 The material below describes the preceding release. Its Gateway-only and format-6
-scope statements are historical; the 2.1.0 changes above supersede them.
+scope statements are historical. TWS support and format 7 were restored/introduced
+in 2.1.0 and are retained by 2.3.0 as described above.
 
 # Engine integration in 2.0.4
 

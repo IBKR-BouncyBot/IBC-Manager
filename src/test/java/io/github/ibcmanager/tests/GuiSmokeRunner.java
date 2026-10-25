@@ -78,7 +78,7 @@ public final class GuiSmokeRunner {
                         MainFrame frame = frameRef.get();
                         require(frame != null, "main frame was not created");
                         require(frame.isShowing(), "main frame is not visible");
-                        require(frame.getTitle().startsWith("IBC Manager 2.1.0"), "window title is incorrect");
+                        require(frame.getTitle().startsWith("IBC Manager 2.3.0"), "window title is incorrect");
                         require(frame.getJMenuBar() != null && frame.getJMenuBar().getMenuCount() == 3,
                                 "menu bar is incomplete");
                         JMenu tools = frame.getJMenuBar().getMenu(1);

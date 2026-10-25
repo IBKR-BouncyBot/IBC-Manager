@@ -248,7 +248,7 @@ public final class RuntimeDownloadTests implements TestSuite {
     private void setup(String mode) throws Exception {
         Path root = TestSupport.tempDirectory("cdn-setup");
         try {
-            Network n = new Network(); byte[] archive = zip(Map.of("jbr/bin/java.exe", pe(), "jbr/release", bytes("JAVA_VERSION=\"25.0.4\"\nIMPLEMENTOR=\"JetBrains s.r.o.\"\n")));
+            Network n = new Network(); byte[] archive = zip(Map.of("jbr/bin/java.exe", pe(), "jbr/release", bytes("JAVA_VERSION=\"25.0.4\"\nIMPLEMENTOR=\"JetBrains s.r.o.\"\nIMPLEMENTOR_VERSION=\"JBR-25.0.4+1-508.27-nomod\"\nJAVA_RUNTIME_VERSION=\"25.0.4+1-b508.27\"\n")));
             n.data(API, bytes("[{\"tag_name\":\"jbr-release-25.0.4b508.27\",\"draft\":false,\"prerelease\":false,\"body\":\"" + ORIGIN + FILE + " " + ORIGIN + FILE + ".checksum\"}]"));
             n.data(META, bytes("<versions><version>25.0.4</version></versions>"));
             n.redirect(ORIGIN + FILE + ".checksum", 302, CDN + FILE + ".checksum");

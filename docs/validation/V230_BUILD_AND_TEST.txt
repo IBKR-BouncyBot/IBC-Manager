@@ -1,0 +1,2315 @@
+[IBC Manager build] Build-driver self-test passed for version 2.3.0.
+[IBC Manager build] Cleaned build and dist directories.
+[IBC Manager build] Compiled 91 maintained IBC engine Java files and embedded the verified payload.
+[IBC Manager build] Compiled 126 production Java files.
+[IBC Manager build] Compiled 52 test Java files.
+[SUITE] Complete OpenJFX dependencies and real JVM bootstrap failure regression
+  [PASS] OpenJFX WebView dependency uses the real jdk-jsobject Windows artifact
+  [PASS] jdk.jsobject setup and restoration: complete
+Oct 25, 2026 10:52:32 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] jdk.jsobject setup and restoration: hashes-unavailable
+Oct 25, 2026 10:52:32 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller unavailableProbe
+WARNING: WARNING: Runtime compatibility verification SKIPPED: verification command could not be completed. Setup will continue; runtime compatibility is not confirmed.
+IOException: Inventory process unavailable
+  [PASS] jdk.jsobject setup and restoration: probe-unavailable
+  [PASS] jdk.jsobject setup and restoration: legacy-removal
+  [PASS] jdk.jsobject setup and restoration: artifact-missing
+  [PASS] jdk.jsobject setup and restoration: bad-hash
+  [PASS] jdk.jsobject setup and restoration: empty-module
+  [PASS] jdk.jsobject setup and restoration: wrong-version
+  [PASS] jdk.jsobject setup and restoration: invalid-descriptor
+  [PASS] jdk.jsobject setup and restoration: missing-descriptor
+  [PASS] jdk.jsobject setup and restoration: native-boot-error
+  [PASS] jdk.jsobject setup and restoration: stderr-boot-error
+  [PASS] jdk.jsobject setup and restoration: other-missing-module
+  [PASS] jdk.jsobject setup and restoration: cancel-before-jsobject
+  [PASS] real JPMS resolver fails without jdk.jsobject and resolves the complete graph
+  [PASS] bootstrap error survives a normal wrapper footer but clears on replacement
+  [PASS] bootstrap parsing is scoped to pre-IBC failures and masks sensitive details
+[SUITE] Managed JBR25/JavaFX setup: ownership, consent boundaries, rollback and supply chain
+  [PASS] runtime selection pins JBR and JavaFX even when newer releases are advertised
+  [PASS] fixed coordinates are independent of unavailable release catalogue listings
+  [PASS] JavaFX artifact selection rejects every version except the compatibility pin
+  [PASS] release JSON decoder handles escapes and rejects ambiguity
+  [PASS] runtime downloads permit only HTTPS publisher paths and safe redirects
+  [PASS] complete verified runtime setup resolves all eight JavaFX modules
+  [PASS] checksum mismatch aborts before executable verification
+  [PASS] missing JavaFX native binary aborts setup
+  [PASS] wrong JavaFX module version aborts setup
+  [PASS] non-Windows Java launcher aborts setup
+Oct 25, 2026 10:52:33 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller unavailableProbe
+WARNING: WARNING: Runtime compatibility verification SKIPPED: verification command returned exit code 2. Setup will continue; runtime compatibility is not confirmed.
+stdout: javafx.base@25.0.4
+javafx.graphics@25.0.4
+javafx.controls@25.0.4
+javafx.fxml@25.0.4
+javafx.media@25.0.4
+javafx.swing@25.0.4
+javafx.web@25.0.4
+jdk.jsobject@25.0.4
+stderr: (no output)
+  [PASS] unavailable runtime verification is reported without blocking setup
+  [PASS] required download failure occurs before any application configuration write
+  [PASS] owned VM options preserve external edits on removal
+  [PASS] changed owned block prevents unsafe removal
+  [PASS] new external module options prevent ambiguous rollback
+  [PASS] VM options reject invalid UTF-8 and oversize input
+  [PASS] managed runtime flag survives profile codec and equality
+  [PASS] format six profiles load with automatic download disabled
+  [PASS] copy uses independent identity and never duplicates password or active ownership
+  [PASS] copy preserves normal manual override and creates unique name and ports
+  [PASS] ordinary profile save does not inspect or download runtimes
+  [PASS] enable and disable restores original bytes and manual Java override
+  [PASS] shared installation keeps downloads until every owner disables
+  [PASS] disable preserves modified unrelated VM options
+  [PASS] download failure leaves profile options and manual files intact
+  [PASS] cancellation before commit leaves no installed files
+  [PASS] failed profile commit rolls setup back
+  [PASS] failed profile commit during removal restores the managed configuration
+  [PASS] active installation guard prevents downloads and writes
+  [PASS] late active installation guard prevents downloaded stage activation
+  [PASS] editing options during download refuses to overwrite the edit
+  [PASS] tampered runtime payload cannot launch or be deleted
+  [PASS] unexpected files in owned directory are preserved
+  [PASS] manually borrowed runtime blocks last-owner uninstall
+  [PASS] profile installation cannot change until managed runtime is disabled
+  [PASS] new profile failure does not overwrite another runtime folder
+  [PASS] different data-directory owners share without deleting each other's runtimes
+  [PASS] JavaFX native cache is owned and removed only after verification
+  [PASS] unrecognized JavaFX native cache files are not deleted
+  [PASS] TWS setup patches tws.vmoptions without touching Gateway options
+  [PASS] older application rejects the Java25 helper without changes
+  [PASS] incomplete managed ownership rejects startup
+  [PASS] ordinary launch check does not create runtime state or lock files
+  [PASS] unsupported VM options filename is rejected
+  [PASS] exact reversible VM options bytes variant 44
+  [PASS] exact reversible VM options bytes variant 45
+  [PASS] exact reversible VM options bytes variant 46
+  [PASS] exact reversible VM options bytes variant 47
+  [PASS] exact reversible VM options bytes variant 48
+  [PASS] exact reversible VM options bytes variant 49
+  [PASS] exact reversible VM options bytes variant 50
+  [PASS] runtime ZIP rejects ambiguous entry ../escape
+  [PASS] runtime ZIP rejects ambiguous entry /absolute
+  [PASS] runtime ZIP rejects ambiguous entry C:/drive
+  [PASS] runtime ZIP rejects ambiguous entry x/../escape
+  [PASS] runtime ZIP rejects ambiguous entry x\file
+  [PASS] runtime ZIP rejects ambiguous entry CON
+  [PASS] runtime ZIP rejects ambiguous entry x/nul.txt
+  [PASS] runtime ZIP rejects ambiguous entry x/trailing.
+  [PASS] runtime ZIP rejects ambiguous entry x/trailing 
+  [PASS] runtime ZIP rejects ambiguous entry x/a:b
+  [PASS] runtime ZIP rejects ambiguous entry x/question?
+  [PASS] interrupted installation recovers after profile commit=false
+  [PASS] interrupted installation recovers after profile commit=true
+  [PASS] interrupted removal recovers after profile commit=false
+  [PASS] interrupted removal recovers after profile commit=true
+  [PASS] managed ownership cannot be encoded in legacy external-config format
+  [PASS] a forced true headless property must not silently override the workaround
+  [PASS] archive implicit-directory casing cannot alias on Windows
+  [PASS] JBR pin does not request or page the GitHub release catalogue
+  [PASS] non-pinned managed runtime cannot be started but can be removed and reinstalled
+  [PASS] non-pinned shared runtime cannot be adopted by another profile
+  [PASS] downloaded later JBR metadata is rejected before local execution
+  [PASS] wrong JBR build with the same Java version is rejected
+  [PASS] available exact JBR build metadata permits installation
+  [PASS] unavailable pinned archive never selects a newer or older runtime
+  [PASS] same pinned runtime is reused offline without changing ownership or payload
+  [PASS] non-pinned JavaFX runtime cannot start or save but remains removable
+  [PASS] non-pinned shared JavaFX cannot be adopted by another profile
+  [PASS] installer metadata cannot activate a non-pinned JavaFX runtime
+  [PASS] cached JavaFX descriptor is checked independently of the version receipt
+  [PASS] actual JBR implementor build notation without b is validated
+  [PASS] exact JBR runtime identity alone is accepted
+  [PASS] actual paired JBR identities support Windows line endings
+  [PASS] JBR identity rejects missing
+  [PASS] JBR identity rejects unquoted
+  [PASS] JBR identity rejects empty
+  [PASS] JBR identity rejects unrecognized
+  [PASS] JBR identity rejects extra numeric runtime suffix
+  [PASS] JBR identity rejects extra text runtime suffix
+  [PASS] JBR identity rejects different runtime build
+  [PASS] JBR identity rejects different upstream build
+  [PASS] JBR identity rejects extra numeric implementor suffix
+  [PASS] JBR identity rejects unrecognized implementor
+  [PASS] JBR identity rejects malformed implementor quote
+  [PASS] JBR identity rejects valid implementor with contradictory runtime
+  [PASS] JBR identity rejects valid runtime with contradictory implementor
+  [PASS] JBR identity rejects valid runtime with malformed implementor
+  [PASS] JBR identity rejects duplicate contradictory runtime
+  [PASS] runtime consent names both exact compatibility pins
+  [PASS] downloaded JavaFX descriptor rejects non-pinned version 25
+  [PASS] runtime inventory rejects non-pinned JavaFX version 25
+  [PASS] downloaded JavaFX descriptor rejects non-pinned version 25.0.3
+  [PASS] runtime inventory rejects non-pinned JavaFX version 25.0.3
+  [PASS] downloaded JavaFX descriptor rejects non-pinned version 25.0.5
+  [PASS] runtime inventory rejects non-pinned JavaFX version 25.0.5
+  [PASS] downloaded JavaFX descriptor rejects non-pinned version 25.0.4.1
+  [PASS] runtime inventory rejects non-pinned JavaFX version 25.0.4.1
+  [PASS] downloaded JavaFX descriptor rejects non-pinned version 25.0.4-ea+1
+  [PASS] runtime inventory rejects non-pinned JavaFX version 25.0.4-ea+1
+  [PASS] copied data directories cannot borrow another installation owner
+  [PASS] profile edits after an interrupted setup prevent destructive rollback
+  [PASS] partial owned deletion resumes safely from its hash receipt
+  [PASS] partial deletion preserves a changed leftover file
+  [PASS] late profile-save failure keeps runtime consistent for removal=false
+  [PASS] late profile-save failure keeps runtime consistent for removal=true
+  [PASS] unreadable late-save profile retains runtime evidence instead of deleting it
+  [PASS] managed ownership cannot adopt its own directory as the previous manual override
+[SUITE] Publisher HTTP redirects: actual transport, artifact binding and rollback
+  [PASS] documented JetBrains checksum redirect is accepted by the actual HTTP loop
+  [PASS] JBR archive download follows validated HTTP 301
+  [PASS] JBR archive download follows validated HTTP 302
+  [PASS] JBR archive download follows validated HTTP 303
+  [PASS] JBR archive download follows validated HTTP 307
+  [PASS] JBR archive download follows validated HTTP 308
+  [PASS] same-host relative redirect retains the original artifact binding
+  [PASS] four-component Java25 versions work without pinning a build
+  [PASS] Maven metadata and artifact requests still use the existing publisher path
+  [PASS] direct CDN request is not accepted as a publisher
+  [PASS] Maven cannot redirect into the JBR-only CDN exception
+  [PASS] a trusted intermediate does not erase original-publisher restrictions
+  [PASS] CDN cannot redirect onward to an arbitrary host
+  [PASS] unapproved or changed CDN target is rejected 13
+  [PASS] unapproved or changed CDN target is rejected 14
+  [PASS] unapproved or changed CDN target is rejected 15
+  [PASS] unapproved or changed CDN target is rejected 16
+  [PASS] unapproved or changed CDN target is rejected 17
+  [PASS] unapproved or changed CDN target is rejected 18
+  [PASS] unapproved or changed CDN target is rejected 19
+  [PASS] unapproved or changed CDN target is rejected 20
+  [PASS] unapproved or changed CDN target is rejected 21
+  [PASS] unapproved or changed CDN target is rejected 22
+  [PASS] unapproved or changed CDN target is rejected 23
+  [PASS] unapproved or changed CDN target is rejected 24
+  [PASS] unapproved or changed CDN target is rejected 25
+  [PASS] unapproved or changed CDN target is rejected 26
+  [PASS] unapproved or changed CDN target is rejected 27
+  [PASS] unapproved or changed CDN target is rejected 28
+  [PASS] unapproved or changed CDN target is rejected 29
+  [PASS] unapproved or changed CDN target is rejected 30
+  [PASS] CDN allowance cannot select an unsupported runtime jbr-21-windows-x64-b1.zip
+  [PASS] CDN allowance cannot select an unsupported runtime jbr-26-windows-x64-b1.zip
+  [PASS] CDN allowance cannot select an unsupported runtime jbr_jcef-25-windows-x64-b1.zip
+  [PASS] CDN allowance cannot select an unsupported runtime jbr-25-ea-windows-x64-b1.zip
+  [PASS] CDN allowance cannot select an unsupported runtime jbr-25-windows-x64-b1.tar.gz
+  [PASS] checksum request cannot redirect to archive bytes
+  [PASS] explicit HTTPS port 443 and host casing are accepted
+  [PASS] empty or malformed Location is rejected 38
+  [PASS] empty or malformed Location is rejected 39
+  [PASS] empty or malformed Location is rejected 40
+  [PASS] empty or malformed Location is rejected 41
+  [PASS] empty or malformed Location is rejected 42
+  [PASS] five permitted redirects can finish at the exact CDN artifact
+  [PASS] redirect loop stops at the existing five-hop budget
+  [PASS] HTTP failure disconnects the response
+  [PASS] header read failure disconnects the response
+  [PASS] body read failure disconnects the response
+  [PASS] text size bound still applies after CDN redirection
+  [PASS] declared archive size rejects before a file is created
+  [PASS] streaming bound applies when Content-Length is absent
+  [PASS] empty CDN response cannot be accepted as a checksum
+  [PASS] cancellation is retained after a valid redirect
+  [PASS] existing output is never overwritten by a redirected download
+  [PASS] full setup and removal use real redirect/checksum code and restore prior files
+  [PASS] wrong checksum after allowed CDN redirect rolls back before execution
+  [PASS] denied CDN redirect rolls back profile options and staged files
+  [PASS] cancelled CDN download leaves profile options and manual runtime unchanged
+[SUITE] JavaFX repository checksums: real HTTP loop, verification and transactional setup
+  [PASS] missing optional SHA-256 falls back to SHA-1 for base
+  [PASS] SHA-1 mismatch in base aborts complete setup
+  [PASS] missing optional SHA-256 falls back to SHA-1 for graphics
+  [PASS] SHA-1 mismatch in graphics aborts complete setup
+  [PASS] missing optional SHA-256 falls back to SHA-1 for controls
+  [PASS] SHA-1 mismatch in controls aborts complete setup
+  [PASS] missing optional SHA-256 falls back to SHA-1 for fxml
+  [PASS] SHA-1 mismatch in fxml aborts complete setup
+  [PASS] missing optional SHA-256 falls back to SHA-1 for media
+  [PASS] SHA-1 mismatch in media aborts complete setup
+  [PASS] missing optional SHA-256 falls back to SHA-1 for swing
+  [PASS] SHA-1 mismatch in swing aborts complete setup
+  [PASS] missing optional SHA-256 falls back to SHA-1 for web
+  [PASS] SHA-1 mismatch in web aborts complete setup
+  [PASS] missing optional SHA-256 falls back to SHA-1 for jsobject
+  [PASS] SHA-1 mismatch in jsobject aborts complete setup
+  [PASS] all eight Maven modules lacking SHA-256 install and remove through CDN setup
+  [PASS] mixed published checksum algorithms remain per artifact
+  [PASS] published SHA-256 is preferred without requesting SHA-1
+  [PASS] newer JavaFX catalogue release cannot replace pinned artifact versions
+  [PASS] unqualified JavaFX catalogue version cannot replace pinned artifact versions
+  [PASS] uppercase SHA-1 checksum is accepted
+  [PASS] SHA-1 sidecar may include whitespace and the artifact filename
+  [PASS] SHA-256 HTTP 400 uses the available SHA-1 checksum
+  [PASS] SHA-256 HTTP 401 uses the available SHA-1 checksum
+  [PASS] SHA-256 HTTP 403 uses the available SHA-1 checksum
+  [PASS] SHA-256 HTTP 408 uses the available SHA-1 checksum
+  [PASS] SHA-256 HTTP 410 uses the available SHA-1 checksum
+  [PASS] SHA-256 HTTP 429 uses the available SHA-1 checksum
+  [PASS] SHA-256 HTTP 500 uses the available SHA-1 checksum
+  [PASS] SHA-256 HTTP 503 uses the available SHA-1 checksum
+  [PASS] sha256-header transport failure uses the available SHA-1 checksum
+  [PASS] sha256-body transport failure uses the available SHA-1 checksum
+  [PASS] malformed published SHA-256 empty cannot use SHA-1
+  [PASS] malformed fallback SHA-1 empty aborts setup
+  [PASS] malformed published SHA-256 short cannot use SHA-1
+  [PASS] malformed fallback SHA-1 short aborts setup
+  [PASS] malformed published SHA-256 invalid cannot use SHA-1
+  [PASS] malformed fallback SHA-1 invalid aborts setup
+  [PASS] mismatched published SHA-256 cannot be rescued by a correct SHA-1
+Oct 25, 2026 10:52:36 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] unavailable SHA-1 HTTP 404 warns and continues after unavailable SHA-256
+Oct 25, 2026 10:52:36 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] unavailable SHA-1 HTTP 403 warns and continues after unavailable SHA-256
+Oct 25, 2026 10:52:36 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] unavailable SHA-1 HTTP 429 warns and continues after unavailable SHA-256
+Oct 25, 2026 10:52:36 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] unavailable SHA-1 HTTP 500 warns and continues after unavailable SHA-256
+  [PASS] a missing JavaFX JAR remains an artifact error after valid fallback checksum
+  [PASS] 404 at another redirected resource is not proof the original sidecar is absent
+Oct 25, 2026 10:52:36 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] JetBrains missing SHA-512 warns and continues
+  [PASS] fallback does not bypass module descriptor validation
+  [PASS] fallback does not bypass Windows native library validation
+  [PASS] cancellation after-404 rolls back before activation
+  [PASS] cancellation after-sha1 rolls back before activation
+  [PASS] cancellation during-jar rolls back before activation
+  [PASS] HTTP errors identify the failing path but not secret query parameters
+[SUITE] Unavailable publisher checksums: scoped continuation, retained validation and consent
+Oct 25, 2026 10:52:36 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:36 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:36 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:36 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:36 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:36 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:36 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:36 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:36 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] all checksum resources unavailable with HTTP 400 still install and remove
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] all checksum resources unavailable with HTTP 401 still install and remove
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] all checksum resources unavailable with HTTP 403 still install and remove
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] all checksum resources unavailable with HTTP 404 still install and remove
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] all checksum resources unavailable with HTTP 408 still install and remove
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] all checksum resources unavailable with HTTP 410 still install and remove
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] all checksum resources unavailable with HTTP 429 still install and remove
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] all checksum resources unavailable with HTTP 500 still install and remove
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] all checksum resources unavailable with HTTP 502 still install and remove
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] all checksum resources unavailable with HTTP 503 still install and remove
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] all checksum resources unavailable with HTTP 504 still install and remove
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] checksum-only dns failures are non-blocking and audited
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] checksum-only connect failures are non-blocking and audited
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] checksum-only header failures are non-blocking and audited
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] checksum-only body failures are non-blocking and audited
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] checksum-only read failures are non-blocking and audited
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] checksum-only timeout failures are non-blocking and audited
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] unavailable checksums do not bypass jar-404
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] unavailable checksums do not bypass zip-404
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] unavailable checksums do not bypass jar-transfer
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] unavailable checksums do not bypass module-missing
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] unavailable checksums do not bypass module-wrong
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] unavailable checksums do not bypass native-missing
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] unavailable checksums do not bypass descriptor-missing
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] unavailable checksums do not bypass pe-invalid
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] unavailable checksums do not bypass release-invalid
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] unavailable checksums do not bypass bad-zip
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] unavailable checksums do not bypass save-failure
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:37 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller unavailableProbe
+WARNING: WARNING: Runtime compatibility verification SKIPPED: verification command returned exit code 1. Setup will continue; runtime compatibility is not confirmed.
+stdout: javafx.base@25.0.4
+javafx.graphics@25.0.4
+javafx.controls@25.0.4
+javafx.fxml@25.0.4
+javafx.media@25.0.4
+javafx.swing@25.0.4
+javafx.web@25.0.4
+jdk.jsobject@25.0.4
+stderr: test probe
+  [PASS] missing checksums and unavailable runtime probe both continue: runtime-invalid
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller unavailableProbe
+WARNING: WARNING: Runtime compatibility verification SKIPPED: verification command timed out. Setup will continue; runtime compatibility is not confirmed.
+stdout: javafx.base@25.0.4
+javafx.graphics@25.0.4
+javafx.controls@25.0.4
+javafx.fxml@25.0.4
+javafx.media@25.0.4
+javafx.swing@25.0.4
+javafx.web@25.0.4
+jdk.jsobject@25.0.4
+stderr: test probe
+  [PASS] missing checksums and unavailable runtime probe both continue: runtime-timeout
+  [PASS] checksum continuation still rejects tls-header
+  [PASS] checksum continuation still rejects tls-body
+  [PASS] checksum continuation still rejects tls-read
+  [PASS] checksum continuation still rejects tls-nested
+  [PASS] checksum continuation still rejects cancel-header
+  [PASS] checksum continuation still rejects cancel-checksum
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] checksum continuation still rejects cancel-warning
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] checksum continuation still rejects cancel-download
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] checksum continuation still rejects cancel-validation
+  [PASS] checksum continuation still rejects empty-checksum
+  [PASS] checksum continuation still rejects oversize-checksum
+  [PASS] checksum continuation still rejects malformed-checksum
+  [PASS] checksum continuation still rejects mismatched-checksum
+  [PASS] checksum continuation still rejects changed-target
+  [PASS] checksum continuation still rejects unsafe-host
+  [PASS] checksum continuation still rejects insecure-redirect
+  [PASS] checksum continuation still rejects redirect-loop
+  [PASS] checksum continuation still rejects invalid-status
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] unavailable catalogue metadata cannot change pinned installation
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] mixed unavailable and published checksums retain exact per-artifact provenance
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+  [PASS] published checksum mismatch remains fatal beside other skipped checksums
+  [PASS] stable JBR ZIP without checksum link is selectable
+  [PASS] JBR pin cannot be replaced by catalogue checksum-only content
+  [PASS] JBR pin cannot be replaced by catalogue suffix content
+  [PASS] JBR compatibility coordinates do not change with catalogue order
+  [PASS] confirmation names less assurance and omits removed release-specific prefix
+  [PASS] connect failure in actual opener is typed without exposing query data
+  [PASS] TLS failure in actual opener never becomes unavailable-checksum evidence
+[SUITE] Optional runtime probe: unavailable results, honest audit and concise consent
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller unavailableProbe
+WARNING: WARNING: Runtime compatibility verification SKIPPED: verification command returned exit code 1. Setup will continue; runtime compatibility is not confirmed.
+stdout: (no output)
+stderr: (no output)
+  [PASS] unavailable runtime probe continues setup and safe removal: empty-error
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller unavailableProbe
+WARNING: WARNING: Runtime compatibility verification SKIPPED: verification command could not be completed. Setup will continue; runtime compatibility is not confirmed.
+IOException: Cannot run program: CreateProcess error=5
+  [PASS] unavailable runtime probe continues setup and safe removal: launch-io
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller unavailableProbe
+WARNING: WARNING: Runtime compatibility verification SKIPPED: verification command could not be completed. Setup will continue; runtime compatibility is not confirmed.
+IOException: Could not capture command output
+  [PASS] unavailable runtime probe continues setup and safe removal: capture-io
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller unavailableProbe
+WARNING: WARNING: Runtime compatibility verification SKIPPED: verification command could not be completed. Setup will continue; runtime compatibility is not confirmed.
+SecurityException: Probe execution denied
+  [PASS] unavailable runtime probe continues setup and safe removal: denied
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller unavailableProbe
+WARNING: WARNING: Runtime compatibility verification SKIPPED: verification command timed out. Setup will continue; runtime compatibility is not confirmed.
+stdout: javafx.base@25.0.4
+javafx.graphics@25.0.4
+javafx.controls@25.0.4
+javafx.fxml@25.0.4
+javafx.media@25.0.4
+javafx.swing@25.0.4
+javafx.web@25.0.4
+jdk.jsobject@25.0.4
+stderr: (no output)
+  [PASS] unavailable runtime probe continues setup and safe removal: timeout
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller unavailableProbe
+WARNING: WARNING: Runtime compatibility verification SKIPPED: verification command returned no usable module inventory. Setup will continue; runtime compatibility is not confirmed.
+stdout: (no output)
+stderr: (no output)
+  [PASS] unavailable runtime probe continues setup and safe removal: empty-success
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller unavailableProbe
+WARNING: WARNING: Runtime compatibility verification SKIPPED: verification command returned no usable module inventory. Setup will continue; runtime compatibility is not confirmed.
+stdout: Probe did not return a module inventory
+stderr: (no output)
+  [PASS] unavailable runtime probe continues setup and safe removal: unknown-output
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller unavailableProbe
+WARNING: WARNING: Runtime compatibility verification SKIPPED: verification command returned exit code 1. Setup will continue; runtime compatibility is not confirmed.
+stdout: stdout diagnostic
+Password=[REDACTED]
+stderr: stderr diagnostic
+Token=[REDACTED]
+  [PASS] unavailable runtime probe continues setup and safe removal: both-streams
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller unavailableProbe
+WARNING: WARNING: Runtime compatibility verification SKIPPED: verification command returned exit code 1. Setup will continue; runtime compatibility is not confirmed.
+stdout: (output omitted: exceeds 4096 characters)
+stderr: (no output)
+  [PASS] unavailable runtime probe continues setup and safe removal: oversized-output
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for runtime.zip: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.base.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.graphics.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.controls.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.fxml.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.media.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.swing.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for javafx.web.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller download
+WARNING: WARNING: Publisher checksum verification SKIPPED for jdk.jsobject.jar: checksum downloads unavailable. Using approved HTTPS without a publisher checksum; the local audit hash does not establish authenticity.
+Oct 25, 2026 10:52:38 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller unavailableProbe
+WARNING: WARNING: Runtime compatibility verification SKIPPED: verification command returned exit code 1. Setup will continue; runtime compatibility is not confirmed.
+stdout: (no output)
+stderr: (no output)
+  [PASS] unavailable runtime probe continues setup and safe removal: all-unavailable
+  [PASS] successful module report is marked verified
+  [PASS] module report on stderr is accepted
+  [PASS] optional runtime probe retains failure boundary: stdout-error
+  [PASS] optional runtime probe retains failure boundary: missing-module
+  [PASS] optional runtime probe retains failure boundary: wrong-version
+  [PASS] optional runtime probe retains failure boundary: cancel-before-probe
+  [PASS] optional runtime probe retains failure boundary: cancel-after-probe
+Oct 25, 2026 10:52:39 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller unavailableProbe
+WARNING: WARNING: Runtime compatibility verification SKIPPED: verification command returned exit code 1. Setup will continue; runtime compatibility is not confirmed.
+stdout: (no output)
+stderr: (no output)
+  [PASS] optional runtime probe retains failure boundary: cancel-on-warning
+  [PASS] optional runtime probe retains failure boundary: interrupt
+  [PASS] optional runtime probe retains failure boundary: thread-interrupt
+Oct 25, 2026 10:52:39 AM io.github.ibcmanager.workaround.RuntimeBundleInstaller unavailableProbe
+WARNING: WARNING: Runtime compatibility verification SKIPPED: verification command returned exit code 1. Setup will continue; runtime compatibility is not confirmed.
+stdout: (no output)
+stderr: (no output)
+  [PASS] optional runtime probe retains failure boundary: save-failure
+  [PASS] optional runtime probe retains failure boundary: programming-error
+  [PASS] runtime consent is short and states skipped checks and shared options
+[SUITE] Profile codec and model
+  [PASS] round-trips a complete profile
+  [PASS] uses deterministic setting ordering
+  [PASS] supports CRLF input
+  [PASS] preserves escaped control characters
+  [PASS] preserves unknown escape sequences
+  [PASS] rejects duplicate core keys
+  [PASS] rejects duplicate setting keys
+  [PASS] reports the encoded source format using full structural validation
+  [PASS] rejects unsupported format versions
+  [PASS] migrates version 1 compatibility defaults
+  [PASS] migrates version 2 automatic-recovery default
+  [PASS] migrates version 3 to unattended 2FA retry defaults
+  [PASS] new profiles enable unattended 2FA retry defaults
+  [PASS] format 4 preserves an explicit disabled 2FA retry
+  [PASS] rejects missing required keys
+  [PASS] rejects invalid integers
+  [PASS] rejects invalid booleans
+  [PASS] rejects invalid encoded setting keys
+  [PASS] ignores unknown forward-compatible core keys
+  [PASS] never serializes a password field
+  [PASS] normalizes builder input
+  [PASS] profile equality includes all settings
+  [PASS] randomized round-trip 0
+  [PASS] randomized round-trip 1
+  [PASS] randomized round-trip 2
+  [PASS] randomized round-trip 3
+  [PASS] randomized round-trip 4
+  [PASS] randomized round-trip 5
+  [PASS] randomized round-trip 6
+  [PASS] randomized round-trip 7
+  [PASS] randomized round-trip 8
+  [PASS] randomized round-trip 9
+  [PASS] randomized round-trip 10
+  [PASS] randomized round-trip 11
+  [PASS] randomized round-trip 12
+  [PASS] randomized round-trip 13
+  [PASS] randomized round-trip 14
+  [PASS] randomized round-trip 15
+  [PASS] randomized round-trip 16
+  [PASS] randomized round-trip 17
+  [PASS] randomized round-trip 18
+  [PASS] randomized round-trip 19
+  [PASS] randomized round-trip 20
+  [PASS] randomized round-trip 21
+  [PASS] randomized round-trip 22
+  [PASS] randomized round-trip 23
+  [PASS] randomized round-trip 24
+  [PASS] randomized round-trip 25
+  [PASS] randomized round-trip 26
+  [PASS] randomized round-trip 27
+  [PASS] randomized round-trip 28
+  [PASS] randomized round-trip 29
+  [PASS] randomized round-trip 30
+  [PASS] randomized round-trip 31
+  [PASS] randomized round-trip 32
+  [PASS] randomized round-trip 33
+  [PASS] randomized round-trip 34
+  [PASS] randomized round-trip 35
+  [PASS] randomized round-trip 36
+  [PASS] randomized round-trip 37
+  [PASS] randomized round-trip 38
+  [PASS] randomized round-trip 39
+  [PASS] randomized round-trip 40
+  [PASS] randomized round-trip 41
+  [PASS] randomized round-trip 42
+  [PASS] randomized round-trip 43
+  [PASS] randomized round-trip 44
+  [PASS] randomized round-trip 45
+  [PASS] randomized round-trip 46
+  [PASS] randomized round-trip 47
+  [PASS] randomized round-trip 48
+  [PASS] randomized round-trip 49
+  [PASS] randomized round-trip 50
+  [PASS] randomized round-trip 51
+  [PASS] randomized round-trip 52
+  [PASS] randomized round-trip 53
+  [PASS] randomized round-trip 54
+  [PASS] randomized round-trip 55
+  [PASS] randomized round-trip 56
+  [PASS] randomized round-trip 57
+  [PASS] randomized round-trip 58
+  [PASS] randomized round-trip 59
+[SUITE] IBC configuration document
+  [PASS] round-trips LF text exactly
+  [PASS] round-trips CRLF text exactly
+  [PASS] round-trips CR text exactly
+  [PASS] round-trips text without final newline
+  [PASS] round-trips empty text
+  [PASS] reads the last duplicate value
+  [PASS] reports active duplicate keys
+  [PASS] set preserves key formatting
+  [PASS] set disables earlier duplicates
+  [PASS] set appends unknown keys
+  [PASS] remove deletes all matching settings
+  [PASS] comments and malformed lines stay untouched
+  [PASS] redacts both password settings
+  [PASS] detects plaintext secrets
+  [PASS] detects every duplicate secret even when the final value is blank
+  [PASS] disabling a duplicate secret never persists its value
+  [PASS] a configuration damaged by an earlier release is detected and repaired
+  [PASS] redacts sensitive assignments in user comments and raw lines
+  [PASS] sanitizes every sensitive occurrence case-insensitively
+  [PASS] copy is structurally independent
+  [PASS] rejects invalid setting keys
+  [PASS] rejects config-breaking setting values
+  [PASS] schema keys are unique
+  [PASS] schema sensitive keys agree with definitions
+  [PASS] bundled template parses and covers core keys
+  [PASS] profile-controlled settings are identified
+  [PASS] parses the complete Java Properties separator and continuation grammar
+  [PASS] canonical IBC bytes preserve Unicode and literal backslashes
+  [PASS] external IBC bytes use strict ISO-8859-1 semantics
+  [PASS] legacy manager UTF-8 migration is isolated from external configs
+  [PASS] secret detection covers colon whitespace and continuation syntax
+  [PASS] full-file Properties parsing is authoritative for malformed continuations
+  [PASS] full-file parser matches Properties.load across deterministic malformed input
+  [PASS] ambiguous Properties syntax requires explicit canonicalization
+  [PASS] single Windows backslashes are warned without exposing values
+  [PASS] random exact parse/render 0
+  [PASS] random exact parse/render 1
+  [PASS] random exact parse/render 2
+  [PASS] random exact parse/render 3
+  [PASS] random exact parse/render 4
+  [PASS] random exact parse/render 5
+  [PASS] random exact parse/render 6
+  [PASS] random exact parse/render 7
+  [PASS] random exact parse/render 8
+  [PASS] random exact parse/render 9
+  [PASS] random exact parse/render 10
+  [PASS] random exact parse/render 11
+  [PASS] random exact parse/render 12
+  [PASS] random exact parse/render 13
+  [PASS] random exact parse/render 14
+  [PASS] random exact parse/render 15
+  [PASS] random exact parse/render 16
+  [PASS] random exact parse/render 17
+  [PASS] random exact parse/render 18
+  [PASS] random exact parse/render 19
+  [PASS] random exact parse/render 20
+  [PASS] random exact parse/render 21
+  [PASS] random exact parse/render 22
+  [PASS] random exact parse/render 23
+  [PASS] random exact parse/render 24
+  [PASS] random exact parse/render 25
+  [PASS] random exact parse/render 26
+  [PASS] random exact parse/render 27
+  [PASS] random exact parse/render 28
+  [PASS] random exact parse/render 29
+  [PASS] random exact parse/render 30
+  [PASS] random exact parse/render 31
+  [PASS] random exact parse/render 32
+  [PASS] random exact parse/render 33
+  [PASS] random exact parse/render 34
+  [PASS] random exact parse/render 35
+  [PASS] random exact parse/render 36
+  [PASS] random exact parse/render 37
+  [PASS] random exact parse/render 38
+  [PASS] random exact parse/render 39
+  [PASS] random exact parse/render 40
+  [PASS] random exact parse/render 41
+  [PASS] random exact parse/render 42
+  [PASS] random exact parse/render 43
+  [PASS] random exact parse/render 44
+  [PASS] random exact parse/render 45
+  [PASS] random exact parse/render 46
+  [PASS] random exact parse/render 47
+  [PASS] random exact parse/render 48
+  [PASS] random exact parse/render 49
+[SUITE] Profile and setting validation
+  [PASS] accepts a structurally valid installed profile
+  [PASS] Gateway 10.50 delegates bundled-Java selection to StartIBC
+  [PASS] edit validation can precede credential storage
+  [PASS] rejects blank and long names
+  [PASS] rejects invalid version syntax
+  [PASS] rejects config-breaking profile text
+  [PASS] requires all launch directories
+  [PASS] rejects unsafe batch path characters
+  [PASS] external IBC file absence cannot affect integrated validation
+  [PASS] detects missing offline jars
+  [PASS] validates API and command ports
+  [PASS] warns about non-loopback command binding
+  [PASS] rejects invalid command binding
+  [PASS] validates graceful stop timeout
+  [PASS] independent 2FA policy is not coupled to obsolete wrapper action
+  [PASS] warns when automatic recovery cannot complete a manual login
+  [PASS] warns when repeated 2FA login still uses a manual password
+  [PASS] validates encrypted credentials
+  [PASS] validates existing config mode
+  [PASS] warns that reserved advanced settings are ignored
+  [PASS] warns about additional command sources
+  [PASS] detects duplicate profile resources
+  [PASS] ignores disabled profiles in conflict checks
+  [PASS] warns about duplicate live usernames
+  [PASS] accepts schema defaults
+  [PASS] validates boolean values
+  [PASS] validates enum values
+  [PASS] validates integer and port values
+  [PASS] validates timeout and client-ID ranges
+  [PASS] validates 12-hour and 24-hour times
+  [PASS] validates documented AM/PM independently of the host locale
+  [PASS] validates IBC closedown and settings-save schedules
+  [PASS] validates order-ID reset policy
+  [PASS] accepts all IBC window-structure logging aliases
+  [PASS] blocks unsupported FIX CTCI mode
+  [PASS] warns that FIX-only trusted API addresses are ignored
+  [PASS] validates TWS-only settings against the selected application
+  [PASS] warns when auto-logoff and auto-restart are both set
+  [PASS] validates IP lists
+  [PASS] detects config duplicates and plaintext secrets
+  [PASS] known IBC setting names require canonical letter case
+[SUITE] Security and credential handling
+  [PASS] redacts IBC password lines
+  [PASS] redacts launcher password arguments
+  [PASS] redacts exact runtime secrets
+  [PASS] does not alter ordinary text
+  [PASS] SecureChars returns defensive copies
+  [PASS] SecureChars detects config-breaking control characters
+  [PASS] SecureChars rejects access after close
+  [PASS] unavailable credential store fails closed
+  [PASS] DPAPI save passes plaintext only through stdin
+  [PASS] DPAPI load returns protected characters
+  [PASS] DPAPI operations are scoped to profile ID
+  [PASS] DPAPI uses explicit UTF-8 and ASCII-safe plaintext transport
+  [PASS] DPAPI rejects invalid encrypted output
+  [PASS] DPAPI rejects blank encrypted output
+  [PASS] DPAPI reports command failures without leaking secret
+  [PASS] DPAPI reports command timeout
+  [PASS] DPAPI delete removes only the selected credential
+  [PASS] default executor captures stdout stderr and stdin
+  [PASS] default executor enforces timeout
+  [PASS] default executor caps captured output
+  [PASS] default executor terminates a subprocess when interrupted
+  [PASS] file permission hardener applies owner-only POSIX modes
+  [PASS] Windows directory ACL grants the owner traverse permission
+  [PASS] runtime config lease removes password file
+  [PASS] runtime config lease canonicalizes stale ambiguous Properties syntax
+  [PASS] runtime config lease is idempotent
+[SUITE] Persistent storage and runtime configuration
+  [PASS] atomic writer creates a complete file
+  [PASS] atomic writer preserves the previous backup
+  [PASS] repository saves loads and sorts profiles
+  [PASS] repository recovers a corrupt profile from backup
+  [PASS] repository recovery preserves a legacy migration marker
+  [PASS] repository skips unrecoverable profiles
+  [PASS] repository rejects a profile stored under the wrong ID
+  [PASS] repository deletes only the selected profile
+  [PASS] repository serializes concurrent saves
+  [PASS] managed config is created from the bundled template
+  [PASS] managed config imports comments and removes secrets
+  [PASS] managed config applies profile-controlled settings
+  [PASS] managed config couples both IBC second-factor timeout policies
+  [PASS] managed config leaves API-port override disabled by default
+  [PASS] managed config ignores reserved advanced overrides
+  [PASS] managed config refuses persistent plaintext passwords
+  [PASS] managed config preserves imported CRLF layout
+  [PASS] raw managed-config edits synchronize into the Profile editor
+  [PASS] legacy profile migration overrides one stale managed 2FA policy
+  [PASS] structured setting reset restores the base configuration value
+  [PASS] manager-owned runtime launch preserves raw managed-config edits
+  [PASS] external config runtime still applies structured profile overrides
+  [PASS] raw managed-config save persists the synchronized profile atomically
+  [PASS] raw managed-config save synchronizes Profile-tab fields bidirectionally
+  [PASS] raw managed-config save rejects an invalid synchronized profile atomically
+  [PASS] runtime config manual mode contains no password
+  [PASS] runtime config encrypted mode injects the password temporarily
+  [PASS] runtime config uses the validated settings tree and cleans legacy location
+  [PASS] runtime config existing-config mode copies the selected file
+  [PASS] runtime config canonicalizes ambiguous external Properties syntax only in the copy
+  [PASS] runtime config rejects incompatible external IBC modes and schedules
+  [PASS] runtime config rejects an empty encrypted password
+  [PASS] runtime config rejects config-breaking credentials
+  [PASS] runtime config cleanup removes a stale credential file
+  [PASS] profile save stores encrypted credentials without serializing them
+  [PASS] profile save rejects config-breaking passwords before persistence
+  [PASS] profile save retains an existing password when no replacement is supplied
+  [PASS] profile save removes credentials when switching to manual
+  [PASS] profile save rejects a changed profile ID
+  [PASS] profile save rolls back a newly created credential on repository failure
+  [PASS] profile save restores profile and credential after config failure
+[SUITE] Runtime launch, process, ports, commands, and logs
+  [PASS] launch specification is immutable
+  [PASS] Windows launch script delegates to official StartIBC
+  [PASS] blank Java override delegates runtime selection to StartIBC
+  [PASS] launch script contains no credential arguments
+  [PASS] launch script rejects unsafe batch values
+  [PASS] launching IBC is rejected on non-Windows systems
+  [PASS] default process launcher captures combined output
+  [PASS] process launcher locates packaged Java commands
+  [PASS] process relay descriptor round-trips and fails closed
+  [PASS] process-log bytes stay in memory until an explicit commit
+  [PASS] buffered process relay survives the manager process exiting
+  [PASS] managed Java process reports lifecycle and exit code
+  [FAIL] process tree terminator kills the exact root and descendants - java.lang.AssertionError: test process must create a descendant
+java.lang.AssertionError: test process must create a descendant
+	at io.github.ibcmanager.tests.Assertions.fail(Assertions.java:88)
+	at io.github.ibcmanager.tests.Assertions.eventually(Assertions.java:84)
+	at io.github.ibcmanager.runtime.RuntimeComponentTests.processTree(RuntimeComponentTests.java:411)
+	at io.github.ibcmanager.tests.TestRunner.main(TestRunner.java:60)
+  [PASS] process tree terminator captures descendants spawned during cooperative shutdown
+  [FAIL] process identity store round-trips identity - java.util.NoSuchElementException: No value present
+java.util.NoSuchElementException: No value present
+	at java.base/java.util.Optional.orElseThrow(Optional.java:377)
+	at io.github.ibcmanager.runtime.RuntimeComponentTests.identityRoundTrip(RuntimeComponentTests.java:475)
+	at io.github.ibcmanager.tests.TestRunner.main(TestRunner.java:60)
+  [FAIL] process identity store reattaches only matching start time - java.lang.AssertionError: matching live PID and start time must reattach
+java.lang.AssertionError: matching live PID and start time must reattach
+	at io.github.ibcmanager.tests.Assertions.fail(Assertions.java:88)
+	at io.github.ibcmanager.tests.Assertions.isTrue(Assertions.java:21)
+	at io.github.ibcmanager.runtime.RuntimeComponentTests.identityReattach(RuntimeComponentTests.java:488)
+	at io.github.ibcmanager.tests.TestRunner.main(TestRunner.java:60)
+  [PASS] process identity store rejects corrupt and stale identities
+  [PASS] process identity store deletes only selected identity
+  [PASS] IBC command client sends command and EXIT and accepts OK
+  [PASS] IBC command client accepts an exact bare OK acknowledgement
+  [PASS] IBC command client reports command rejection
+  [PASS] IBC command client rejects an exact bare ERROR response
+  [PASS] later IBC command error overrides a preliminary acknowledgement
+  [PASS] IBC command client does not treat Goodbye as command success
+  [PASS] IBC command client returns partial success after response timeout
+  [PASS] IBC command client propagates an empty response timeout
+  [PASS] IBC command client rejects invalid timeout values
+  [PASS] log tailer handles missing and empty files
+  [PASS] log tailer emits only complete appended lines
+  [PASS] log tailer preserves UTF-8 characters split across appends
+  [PASS] log tailer normalizes CRLF and CR
+  [PASS] log tailer detects truncation
+  [PASS] log tailer caps large catch-up reads
+  [PASS] log tailer can reset to the current end
+  [PASS] runtime log buffer enforces capacity
+  [PASS] runtime log buffer supports concurrent append
+  [PASS] IBC log parser recognizes normal states
+  [PASS] IBC log parser recognizes failures and reset
+  [PASS] IBC log parser models wrapper restart and normal-exit decisions
+  [PASS] IBC log parser tracks command-server lifecycle without socket probes
+  [PASS] StartIBC launch marker clears stale command and login readiness
+  [PASS] IBC log parser tracks the actual Gateway or TWS launch milestone
+  [PASS] Windows listener-table parser ignores established connections
+  [PASS] Windows listener-table parser retains address and owning PID
+  [PASS] Linux listener-table parser accepts only LISTEN rows
+  [PASS] macOS listener-table parser accepts dotted endpoints
+  [PASS] passive listener probe detects a server without connecting
+  [PASS] listener snapshots are cached and can be invalidated
+Oct 25, 2026 10:52:49 AM io.github.ibcmanager.runtime.ListeningPortProbe handleFailure
+WARNING: Could not inspect TCP listeners passively: simulated listener-table failure
+Oct 25, 2026 10:52:49 AM io.github.ibcmanager.runtime.ListeningPortProbe handleFailure
+WARNING: Could not inspect TCP listeners passively: forced refresh failed
+  [PASS] listener probe retains only a bounded stale snapshot
+  [PASS] Java override validation delegates automatic runtime selection to StartIBC
+  [PASS] offline-installation startup coordinator serializes only matching program trees
+  [PASS] startup milestone waiter requires the StartIBC launch marker
+[SUITE] Invalid twsInfo: actual rejection lines and versioned engine event
+  [PASS] observed rejection variant 0 survives normal exit footer
+  [PASS] observed rejection variant 1 survives normal exit footer
+  [PASS] observed rejection variant 2 survives normal exit footer
+  [PASS] unrelated diagnostic prose does not synthesize a server rejection
+  [PASS] versioned rejection ignores stale events and protects terminal reason
+  [PASS] new wrapper child permits a subsequent genuine successful login
+[SUITE] Expired session token: startup and established-session Manager lifecycle
+  [PASS] recorded stalled-login prefix gains an explicit queued recovery state
+  [PASS] queued recovery retains its reason through old-child login and exit output
+  [PASS] replacement child resumes normal credentials, 2FA and successful login
+  [PASS] duplicate and out-of-order expiry events do not change the pending observation
+  [PASS] foreign, retired and malformed events cannot claim recovery
+  [PASS] invalid twsInfo takes precedence before and after expiry
+  [PASS] normal wrapper completion ends pending recovery
+  [PASS] completed login is not overridden by a late expiry event
+  [PASS] active 2FA is not overridden by an expiry event
+  [PASS] an already exited child cannot newly announce expiry recovery
+  [PASS] raw expiry prose alone does not authorize recovery
+  [PASS] command-server lifecycle still updates while recovery is pending
+  [PASS] manual lifecycle resets clear the expired-token latch
+  [PASS] October 25 established-session expiry invalidates running readiness
+  [PASS] established-session expiry requires completed login and the main window
+  [PASS] established-session expiry does not interrupt a new login or second factor
+  [PASS] established-session expiry cannot restart an exited stopped paused or closing child
+  [PASS] established-session expiry rejects malformed foreign and stale events
+  [PASS] established-session expiry is claimed once across duplicate notifications
+  [PASS] established-session recovery retains its reason through old-child output
+  [PASS] established-session replacement reaches fresh login and rejects retired events
+  [PASS] invalid twsInfo remains authoritative around established-session recovery
+  [PASS] old child cannot restore readiness after expiry wrapper completion
+  [PASS] manual reset retires an established-session expiry generation
+  [PASS] normal scheduled warm restart does not acquire an expiry reason
+  [PASS] cold-restart preparation failure is actionable before either expiry event
+  [PASS] cold-restart preparation failure ends an already announced recovery
+  [PASS] recovery failure survives old-child output and normal wrapper completion
+  [PASS] recovery failure ignores stale malformed terminal and active-2FA events
+  [PASS] recovery failure clears only for replacement or explicit reset
+  [PASS] invalid twsInfo outranks a token recovery preparation failure
+  [PASS] successful authentication guard-clear failure remains visible after the login event
+  [PASS] guard-clear failure requires the current nonterminal application and main window
+  [PASS] guard-clear failure clears on real replacement and survives old-child noise
+  [PASS] invalid twsInfo takes precedence over guard-clear failure
+[SUITE] Merged stderr redaction, bounds and disk buffering
+  [PASS] fragmented UTF-8 lines are redacted before either output sink
+  [PASS] CR LF and CRLF retain logical lines
+  [PASS] unterminated final stderr is redacted at EOF
+  [PASS] oversized lines are fully omitted without secret fragments
+  [PASS] ordinary stack traces and engine events survive unchanged
+  [PASS] inline error credentials redact idempotently
+  [PASS] combined stdout stderr reaches live and disk redacted with original exit code
+  [PASS] all four Windows Gateway invocations preserve stderr
+[SUITE] Token-expiry cold restart: actual Windows wrapper exit dispatcher
+  [PASS] explicit expiry precedes descriptor discovery and retains existing retry branches
+    [PLATFORM LIMIT] Native CMD expiry dispatcher requires Windows: expired, expired-nonzero, warm, cold, pause, normal
+  [PASS] Windows expiry cold start consumes once and retains unrelated restart data
+    [PLATFORM LIMIT] Native CMD expiry dispatcher requires Windows: directory, readonly, pause-conflict, repeated, pending-directory
+  [PASS] Windows expiry refuses malformed conflicting or repeated recovery markers
+    [PLATFORM LIMIT] Native CMD expiry dispatcher requires Windows: pending, twofa-retry, display-retry, acknowledged
+  [PASS] Windows failed fresh login cannot fall back to a stale descriptor
+[SUITE] Automatic recovery persistence and rate limiting
+  [PASS] records a pending attempt and reloads it
+  [PASS] blocks a second attempt until health is confirmed
+  [PASS] keeps successful attempts for the rolling rate limit
+  [PASS] manual reset clears only the pending marker
+  [PASS] explicit intervention can clear all recovery bookkeeping
+  [PASS] prunes attempts older than one hour
+  [PASS] rejects corrupt and future recovery state
+  [PASS] refuses a symbolic recovery-history file
+[SUITE] Restart-wide no-progress deadline and incident replay
+  [PASS] single startup stalls at exactly five minutes
+  [PASS] successive one-minute failures do not reset the overall deadline
+  [PASS] duplicate launch lines do not create attempts or extend the deadline
+  [PASS] wrapper bootstrap without a Gateway milestone does not arm
+  [PASS] login window ends the no-progress episode
+  [PASS] real second factor protects indefinite approval wait
+  [PASS] completed login ends the no-progress episode
+  [PASS] owned API progress ends the episode even without login text
+  [PASS] normal exit never initiates stalled recovery
+  [PASS] child-exit and restart gaps preserve age without authorizing a kill
+  [PASS] explicit stop or new wrapper resets the episode
+  [PASS] profile detectors have independent episodes
+  [PASS] invalid detector dependencies and timeouts are rejected
+  [PASS] backwards wall-clock age is not negative
+  [PASS] initial logged-out bootstrap state cannot erase repeated failure age
+  [PASS] same-child incidental starting text cannot erase prior login progress
+  [PASS] October 10 nine-failure incident crosses the cumulative deadline
+  [PASS] October 11 successful warm restart does not classify as stalled
+[SUITE] Profile runtime controller and registry
+  [PASS] controller starts in stopped state
+  [PASS] validation failure prevents all launch work
+  [PASS] occupied command port prevents launch
+  [PASS] occupied API port prevents launch
+  [PASS] unavailable listener inspection prevents launch
+  [PASS] profile and status snapshots remain readable during a blocking start
+  [PASS] manual profile starts once and records identity
+  [PASS] encrypted start loads and clears stored credential
+  [PASS] existing-config start does not query credential store
+  [PASS] credential load failure stops before runtime config creation
+  [PASS] runtime config creation failure prevents process launch
+  [PASS] process launch failure removes temporary runtime config
+  [PASS] launch is rejected unless the detached relay owns exact runtime-config cleanup
+  [PASS] identity persistence failure terminates the partially started process
+  [PASS] failing status listeners cannot break controller operation
+  [PASS] refresh recognizes login and second-factor states
+  [PASS] refresh retains paused and reports an exited application
+  [PASS] automatic and timeout restarts stay yellow until replacement launch
+  [PASS] runtime configuration remains available across authentication and wrapper restarts
+  [PASS] API listener detection is reported with an explicit caveat
+  [PASS] API listener must belong to the managed process tree before status becomes green
+  [PASS] unavailable API listener inspection is reported as uncertain
+  [PASS] login-completed and error log states are reported
+  [PASS] command-server readiness is reported while login is pending
+  [PASS] repeated one-minute child failures reach one bounded full recovery
+  [PASS] failed child loop after recovery stays failed without another force restart
+  [PASS] disabled recovery reports aggregate failure rather than restarting
+  [PASS] owned API progress clears stale startup age before later restarts
+  [PASS] late authentication in a replacement child cancels stale cleanup
+  [PASS] exited failed child is not mistaken for recovery progress
+  [PASS] unrelated API port never permits cleanup of an overdue retry loop
+  [PASS] a launch with no login or API progress becomes an explicit startup stall
+  [PASS] failed graceful stop of a startup stall preserves an actionable recovery state
+  [PASS] automatic recovery performs graceful cleanup and one fresh start
+  [PASS] automatic recovery force-cleans an unresponsive stalled process tree
+  [PASS] recovery rereads queued authentication progress before sending STOP
+  [PASS] recovery does not kill login or 2FA that appears during graceful STOP
+  [PASS] recovery does not kill an API listener that appears during graceful STOP
+  [PASS] recovery fails closed when listener inspection is uncertain before STOP
+  [PASS] recovery fails closed when listener inspection becomes uncertain before force cleanup
+  [PASS] recovery never kills a replacement engine generation during graceful STOP
+  [PASS] second-factor progress prevents automatic stalled-start recovery
+  [PASS] a stalled fresh recovery start fails closed without a restart loop
+  [PASS] automatic recovery stops when old ports do not release
+  [PASS] explicit Force Stop cancels an automatic recovery before fresh start
+  [PASS] automatic recovery enforces two attempts per rolling hour
+  [PASS] an unresolved recovery blocks automatic startup until explicit Start
+  [PASS] explicit Start can clear corrupt recovery bookkeeping
+  [PASS] periodic refresh uses passive listener inspection without command connections
+  [PASS] controller commands use loopback and update restart and pause states
+  [PASS] a successful PAUSE exit remains paused instead of becoming an error
+  [PASS] PAUSE exit without wrapper confirmation becomes an error
+  [PASS] controller rejects commands while command server is closed
+  [PASS] replacement IBC launch marker revokes stale command capabilities
+  [PASS] controller propagates IBC command rejection
+  [PASS] graceful stop survives an onExit callback race
+  [PASS] failed STOP command never escalates to an implicit force stop
+  [PASS] force stop terminates only the managed process
+  [PASS] unexpected process exit cleans state and reports an error
+  [PASS] normal and scheduled wrapper exits finish stopped rather than error
+  [PASS] exact IBC 3.24.2 error-exit marker survives to final failure state
+  [PASS] JVM dependency error is ERROR despite wrapper zero exit and normal footer
+  [PASS] server invalid twsInfo remains ERROR while alive and after zero-code exit
+  [PASS] IBC error marker outranks StartIBC's generic normal-exit footer
+  [PASS] configuration commits are blocked throughout recovery including cooldown
+  [PASS] configuration commits reject stale snapshots and running profiles
+  [PASS] profile updates are blocked while running and accepted when stopped
+  [PASS] manager exit leaves active wrapper configuration to the detached relay
+  [PASS] failed final runtime-config cleanup remains visible and blocks exit
+  [FAIL] controller reattaches to an exact live process identity - java.lang.AssertionError: constructor must reattach exact live identity expected=<UNKNOWN> actual=<STOPPED>
+java.lang.AssertionError: constructor must reattach exact live identity expected=<UNKNOWN> actual=<STOPPED>
+	at io.github.ibcmanager.tests.Assertions.fail(Assertions.java:88)
+	at io.github.ibcmanager.tests.Assertions.equals(Assertions.java:31)
+	at io.github.ibcmanager.runtime.ControllerTests.reattach(ControllerTests.java:1503)
+	at io.github.ibcmanager.runtime.ControllerTests.reattach(ControllerTests.java:1475)
+	at io.github.ibcmanager.tests.TestRunner.main(TestRunner.java:60)
+  [FAIL] reattached Force Stop tolerates a delayed parent Process exit observation - java.lang.AssertionError: constructor must reattach exact live identity expected=<UNKNOWN> actual=<STOPPED>
+java.lang.AssertionError: constructor must reattach exact live identity expected=<UNKNOWN> actual=<STOPPED>
+	at io.github.ibcmanager.tests.Assertions.fail(Assertions.java:88)
+	at io.github.ibcmanager.tests.Assertions.equals(Assertions.java:31)
+	at io.github.ibcmanager.runtime.ControllerTests.reattach(ControllerTests.java:1503)
+	at io.github.ibcmanager.runtime.ControllerTests.reattachDelayedObservation(ControllerTests.java:1479)
+	at io.github.ibcmanager.tests.TestRunner.main(TestRunner.java:60)
+  [FAIL] reattachment exit verification rejects a still-live child within its deadline - java.lang.AssertionError: the negative-control native process must still be alive
+java.lang.AssertionError: the negative-control native process must still be alive
+	at io.github.ibcmanager.tests.Assertions.fail(Assertions.java:88)
+	at io.github.ibcmanager.tests.Assertions.isTrue(Assertions.java:21)
+	at io.github.ibcmanager.runtime.ControllerTests.exitObservationRejectsLiveProcess(ControllerTests.java:1557)
+	at io.github.ibcmanager.tests.TestRunner.main(TestRunner.java:60)
+  [PASS] reattachment exit verification accepts an already-exited child
+  [FAIL] reattachment exit verification propagates an interrupted wait - java.lang.AssertionError: interruption must not kill the observed child
+java.lang.AssertionError: interruption must not kill the observed child
+	at io.github.ibcmanager.tests.Assertions.fail(Assertions.java:88)
+	at io.github.ibcmanager.tests.Assertions.isTrue(Assertions.java:21)
+	at io.github.ibcmanager.runtime.ControllerTests.exitObservationPreservesInterruption(ControllerTests.java:1583)
+	at io.github.ibcmanager.tests.TestRunner.main(TestRunner.java:60)
+  [PASS] runtime registry sorts updates and removes stopped controllers
+  [PASS] runtime registry retains omitted running controllers
+  [PASS] runtime registry defers profile replacement during automatic recovery
+  [PASS] runtime registry does not auto-start a profile with unresolved recovery
+  [PASS] runtime registry auto-starts only enabled auto-start profiles
+  [PASS] runtime registry permits exit while detached relays own active cleanup
+[SUITE] Diagnostic bundle creation and redaction
+  [PASS] creates a complete deterministic diagnostic bundle
+  [PASS] sanitizes unsafe profile names in the bundle filename
+  [PASS] redacts configuration status and log secrets
+  [PASS] captures and redacts the live in-memory runtime log
+  [PASS] bounds the live in-memory runtime log while retaining its newest lines
+  [PASS] masks usernames without losing diagnostic context
+  [PASS] reports missing logs without failing export
+  [PASS] limits each log tail to two MiB
+  [PASS] redacts existing config without modifying its source
+  [PASS] captures configuration read errors inside the bundle
+  [PASS] includes validation errors for invalid profiles
+  [PASS] creates unique bundles generated in the same second
+  [PASS] removes temporary output after a failed final move
+[SUITE] Accessible broker logs: discovery, bounded export, redaction and isolation
+  [PASS] diagnostics contain launcher current rotation and account-session plaintext
+  [PASS] encrypted broker logs are inventoried but never copied without redaction
+  [PASS] runtime metadata and VM options are included without state credentials
+  [PASS] external password token username account and encryption fields are masked
+  [PASS] missing and non-text logs do not prevent the rest of the bundle
+  [PASS] no recursive scan of unrelated directories or credentials
+  [PASS] same settings and installation directory is scanned only once
+  [PASS] TWS plaintext logs use the selected TWS installation
+  [PASS] external-log count is bounded and current launcher wins
+  [PASS] total external-log byte budget is enforced
+  [PASS] oversized plaintext tails drop earlier and partial lines
+  [PASS] giant sensitive line is omitted not partially disclosed
+  [PASS] missing application layout still exports configured launcher log
+  [PASS] blank settings path never scans the current working directory
+  [PASS] native launcher identity is read only and cannot change application flags
+  [PASS] native launcher UTF16 identity is readable without executing it
+  [PASS] native launcher unaligned UTF16 identity is supported
+  [PASS] native launcher property spanning scan blocks is not truncated
+  [PASS] install4j javaOptions metadata decodes built-in XML references before redaction
+  [PASS] unknown XML references never disclose unredacted installer data
+  [PASS] native crash-log environment credentials and all token hashes are redacted
+  [PASS] application diagnostics never follow a symbolic file
+  [PASS] application diagnostics never follow a symbolic directory
+  [PASS] application diagnostics never follow a symbolic root
+  [PASS] application diagnostics never follow a symbolic ancestor
+  [PASS] external log decoding retains complete utf8 text
+  [PASS] external log decoding retains complete utf16le text
+  [PASS] external log decoding retains complete utf16be text
+[SUITE] Windows Task Scheduler integration
+  [PASS] quotes Windows executable and argument values correctly
+  [PASS] rejects control characters in scheduled-task arguments
+  [PASS] builds exact query and delete commands
+  [PASS] validates scheduled-task names
+  [PASS] builds an interactive delayed logon task
+  [PASS] task action survives Windows command-line parsing as one argument
+  [PASS] supports an immediate logon task without a delay switch
+  [PASS] validates startup delay bounds and precision
+  [PASS] reports Task Scheduler availability by operating system
+  [PASS] queries installed and absent tasks
+  [PASS] reports query timeout
+  [PASS] installs a limited interactive startup task
+  [PASS] redacts scheduler errors during installation
+  [PASS] reports installation timeout
+  [PASS] removes existing and already-absent tasks
+  [PASS] reports non-missing removal failures with redaction
+  [PASS] reports removal timeout
+  [PASS] fails closed on non-Windows systems
+  [PASS] propagates command execution interruption
+[SUITE] Windows TWS and IB Gateway discovery
+  [PASS] Gateway detected without any external IBC
+  [PASS] TWS installations are restored without an external IBC
+  [PASS] duplicate roots and external IBC candidates cannot duplicate Gateway
+  [PASS] Windows discovery remains unavailable on non-Windows hosts
+  [PASS] uppercase Gateway JARS accepted, malformed versions rejected
+[SUITE] Integrated source-built engine and structured lifecycle
+  [PASS] bundled engine contains actual compiled handlers and no IBKR binaries
+  [PASS] engine cache is reused only when every byte matches
+  [PASS] tampered engine JAR is rejected without overwrite
+  [PASS] missing engine helper is rejected
+  [PASS] unexpected cache file is rejected
+  [PASS] external IBC profile path never reaches launch
+  [PASS] TWS launch uses the integrated engine without the Gateway switch
+  [PASS] engine events require completed login AND main window
+  [PASS] duplicate and stale engine events cannot restore readiness
+  [PASS] malformed events do not change state
+  [PASS] replacement engine revokes earlier readiness
+  [PASS] retry phases cannot imply login success or revive an old engine
+[SUITE] 1.x data-directory upgrade and retained credentials
+  [PASS] legacy profile migrates in place with ID and credential bytes intact
+  [PASS] migration preserves original profile and configuration backups
+  [PASS] repeat startup does not remigrate or rewrite profiles
+  [PASS] legacy TWS stays TWS but disabled rather than converted
+  [PASS] interrupted profile/config migration restores then retries
+  [PASS] malformed transaction cannot escape the profile directory
+  [PASS] format five cannot select an external engine
+  [FAIL] live legacy process prevents migration without changing configuration - java.util.NoSuchElementException: No value present
+java.util.NoSuchElementException: No value present
+	at java.base/java.util.Optional.orElseThrow(Optional.java:377)
+	at io.github.ibcmanager.app.LegacyUpgradeTests.active(LegacyUpgradeTests.java:129)
+	at io.github.ibcmanager.tests.TestRunner.main(TestRunner.java:60)
+  [PASS] invalid managed configuration rolls migration back without changing credential bytes
+  [PASS] older profile formats migrate without reintroducing external engine selection
+  [PASS] migration failure releases startup lock and log resources
+[SUITE] Single Profile configuration and one-time legacy import
+  [PASS] format seven requires profile ownership and rejects external sources
+  [PASS] legacy managed values and credentials are preserved without decryption
+  [PASS] base-file values become visible self-contained profile values
+  [PASS] sparse legacy configuration preserves engine fallbacks
+  [PASS] external credentials are imported once without changing their source
+  [PASS] external config without a password migrates as manual
+  [PASS] missing external source aborts import without altering the profile
+  [PASS] credential import failure rolls back original files
+  [PASS] invalid configuration aborts and retains the exact original
+  [PASS] unsupported legacy login modes are not silently made operational
+  [FAIL] live legacy process blocks configuration import - java.util.NoSuchElementException: No value present
+java.util.NoSuchElementException: No value present
+	at java.base/java.util.Optional.orElseThrow(Optional.java:377)
+	at io.github.ibcmanager.app.ProfileConfigurationTests.active(ProfileConfigurationTests.java:204)
+	at io.github.ibcmanager.tests.TestRunner.main(TestRunner.java:60)
+  [PASS] invalid import journal cannot target other files
+  [PASS] interrupted import restores original credential bytes before retry
+  [PASS] repeat migration does not rewrite current profiles
+  [PASS] edited generated INI cannot change current runtime or editor
+  [PASS] current profiles cannot use the legacy raw save path
+  [PASS] profile table shows imported values and excludes inactive options
+  [PASS] additional engine properties remain visible and removable
+  [PASS] obsolete diagnostic alias is converted to current controls
+[SUITE] Maintained IBC engine: actual upstream configuration/login/channel code
+  [PASS] engine version preserves upstream provenance
+IBC Settings:
+    IbLoginId=***
+    IbPassword=***
+    SecondFactorDevice=Téléphone 🔐
+    colon=value
+    continued=firstsecond
+End IBC Settings
+
+  [PASS] actual Properties loader preserves Unicode and literal backslashes
+IBC Settings:
+    BadInteger=7 
+    BadYes=yes 
+    Empty=
+    Integer=7
+    Text=value 
+    Yes=yes
+End IBC Settings
+
+2026-10-25 10:53:02:529 IBC: Invalid number "7 " for property "BadInteger"
+  [PASS] actual engine getters retain upstream trim and fallback semantics
+IBC Settings:
+    AcceptNonBrokerageAccountWarning=
+    ExistingSessionDetectedAction=
+    LoginDialogDisplayTimeout=
+    SuppressInfoMessages=
+End IBC Settings
+
+  [PASS] empty imported properties preserve actual engine fallback semantics
+  [PASS] actual configuration log redacts credentials
+IBC Settings:
+    BindAddress=127.0.0.1
+    CommandServerPort=7462
+    ExitAfterSecondFactorAuthenticationTimeout=
+    IbDir=
+    IbLoginId=
+    IbPassword=
+    MinimizeMainWindow=yes
+    OverrideTwsApiPort=
+    ReloginAfterSecondFactorAuthenticationTimeout=yes
+    SecondFactorAuthenticationTimeout=300
+    SecondFactorDevice=
+    TradingMode=paper
+End IBC Settings
+
+  [PASS] generated five-minute retry is read correctly by the actual engine
+IBC Settings:
+    IbLoginId=***
+    IbPassword=***
+End IBC Settings
+
+  [PASS] actual default login provider uses current settings
+  [PASS] actual argument credentials retain upstream precedence
+  [PASS] actual login state transitions emit bounded structured events
+  [PASS] structured events reject arbitrary strings
+IBC Settings:
+    TradingMode=paper
+End IBC Settings
+
+2026-10-25 10:53:02:726 IBC: trading mode from settings: tradingMode=paper
+  [PASS] actual trading-mode provider honors settings and arguments
+IBC Settings:
+    CommandPrompt=
+    SuppressInfoMessages=yes
+End IBC Settings
+
+2026-10-25 10:53:02:728 IBC: CommandServer received command: STOP
+2026-10-25 10:53:02:729 IBC: Closing command channel
+  [PASS] actual command channel preserves OK ERROR and line framing
+  [PASS] TWS entrypoint routes to LoginFrame without proprietary build dependencies
+IBC Settings:
+    FIX=no
+    TradingMode=paper
+End IBC Settings
+
+IBC Settings:
+    FIX=no
+    TradingMode=paper
+End IBC Settings
+
+IBC Settings:
+    FIX=no
+    TradingMode=paper
+End IBC Settings
+
+  [PASS] Gateway bootstrap environment initializes without starting a session
+IBC Settings:
+    Value=xZ:9X\#=0 #bb:0!0λ Z\  =X!#λ0YYz
+End IBC Settings
+
+IBC Settings:
+    Value=x09é	Z\\0	λbZXa\YéZλZλ0Yλb#a= Xz
+End IBC Settings
+
+IBC Settings:
+    Value=x\0	λ0Z#	90 \ :XYa	=b=\\a\\YYX z
+End IBC Settings
+
+IBC Settings:
+    Value=xé9:Xa:9:éé#:!:é:Z!0bY\λa::	é=éz
+End IBC Settings
+
+IBC Settings:
+    Value=x::!b9#baλ λ Ybba:!é YaZ==0\Z=!z
+End IBC Settings
+
+IBC Settings:
+    Value=xb9éY=\0#=b:éa#Z#ba	 ::bZé  X0:z
+End IBC Settings
+
+IBC Settings:
+    Value=xb\!\	λ!é\9	Z =:λ		\Xλ=Z Y0\X=λz
+End IBC Settings
+
+IBC Settings:
+    Value=xλéZλ:é aZ9λZ\bbZ!:=#!		éa YX90z
+End IBC Settings
+
+IBC Settings:
+    Value=xa!éb!b	=9λ	\#YYaé9 9#=0λ:ZY0#bz
+End IBC Settings
+
+IBC Settings:
+    Value=xYZ  Xa\a	9ZZY#Xaλλ\ééYY\\=	éb!z
+End IBC Settings
+
+IBC Settings:
+    Value=x\##a#Z:0::λY=é0	 b=λé!Xba	:\\Xz
+End IBC Settings
+
+IBC Settings:
+    Value=x =\\λé#	λ=X\:X éXa0 	0!	:X bb	z
+End IBC Settings
+
+IBC Settings:
+    Value=xb!X !9=\:	Yba=Z!a=λ!0ab#Za00Y\z
+End IBC Settings
+
+IBC Settings:
+    Value=x!Xaéaλ\!	b:Y aZb0a 9#	bb	λ		aZz
+End IBC Settings
+
+IBC Settings:
+    Value=x= aXX	 X	#	éaY0\YY	b	\a	aX!a=éz
+End IBC Settings
+
+IBC Settings:
+    Value=x	0bé\b	=::\= éλ Ya	!λ!bé!a	λ!Xz
+End IBC Settings
+
+IBC Settings:
+    Value=xλ!!99a:é	=9aX!ZaY=Xé!aλa9\\!#\z
+End IBC Settings
+
+IBC Settings:
+    Value=xaZXY	#=	Yé=éX9 =λλ=\\9::Y=!: !z
+End IBC Settings
+
+IBC Settings:
+    Value=xXZbY \\YλXZX# 	# : 009é=X900b:z
+End IBC Settings
+
+IBC Settings:
+    Value=x:YλλaX	é=Y!9!Z	é=X==\Z	λY#=#!Yz
+End IBC Settings
+
+IBC Settings:
+    Value=x!	 =9!:a\:=é!!9\0:	ZZ\XZ=9!\	Xz
+End IBC Settings
+
+IBC Settings:
+    Value=x:9:λ#\0λYXX#	=!λ9=éb:	Y!X :λ	bz
+End IBC Settings
+
+IBC Settings:
+    Value=x : é bé0Y éZ	é\Yé#bλ=X #=9ZY λz
+End IBC Settings
+
+IBC Settings:
+    Value=x!λ9aY#\X:bYZλXX0Z9=YZ0\λ!0 λY9z
+End IBC Settings
+
+IBC Settings:
+    Value=x9XYa	:\ X	9 Ya#!λZbZ\0#éb=aλ!éz
+End IBC Settings
+
+IBC Settings:
+    Value=x#:	:#λX9\a09!=bb99	b0é !éa#b9\z
+End IBC Settings
+
+IBC Settings:
+    Value=x=Zé#0Y	9λX# λ!=\é	#0!Y0X!bé0b	z
+End IBC Settings
+
+IBC Settings:
+    Value=x=X9λ	λ\!XZZ=λ! a9aYY\!YYaZ	bbZz
+End IBC Settings
+
+IBC Settings:
+    Value=x	0!\aé	#Y\Z9é:b \\9λZ 0=0ébZX\z
+End IBC Settings
+
+IBC Settings:
+    Value=x:0#X9Y	Zλ0ab=b=Z é	=ZY\Ya :!= z
+End IBC Settings
+
+IBC Settings:
+    Value=x!:9\	#!Zé#0:	bY\=é##	:9a		#bZ!z
+End IBC Settings
+
+IBC Settings:
+    Value=x#Z	λλX#=aZ\#0λ\	! Z#=Z=9Za	bé\z
+End IBC Settings
+
+IBC Settings:
+    Value=xbb:é\bbYY aλ	ébb0é:#:!é#:é0=a	z
+End IBC Settings
+
+IBC Settings:
+    Value=x	éλ!YY:é0Z\Z9bλ:=Zaλ0	λé09X9λ!z
+End IBC Settings
+
+IBC Settings:
+    Value=x!:#é0\!λ0é0	=X9	!Z\λY	=9X=X!X=z
+End IBC Settings
+
+IBC Settings:
+    Value=xλY9XéY:λX! a	λ	λ0éX9b=0ZYXYaa z
+End IBC Settings
+
+IBC Settings:
+    Value=x		X# 0λ\0\bYb	9#0a00λ0	é::\90bz
+End IBC Settings
+
+IBC Settings:
+    Value=xYb	\  !bé	\!#!	éYé0XaYé\Za=#0:z
+End IBC Settings
+
+IBC Settings:
+    Value=xXλ=bZ\Yé0YééY#   Y!0ba:λb=		:#z
+End IBC Settings
+
+IBC Settings:
+    Value=xYéλ!\Z	bbXé9é0é=!Yéa:a9YXZ=:=Zz
+End IBC Settings
+
+IBC Settings:
+    Value=xéλX\b! \\9:ZX::=\=YX\XY9é90Y0=z
+End IBC Settings
+
+IBC Settings:
+    Value=x	9X\YZY 	 éZ=YbY! bλX9Z	b!=#	 z
+End IBC Settings
+
+IBC Settings:
+    Value=x!!# Zb!bλ	\Z=λ0\0=ZYX#λYX:é0bλz
+End IBC Settings
+
+IBC Settings:
+    Value=x!!=\λ:XZY	=!=bYa:#:09Z#0b	Z#éYz
+End IBC Settings
+
+IBC Settings:
+    Value=x λ0é#\Y\a9λ= :#0Z99XYbé	:!!é0Xz
+End IBC Settings
+
+IBC Settings:
+    Value=xXbébé::\=9YZ0YZ é Z #=éa:ZXX 0z
+End IBC Settings
+
+IBC Settings:
+    Value=x9ab a: #baX\!λ#9#Z!=9a\=a\\Zébz
+End IBC Settings
+
+IBC Settings:
+    Value=x	Xé\0bY=Z!0é0!=a##Y9b00#λ!! Xbz
+End IBC Settings
+
+IBC Settings:
+    Value=x \λ:λ\##9: 	!bé9λéX0é0aλ0:#!a0z
+End IBC Settings
+
+IBC Settings:
+    Value=xéa0!λ	:X!λ:XZ0b	9λ:é\béZλ!:Z#λz
+End IBC Settings
+
+IBC Settings:
+    Value=xZZ=b!\Zλ!Y#=Z	=Yé		\0λ!ébZaλ0bz
+End IBC Settings
+
+IBC Settings:
+    Value=x!a\\	#Z	0#λ0 X\!!9λ#:::#0λ::	éz
+End IBC Settings
+
+IBC Settings:
+    Value=xλ:## Z	 a=9\Z\Y0	Zé!\=XéZZé:!!z
+End IBC Settings
+
+IBC Settings:
+    Value=xX:bZ  b:::0λZa\09YZ=09YY!a \!#z
+End IBC Settings
+
+IBC Settings:
+    Value=x=:Yb#λaZ9 	Z éb#=9Z0:=:!!Zaλ# z
+End IBC Settings
+
+IBC Settings:
+    Value=xY!\0b\XaaX#0X	b#	Y0b0!X	#		Z:bz
+End IBC Settings
+
+IBC Settings:
+    Value=xλ0:!!a0:=ZaYZ!#:#bb0\éZ\\éYb#9z
+End IBC Settings
+
+IBC Settings:
+    Value=x=aXéb!0b	!é:Z9XZ	XZ	bé#bλXY=abz
+End IBC Settings
+
+IBC Settings:
+    Value=xbé0ZZ	Xé09X	 0bZa!	λ:XéYY	Y=b	z
+End IBC Settings
+
+IBC Settings:
+    Value=x !Z:a=Y:X#a	!X	:!b	!Y=X	bλ\00 z
+End IBC Settings
+
+IBC Settings:
+    Value=xZ9#:!#ZXX =X9:!!9\bé9 ZZ99:éébz
+End IBC Settings
+
+IBC Settings:
+    Value=x\\:Y0Z!!\0X0= éZ\\:\ZXaaé!Z9 Xz
+End IBC Settings
+
+IBC Settings:
+    Value=x!9λ0:Y:é!:éYλ00	099##YX\a!ZXY0z
+End IBC Settings
+
+IBC Settings:
+    Value=x	\!#b9λY=YY!Xa:!é9#:Y	!\a9YéZXz
+End IBC Settings
+
+IBC Settings:
+    Value=xZZZ:!!9bZ0é	Zλ:\=#bYY=!X0#0\0!z
+End IBC Settings
+
+IBC Settings:
+    Value=x:!YY:#=#9éaYaλ =X9:#!=\	Zλ\#	\z
+End IBC Settings
+
+IBC Settings:
+    Value=xé=Y\X#aé#Y !é#:éXé#! X	Y0Y0a:λz
+End IBC Settings
+
+IBC Settings:
+    Value=x	=	:é#0	0ZYZbλZ 9  #0	Y0Yλ 	=\z
+End IBC Settings
+
+IBC Settings:
+    Value=x0!aXbbXY b! #bYXλ9	!#=#aX=X=	0z
+End IBC Settings
+
+IBC Settings:
+    Value=xX\Z!0Y=ab	\\Za=:\99:λé\!=bYλ09z
+End IBC Settings
+
+IBC Settings:
+    Value=xX#X0a0  XZ\9Y\:\λaY!=#=λbb=\0Xz
+End IBC Settings
+
+IBC Settings:
+    Value=xéab	λa0# !b\ \éb9Y:\0λ\=X=!ba\z
+End IBC Settings
+
+IBC Settings:
+    Value=xX\#Z\0a\! =X9λa0!é=b 99Z0#:9éZz
+End IBC Settings
+
+IBC Settings:
+    Value=x 0Xa\!Y#aé\9	Za9:λ	=#ZZ	a00aY z
+End IBC Settings
+
+IBC Settings:
+    Value=xé# 	 :Y!0éZ=	\ZZ9=# :bλ:#éé#b\z
+End IBC Settings
+
+IBC Settings:
+    Value=x9##0\éY#!ZYYéλX!béλYYé0\λZ\bλZz
+End IBC Settings
+
+IBC Settings:
+    Value=x#:éYbZ\XXλ\ébYbaa!éé9:é\Z9	a:=z
+End IBC Settings
+
+IBC Settings:
+    Value=xb:X#:X!éλ	Z λ99	λ9 éX= λ\\	!=Xz
+End IBC Settings
+
+IBC Settings:
+    Value=xλa0aXa00 9b0==Zb!X\Xb0Y:	0a!\!z
+End IBC Settings
+
+IBC Settings:
+    Value=xa0 =Z !Xa##a9b=		=:Y!bλYbXb	\bz
+End IBC Settings
+
+IBC Settings:
+    Value=x: abéλ\\#Zbb=bZ	Z	:	Z 	Ya9=bZ!z
+End IBC Settings
+
+IBC Settings:
+    Value=x	é:#	a #λZ:Y#!=Xéb: ZZ!!9\=λ:λz
+End IBC Settings
+
+IBC Settings:
+    Value=xYλY=YZ9#9\Xé !!99#!ZY9λ	\a0:0az
+End IBC Settings
+
+IBC Settings:
+    Value=x0!=Z!YZ=bλ=éa0λ=a\b9=YλZYλ9!XXz
+End IBC Settings
+
+IBC Settings:
+    Value=x:0Y =!X\\	X=X=ééa!9\#!\!	!0	 :z
+End IBC Settings
+
+IBC Settings:
+    Value=x  	:λ99\ Za9Y0 0#=X=	a\λλ=:λ!!z
+End IBC Settings
+
+IBC Settings:
+    Value=x!0a=#aba=!Y0:\é:#\\	==λ	0Z9λa	z
+End IBC Settings
+
+IBC Settings:
+    Value=x #bX990bZb=9bbY=ébZXa ZλYaé\	az
+End IBC Settings
+
+IBC Settings:
+    Value=x!a#Y!Z=b\=λ9a	a=λZ:a 		X:9=9#λz
+End IBC Settings
+
+IBC Settings:
+    Value=x0Z9==::=Y!λY:λZ!	\!!\=Xb\Y0	!bz
+End IBC Settings
+
+IBC Settings:
+    Value=x=\0λZ	 0Za#Yé#9	0:aéb0!aX=aZ9az
+End IBC Settings
+
+IBC Settings:
+    Value=xé:a#:éX!éλ:Z#\9XXYλ 	aZλ λYé	 z
+End IBC Settings
+
+IBC Settings:
+    Value=x0é0Y a0YY0XéλYa#:=	a#YX\9λ09Zéz
+End IBC Settings
+
+IBC Settings:
+    Value=xXX\#XX==09#!	:Yaa\:#bZ\=Z	#Yé:z
+End IBC Settings
+
+IBC Settings:
+    Value=x:Y\λbZ\Zéb9# Z!!=Zb9#X	!  :Y :z
+End IBC Settings
+
+IBC Settings:
+    Value=x!=#\YZ:90λYY!!!Z!éa	éb0éX!0b!bz
+End IBC Settings
+
+IBC Settings:
+    Value=xY	=Xa#λ \λλ0éé0éb		!X0	Y=a!XX#z
+End IBC Settings
+
+IBC Settings:
+    Value=x:\é#YX	9λ\!9XbY\ba\	b:9!Z:b\λ=z
+End IBC Settings
+
+IBC Settings:
+    Value=x=Yé Y:\Z9Z9 	b!Y\\#!bb éa:	XZ#z
+End IBC Settings
+
+IBC Settings:
+    Value=x::9:a0X0X 0#!	a!\:#!#0#:aλ	Xé9z
+End IBC Settings
+
+  [PASS] randomized Manager output is consumed by actual IBC settings
+[SUITE] Expired restart-token recognition and safe text extraction
+  [PASS] recorded HTML and equivalent plain message match
+  [PASS] HTML entities case and line breaks normalize
+  [PASS] both specific expiry and credential-entry phrases are required
+  [PASS] other authentication and connection failures are excluded
+  [PASS] visible JLabel message with OK is extracted
+  [PASS] read-only HTML JEditorPane message is extracted
+  [PASS] Gateway 10.50.1e JTextPane construction recognizes the recorded rejection
+  [PASS] read-only JTextArea and JTextField messages are extracted
+  [PASS] message split over visible controls is recognized
+  [PASS] editable and password contents are never read
+  [PASS] hidden labels and hidden ancestor subtrees are never read
+  [PASS] missing hidden disabled and unrelated buttons do not authorize recovery
+  [PASS] button text tooltips and accessible names are not treated as messages
+  [PASS] component traversal is bounded and late messages cannot trigger
+  [PASS] oversized message controls cannot bypass the extraction bound
+  [PASS] queued recovery is claimed once across multiple matching windows
+  [PASS] changed eligibility cancels an already queued recovery
+IBC_MANAGER_EVENT|1|aca200ad-639f-48e6-9ab3-309cf4215e50|1|LOGIN_TWO_FA_IN_PROGRESS
+2026-10-25 10:53:03:054 IBC: Second Factor Authentication initiated
+IBC_MANAGER_EVENT|1|aca200ad-639f-48e6-9ab3-309cf4215e50|2|LOGIN_LOGGED_OUT
+  [PASS] login generation changes cancel queued recovery even after returning to logged out
+  [PASS] replacement login manager cancels queued recovery
+IBC_MANAGER_EVENT|1|aca200ad-639f-48e6-9ab3-309cf4215e50|3|LOGIN_LOGGED_IN
+2026-10-25 10:53:03:064 IBC: Login has completed
+IBC_MANAGER_EVENT|1|aca200ad-639f-48e6-9ab3-309cf4215e50|4|LOGIN_LOGGING_IN
+IBC_MANAGER_EVENT|1|aca200ad-639f-48e6-9ab3-309cf4215e50|5|LOGIN_LOGGED_IN
+2026-10-25 10:53:03:065 IBC: Login has completed
+  [PASS] established-session reauthentication cancels queued expiry even after returning logged in
+  [PASS] changed or dismissed message cancels queued recovery
+  [PASS] off-EDT recovery cannot claim or execute
+  [PASS] already claimed StopTask safely ignores null-channel duplicate
+  [PASS] production eligibility and cold-restart marker run in isolated child
+  [PASS] logged-in warm child bounds unavailable-window shutdown
+  [PASS] logged-in fresh child bounds unavailable-window shutdown
+  [PASS] manual STOP wins over queued expiry recovery
+  [PASS] manual PAUSE wins over queued expiry recovery
+  [PASS] expiry marker creation failure preserves the process and reports failure
+  [PASS] directory at expiry marker is rejected without killing Gateway
+  [PASS] pending cold authentication blocks another expiry-restart cycle
+  [PASS] lost prepared marker cancels bounded recovery and permits manual stop
+  [PASS] successful fresh authentication clears only its own pending expiry marker
+  [PASS] pending marker cleanup failure is observable without changing login success
+[SUITE] Real engine command dispatch in a headless JVM
+  [PASS] dispatcher class initializes without Toolkit shortcut access
+  [PASS] headless reconnect is rejected but subsequent EXIT remains usable
+  [PASS] real STOP is acknowledged and exits a headless pre-login engine
+[SUITE] Engine independent second-factor retry deadline
+  [PASS] open challenge triggers one retry at 300 seconds without a close event
+  [PASS] duplicate start does not postpone the existing deadline
+  [PASS] early natural dialog closure does not bypass the deadline
+  [PASS] completed authentication cancels the due action
+  [PASS] cancellation invalidates an already queued GUI callback
+  [PASS] retired challenge callbacks cannot retry a replacement challenge
+  [PASS] missing credentials leave the pending request untouched
+  [PASS] unknown cancellation control is reported without guessing or killing
+  [PASS] unresponsive Cancel is bounded and never clicked repeatedly
+  [PASS] authentication success during cancellation prevents login submission
+  [PASS] disabled policy at deadline prevents any action
+  [PASS] repeated challenges each receive a complete new five-minute interval
+  [PASS] an early scheduler callback cannot cause an early retry
+  [PASS] monotonic deadline works across signed nanoTime wrap
+  [PASS] UI exception is contained and reported only once
+  [PASS] stop or failed login during form readiness wait cancels retry
+  [PASS] invalid timeout values fail before any timer is scheduled
+[SUITE] Application bootstrap, paths, locking, and logging
+  [PASS] detects Windows Linux macOS and unknown operating systems
+  [PASS] chooses platform-specific default data directories
+  [PASS] derives all application paths from one normalized root
+  [PASS] single-instance lock excludes a second process and can be reacquired
+  [PASS] startup command uses the packaged application path
+  [PASS] startup command record is normalized and immutable
+  [PASS] version command reports application, IBC release channel, and compatibility floor
+  [PASS] invalid command-line arguments return usage error
+  [PASS] headless smoke succeeds with an empty data directory
+  [PASS] headless smoke reports invalid stored profiles
+  [PASS] headless smoke reports corrupt profile recovery warnings
+  [PASS] GUI startup fails clearly in a headless session
+  [PASS] application services create every required directory
+  [PASS] application log redacts secrets and restores exception handler
+  [PASS] version constants are stable and nonblank
+[SUITE] Swing UI models, controls, and secret-lifecycle helpers
+  [PASS] settings model exposes stable columns and editable values
+  [PASS] settings model filters sensitive and profile-controlled keys
+  [PASS] settings model trims edits and resets overrides
+  [PASS] settings model returns values in schema order and independent maps
+  [PASS] settings model canonicalizes known keys and preserves future settings
+  [PASS] profile tab owns and normalizes SecondFactorDevice
+  [PASS] installation action buttons retain preferred dimensions
+  [PASS] session actions present explicit profile-specific confirmations
+  [PASS] session action buttons are larger and visually distinct
+  [PASS] profile status indicator maps states to explicit traffic-light tones
+  [PASS] all runtime states have friendly labels without changing their meaning
+  [PASS] API monitoring qualification is in a tooltip, not an error
+  [PASS] unavailable API observations are not worded as a closed listener
+  [PASS] settings table uses enumerated editors and escaped tooltips
+  [PASS] profile edit result copies and clears password material
+  [PASS] UI layout helpers create predictable grid constraints
+  [PASS] EDT helper executes both queued and direct actions safely
+  [PASS] theme installation is repeatable in a headless test process
+[SUITE] Windows prerequisite detection, consent, installation, and launcher safety
+  [PASS] all Windows entry points use the shared bootstrap
+  [PASS] Java 8 is rejected before the application is launched
+  [PASS] source run launcher builds a missing JAR on demand
+  [PASS] run launcher preflights then keeps the GUI output in the console
+  [PASS] public batch scripts funnel all exits through one completion pause
+  [PASS] completion pause preserves status and has an automation opt-out
+  [PASS] unattended Gateway scripts never use the user completion pause
+  [PASS] installation requires explicit user consent
+  [PASS] declining installation is non-destructive
+  [PASS] managed Java installation is isolated from system Java
+  [PASS] managed Java downloads require cryptographic verification
+  [PASS] WiX installation uses exact Windows Package Manager identity
+  [PASS] run build and package modes request only required tools
+  [PASS] verified executable paths are imported without credentials
+  [PASS] managed tool updates use staging serialization and rollback
+  [PASS] scripts use selected Java and the JDK-native build driver
+  [PASS] Windows launch and build paths have no Apache Ant dependency
+  [PASS] build driver enforces strict reproducible release gates
+  [PASS] concurrent source builds are serialized per source tree
+  [PASS] build driver self-test executes with the current JDK
+  [PASS] bootstrap contains parser and escaping self-tests
+  [PASS] empty candidate collections bind in Windows PowerShell
+  [PASS] protected HOME automatic variable is never rebound
+  [PASS] PowerShell source has balanced lexical structure
+  [PASS] PowerShell remains compatible with Windows PowerShell 5.1
+  [PASS] Windows script files use CRLF and no UTF-8 BOM
+  [PASS] release build includes the runtime prerequisite bootstrap
+  [PASS] Windows packaging creates the requested versioned release ZIP
+  [PASS] versioned launch and package scripts agree with application version
+[SUITE] Release security, bounds, rollback, and platform audit
+  [PASS] bounded reader returns exact data
+  [PASS] bounded reader rejects oversized files
+  [PASS] bounded reader rejects malformed UTF-8
+  [PASS] bounded reader refuses symbolic links
+  [PASS] secure directory creation refuses symbolic ancestors
+  [PASS] atomic writer refuses a symbolic target
+  [PASS] profile repository ignores symbolic profile directories
+  [PASS] profile repository bounds stored profile files
+  [PASS] managed configuration bounds imported config files
+  [PASS] runtime config cleanup never follows a symbolic link
+  [PASS] single-instance lock refuses symbolic lock files
+  [PASS] oversized process identities are removed
+  [PASS] symbolic process identities never expose their targets
+  [FAIL] process-handle identity matches the current process - java.util.NoSuchElementException: No value present
+java.util.NoSuchElementException: No value present
+	at java.base/java.util.Optional.orElseThrow(Optional.java:377)
+	at io.github.ibcmanager.runtime.ReleaseAuditTests.processHandleIdentity(ReleaseAuditTests.java:281)
+	at io.github.ibcmanager.tests.TestRunner.main(TestRunner.java:60)
+  [PASS] command client validates host and port
+  [PASS] command client bounds one response line
+  [PASS] command client bounds total response data
+  [PASS] command client enforces one total deadline
+  [PASS] runtime log buffer truncates oversized lines
+  [PASS] runtime log buffer bounds total characters
+  [PASS] live process output bounds its character queue
+  [PASS] periodic process log bounds pending bytes
+  [PASS] periodic process log can retry a failed final write
+  [PASS] relay never deletes an arbitrary descriptor path
+  [PASS] relay never follows a symbolic descriptor
+  [PASS] relay descriptor rejects oversized control files
+  [PASS] cross-role API and command port collisions are blocked
+  [PASS] secret redaction covers commented assignments
+  [PASS] secret redaction covers structured and query values
+  [PASS] exact secret redaction handles overlapping values
+  [PASS] profile save restores config after a late failure
+  [PASS] profile deletion removes profile runtime and credential
+  [PASS] profile deletion rolls back a credential failure
+  [PASS] incomplete profile deletion rollback retains staged data
+  [PASS] stale prepared deletion transaction is restored
+  [PASS] stale committed deletion transaction is completed
+  [PASS] mismatched deletion metadata cannot target another profile
+  [PASS] profile editor reports invalid paths cleanly
+  [PASS] application arguments report invalid data paths cleanly
+  [PASS] integrated engine rejects symbolic required files
+  [PASS] log tailer refuses a symbolic log source
+[SUITE] Source architecture, dependency, packaging, and release invariants
+  [PASS] all Java source files satisfy strict hygiene rules
+  [PASS] Java packages match source-tree paths
+  [PASS] production code has no third-party Java dependencies
+  [PASS] profile persistence model has no password or secret field
+  [PASS] launcher and startup task never pass credentials in arguments
+  [PASS] runtime supervision avoids global desktop and process automation
+  [PASS] blank Java override leaves runtime discovery to official StartIBC
+  [PASS] command-server monitoring does not create periodic client connections
+  [PASS] API listener monitoring never opens raw client connections
+  [PASS] automatic stalled-start recovery is bounded and exact-tree scoped
+  [PASS] unattended 2FA retry uses IBC warm relogin instead of process cleanup
+  [PASS] manual start stop force-stop restart and pause actions require confirmation
+  [PASS] test subprocesses are platform-neutral
+  [PASS] no TOTP generator or cryptographic OTP implementation is present
+  [PASS] IBC compatibility-floor reference and GPL notices are retained
+  [PASS] only the maintained integrated engine is available
+  [PASS] release documentation and build scripts are present
+  [PASS] GitHub README retains supplied support details and the existing GPL licence
+  [PASS] screenshot generation is test-only and the permanent API footer is absent
+  [PASS] application and process logs use 60-second disk batching
+  [PASS] Windows packaging launchers enforce the complete release gates
+  [PASS] source directories contain no generated binary artifacts
+  [PASS] compiled production classes target Java 17 bytecode
+  [PASS] every concrete test suite is registered
+  [PASS] default IBC configuration resource is present and parseable
+  [PASS] engine is compiled from source, never copied from external binaries
+  [PASS] test cleanup retries transient Windows sharing violations
+  [PASS] asynchronous assertions count one logical assertion
+
+Executed 1121 test cases with 27161 assertions in 47546 ms
+10 failure(s):
+ - Runtime launch, process, ports, commands, and logs :: process tree terminator kills the exact root and descendants :: java.lang.AssertionError: test process must create a descendant
+ - Runtime launch, process, ports, commands, and logs :: process identity store round-trips identity :: java.util.NoSuchElementException: No value present
+ - Runtime launch, process, ports, commands, and logs :: process identity store reattaches only matching start time :: java.lang.AssertionError: matching live PID and start time must reattach
+ - Profile runtime controller and registry :: controller reattaches to an exact live process identity :: java.lang.AssertionError: constructor must reattach exact live identity expected=<UNKNOWN> actual=<STOPPED>
+ - Profile runtime controller and registry :: reattached Force Stop tolerates a delayed parent Process exit observation :: java.lang.AssertionError: constructor must reattach exact live identity expected=<UNKNOWN> actual=<STOPPED>
+ - Profile runtime controller and registry :: reattachment exit verification rejects a still-live child within its deadline :: java.lang.AssertionError: the negative-control native process must still be alive
+ - Profile runtime controller and registry :: reattachment exit verification propagates an interrupted wait :: java.lang.AssertionError: interruption must not kill the observed child
+ - 1.x data-directory upgrade and retained credentials :: live legacy process prevents migration without changing configuration :: java.util.NoSuchElementException: No value present
+ - Single Profile configuration and one-time legacy import :: live legacy process blocks configuration import :: java.util.NoSuchElementException: No value present
+ - Release security, bounds, rollback, and platform audit :: process-handle identity matches the current process :: java.util.NoSuchElementException: No value present
+[IBC Manager build] FAILED: Java subprocess failed with exit code 1: -Djava.awt.headless=true -classpath /workspace/scratch/f1824f5f86df/work/IBC_Manager_2.3.0_Source/build/classes:/workspace/scratch/f1824f5f86df/work/IBC_Manager_2.3.0_Source/build/test-classes:/workspace/scratch/f1824f5f86df/work/IBC_Manager_2.3.0_Source/build/engine-classes:/workspace/scratch/f1824f5f86df/work/IBC_Manager_2.3.0_Source/src/main/resources io.github.ibcmanager.tests.TestRunner
+java.io.IOException: Java subprocess failed with exit code 1: -Djava.awt.headless=true -classpath /workspace/scratch/f1824f5f86df/work/IBC_Manager_2.3.0_Source/build/classes:/workspace/scratch/f1824f5f86df/work/IBC_Manager_2.3.0_Source/build/test-classes:/workspace/scratch/f1824f5f86df/work/IBC_Manager_2.3.0_Source/build/engine-classes:/workspace/scratch/f1824f5f86df/work/IBC_Manager_2.3.0_Source/src/main/resources io.github.ibcmanager.tests.TestRunner
+	at io.github.ibcmanager.build.BuildProject.runJava(BuildProject.java:573)
+	at io.github.ibcmanager.build.BuildProject.runTests(BuildProject.java:290)
+	at io.github.ibcmanager.build.BuildProject.execute(BuildProject.java:150)
+	at io.github.ibcmanager.build.BuildProject.executeAll(BuildProject.java:117)
+	at io.github.ibcmanager.build.BuildProject.main(BuildProject.java:103)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at jdk.compiler/com.sun.tools.javac.launcher.Main.execute(Main.java:419)
+	at jdk.compiler/com.sun.tools.javac.launcher.Main.run(Main.java:192)
+	at jdk.compiler/com.sun.tools.javac.launcher.Main.main(Main.java:132)

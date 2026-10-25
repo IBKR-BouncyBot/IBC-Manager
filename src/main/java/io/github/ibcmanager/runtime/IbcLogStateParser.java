@@ -26,12 +26,18 @@ public final class IbcLogStateParser {
     private boolean applicationLaunchObserved;
     private boolean childExitObserved;
     private boolean restartPending;
+    private boolean restartTokenExpired;
+    private String tokenRecoveryFailure;
     private boolean normalExitConfirmed;
     private boolean errorExitConfirmed;
     private String bootstrapFailure;
     private String logonRejection;
     public static final String INVALID_TWSINFO_MESSAGE = "IBKR rejected Gateway/TWS startup information (invalid twsInfo). "
             + "Check the JBR compatibility build and installed application metadata; export Diagnostics.";
+    private static final String TOKEN_RECOVERY_FAILED_MESSAGE = "Cold restart after session token expiry could not be prepared. "
+            + "Stop the profile and restart it; export Diagnostics.";
+    private static final String TOKEN_RECOVERY_GUARD_FAILED_MESSAGE = "Gateway login completed, but the token-recovery guard could not be cleared. "
+            + "Stop the profile and export Diagnostics before relying on another automatic recovery.";
     private long sessionGeneration;
     private String engineGeneration;
     private long engineSequence;
@@ -40,7 +46,9 @@ public final class IbcLogStateParser {
     private static final String EVENT_PREFIX = "IBC_MANAGER_EVENT|1|";
     private static final Set<String> EVENTS = Set.of("ENGINE_STARTED", "GATEWAY_STARTING", "TWS_STARTING", "MAIN_WINDOW_READY",
             "LOGIN_LOGGED_OUT", "LOGIN_LOGGING_IN", "LOGIN_AWAITING_CREDENTIALS", "LOGIN_TWO_FA_IN_PROGRESS",
-            "LOGIN_LOGGED_IN", "LOGIN_LOGIN_FAILED", "LOGIN_REJECTED_TWSINFO", "COMMAND_SERVER_READY", "COMMAND_SERVER_CLOSED",
+            "LOGIN_LOGGED_IN", "LOGIN_LOGIN_FAILED", "LOGIN_REJECTED_TWSINFO", "LOGIN_RESTART_TOKEN_EXPIRED",
+            "SESSION_TOKEN_EXPIRED", "SESSION_TOKEN_RECOVERY_FAILED", "SESSION_TOKEN_RECOVERY_GUARD_FAILED",
+            "COMMAND_SERVER_READY", "COMMAND_SERVER_CLOSED",
             "SECOND_FACTOR_RETRY_ARMED", "SECOND_FACTOR_RETRY_DUE",
             "SECOND_FACTOR_RETRY_STARTED", "SECOND_FACTOR_RETRY_BLOCKED");
 
@@ -78,6 +86,12 @@ public final class IbcLogStateParser {
             }
         }
         updateCommandServerState(lower);
+        if (restartTokenExpired && normalExitConfirmed) {
+            // A delayed old-child line cannot revive a wrapper that already
+            // completed recovery. The launch marker above is the reset boundary.
+            if (lower.contains("program has exited")) childExitObserved = true;
+            return Optional.empty();
+        }
         StateHint hint = null;
         if (isRestartDecision(lower)) {
             restartPending = true;
@@ -161,10 +175,22 @@ public final class IbcLogStateParser {
         if (hint != null && bootstrapFailure != null && !restartPending) {
             hint = hint(RuntimeState.UNKNOWN, bootstrapFailure);
         }
+        if (restartTokenExpired && restartPending && hint != null && hint.state() != RuntimeState.ERROR) {
+            // The engine has already committed to a cold restart. Closing the old login UI,
+            // child-exit output and the wrapper's generic restart line must not hide its reason.
+            loginCompleted = false;
+            hint = expiredTokenHint();
+        }
         if (logonRejection != null) {
             loginCompleted = false;
             errorExitConfirmed = true;
             hint = hint(RuntimeState.ERROR, logonRejection);
+        } else if (tokenRecoveryFailure != null) {
+            loginCompleted = false;
+            mainWindowObserved = false;
+            restartPending = false;
+            errorExitConfirmed = true;
+            hint = hint(RuntimeState.ERROR, tokenRecoveryFailure);
         }
         if (hint != null) latest = hint;
         return Optional.ofNullable(hint);
@@ -217,6 +243,8 @@ public final class IbcLogStateParser {
         applicationLaunchObserved = false;
         childExitObserved = false;
         restartPending = false;
+        restartTokenExpired = false;
+        tokenRecoveryFailure = null;
         normalExitConfirmed = false;
         errorExitConfirmed = false;
         bootstrapFailure = null;
@@ -236,6 +264,8 @@ public final class IbcLogStateParser {
         applicationLaunchObserved = false;
         childExitObserved = false;
         restartPending = false;
+        restartTokenExpired = false;
+        tokenRecoveryFailure = null;
         normalExitConfirmed = false;
         errorExitConfirmed = false;
         bootstrapFailure = null;
@@ -252,6 +282,8 @@ public final class IbcLogStateParser {
         applicationLaunchObserved = false;
         childExitObserved = false;
         restartPending = false;
+        restartTokenExpired = false;
+        tokenRecoveryFailure = null;
         normalExitConfirmed = false;
         errorExitConfirmed = false;
         bootstrapFailure = null;
@@ -289,6 +321,15 @@ public final class IbcLogStateParser {
         } catch (IllegalArgumentException ignored) { return Optional.empty(); }
         if (fields[2].equals("LOGIN_REJECTED_TWSINFO")) return rejectTwsInfo();
         if (logonRejection != null && !fields[2].startsWith("COMMAND_SERVER_")) return rejectTwsInfo();
+        if (fields[2].equals("SESSION_TOKEN_RECOVERY_FAILED")) return failTokenRecovery(false);
+        if (fields[2].equals("SESSION_TOKEN_RECOVERY_GUARD_FAILED")) return failTokenRecovery(true);
+        if (tokenRecoveryFailure != null && !fields[2].startsWith("COMMAND_SERVER_")) return Optional.empty();
+        if (restartTokenExpired && !fields[2].startsWith("COMMAND_SERVER_")) {
+            // Once recovery is committed, the old child cannot restore readiness,
+            // including after its wrapper has completed. Only a real replacement
+            // launch or explicit lifecycle reset clears this latch.
+            return Optional.empty();
+        }
         StateHint state = switch (fields[2]) {
             case "ENGINE_STARTED" -> hint(RuntimeState.STARTING, "Integrated IBC engine started");
             case "GATEWAY_STARTING", "TWS_STARTING" -> {
@@ -298,6 +339,21 @@ public final class IbcLogStateParser {
             case "MAIN_WINDOW_READY" -> {
                 mainWindowObserved = true;
                 yield null;
+            }
+            case "LOGIN_RESTART_TOKEN_EXPIRED" -> {
+                if (restartTokenExpired || loginCompleted || childExitObserved
+                        || (latest != null && latest.state() == RuntimeState.WAITING_FOR_SECOND_FACTOR)) yield null;
+                yield beginExpiredTokenRecovery();
+            }
+            case "SESSION_TOKEN_EXPIRED" -> {
+                // A running Gateway can lose its authentication while reconnecting,
+                // without IBC first observing a LOGGED_OUT transition. Keep this
+                // authority separate from a delayed startup-expiry notification.
+                if (!loginCompleted || !mainWindowObserved || childExitObserved
+                        || normalExitConfirmed || errorExitConfirmed || pauseConfirmed || restartPending
+                        || commandServerState == CommandServerState.CLOSED
+                        || (latest != null && latest.state() == RuntimeState.WAITING_FOR_SECOND_FACTOR)) yield null;
+                yield beginExpiredTokenRecovery();
             }
             case "LOGIN_LOGGING_IN", "LOGIN_AWAITING_CREDENTIALS", "LOGIN_LOGGED_OUT" -> {
                 loginCompleted = false;
@@ -344,6 +400,40 @@ public final class IbcLogStateParser {
         errorExitConfirmed = true;
         latest = hint(RuntimeState.ERROR, logonRejection);
         return Optional.of(latest);
+    }
+
+    private static StateHint expiredTokenHint() {
+        return hint(RuntimeState.RESTARTING, "Session token expired; restarting for fresh authentication");
+    }
+
+    private Optional<StateHint> failTokenRecovery(boolean guardCleanup) {
+        if (tokenRecoveryFailure != null || childExitObserved || normalExitConfirmed || errorExitConfirmed
+                || pauseConfirmed || commandServerState == CommandServerState.CLOSED) return Optional.empty();
+        if (guardCleanup) {
+            // Successful authentication clears the cross-child loop guard before
+            // LOGIN_LOGGED_IN is emitted. At this point Manager may still show 2FA.
+            if (restartPending || restartTokenExpired || !applicationLaunchObserved || !mainWindowObserved) return Optional.empty();
+        } else if ((restartPending && !restartTokenExpired)
+                || (latest != null && latest.state() == RuntimeState.WAITING_FOR_SECOND_FACTOR)) return Optional.empty();
+        tokenRecoveryFailure = guardCleanup ? TOKEN_RECOVERY_GUARD_FAILED_MESSAGE : TOKEN_RECOVERY_FAILED_MESSAGE;
+        restartTokenExpired = false;
+        restartPending = false;
+        loginCompleted = false;
+        mainWindowObserved = false;
+        errorExitConfirmed = true;
+        latest = hint(RuntimeState.ERROR, tokenRecoveryFailure);
+        return Optional.of(latest);
+    }
+
+    private StateHint beginExpiredTokenRecovery() {
+        restartTokenExpired = true;
+        restartPending = true;
+        // The engine has committed to recovery. This invalidates old readiness,
+        // but is not evidence that the process has exited or a new child exists.
+        loginCompleted = false;
+        mainWindowObserved = false;
+        normalExitConfirmed = false;
+        return expiredTokenHint();
     }
 
     private void updateCommandServerState(String lower) {

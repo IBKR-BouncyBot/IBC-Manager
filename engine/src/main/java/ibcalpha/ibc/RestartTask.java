@@ -40,6 +40,8 @@ class RestartTask
 
     private static final SwitchLock _Running = new SwitchLock();
 
+    static boolean restartInProgress() { return _Running.query(); }
+
     private final CommandChannel mChannel;
     
     private final boolean mPauseOnly;
@@ -57,11 +59,18 @@ class RestartTask
 
     @Override
     public void run() {
-        if (! _Running.set()) {
-            Utils.logToConsole(mVerb + " already in progress");
-            writeNack(mVerb + " already in progress");
-            mChannel.close();
-            return;
+        synchronized (StopTask.class) {
+            if (StopTask.shutdownInProgress()) {
+                writeNack("STOP already in progress");
+                if (mChannel != null) mChannel.close();
+                return;
+            }
+            if (! _Running.set()) {
+                Utils.logToConsole(mVerb + " already in progress");
+                writeNack(mVerb + " already in progress");
+                if (mChannel != null) mChannel.close();
+                return;
+            }
         }
 
         try {

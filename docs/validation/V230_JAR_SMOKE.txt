@@ -1,0 +1,9 @@
+[IBC Manager build] Compiled 91 maintained IBC engine Java files and embedded the verified payload.
+[IBC Manager build] Compiled 126 production Java files.
+[IBC Manager build] Created dist/IBC-Manager-2.3.0.jar
+IBC Manager 2.3.0 (Engine: integrated engine; upstream 3.24.2)
+IBC Manager headless smoke test: OK
+Data directory: /workspace/scratch/f1824f5f86df/work/IBC_Manager_2.3.0_Source/build/smoke-data
+Profiles loaded: 0
+Profiles with validation errors: 0
+Recovery warnings: 0

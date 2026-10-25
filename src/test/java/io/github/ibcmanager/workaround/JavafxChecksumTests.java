@@ -33,73 +33,74 @@ public final class JavafxChecksumTests implements TestSuite {
         List<NamedTest> tests = new ArrayList<>();
         for (String module : RuntimeCatalog.FX_MODULES) {
             tests.add(new NamedTest("missing optional SHA-256 falls back to SHA-1 for " + module,
-                    () -> setup("fallback", module, "25.0.2", true, "")));
+                    () -> setup("fallback", module, "25.0.4", true, "")));
             tests.add(new NamedTest("SHA-1 mismatch in " + module + " aborts complete setup",
-                    () -> setup("sha1-mismatch", module, "25.0.2", false, "checksum mismatch")));
+                    () -> setup("sha1-mismatch", module, "25.0.4", false, "checksum mismatch")));
         }
-        tests.add(new NamedTest("all seven Maven modules lacking SHA-256 install and remove through CDN setup",
-                () -> setup("all-sha1", "base", "25.0.2", true, "")));
+        tests.add(new NamedTest("all eight Maven modules lacking SHA-256 install and remove through CDN setup",
+                () -> setup("all-sha1", "base", "25.0.4", true, "")));
         tests.add(new NamedTest("mixed published checksum algorithms remain per artifact",
-                () -> setup("mixed", "base", "25.0.2", true, "")));
+                () -> setup("mixed", "base", "25.0.4", true, "")));
         tests.add(new NamedTest("published SHA-256 is preferred without requesting SHA-1",
-                () -> setup("sha256", "base", "25.0.2", true, "")));
-        tests.add(new NamedTest("numeric JavaFX 25 release is resolved without pinning a patch",
+                () -> setup("sha256", "base", "25.0.4", true, "")));
+        tests.add(new NamedTest("newer JavaFX catalogue release cannot replace pinned artifact versions",
                 () -> setup("all-sha1", "base", "25.0.12", true, "")));
-        tests.add(new NamedTest("unqualified JavaFX 25 version has correct Maven artifact paths",
+        tests.add(new NamedTest("unqualified JavaFX catalogue version cannot replace pinned artifact versions",
                 () -> setup("all-sha1", "base", "25", true, "")));
         tests.add(new NamedTest("uppercase SHA-1 checksum is accepted",
-                () -> setup("sha1-upper", "base", "25.0.2", true, "")));
+                () -> setup("sha1-upper", "base", "25.0.4", true, "")));
         tests.add(new NamedTest("SHA-1 sidecar may include whitespace and the artifact filename",
-                () -> setup("sha1-filename", "base", "25.0.2", true, "")));
+                () -> setup("sha1-filename", "base", "25.0.4", true, "")));
         for (int status : List.of(400, 401, 403, 408, 410, 429, 500, 503)) {
             tests.add(new NamedTest("SHA-256 HTTP " + status + " uses the available SHA-1 checksum",
-                    () -> setup("sha256-http-" + status, "base", "25.0.2", true, "")));
+                    () -> setup("sha256-http-" + status, "base", "25.0.4", true, "")));
         }
         for (String mode : List.of("sha256-header", "sha256-body")) {
             tests.add(new NamedTest(mode + " transport failure uses the available SHA-1 checksum",
-                    () -> setup(mode, "base", "25.0.2", true, "")));
+                    () -> setup(mode, "base", "25.0.4", true, "")));
         }
         for (String mode : List.of("empty", "short", "invalid")) {
             tests.add(new NamedTest("malformed published SHA-256 " + mode + " cannot use SHA-1",
-                    () -> setup("sha256-" + mode, "base", "25.0.2", false, mode.equals("empty") ? "empty" : "valid SHA-256")));
+                    () -> setup("sha256-" + mode, "base", "25.0.4", false, mode.equals("empty") ? "empty" : "valid SHA-256")));
             tests.add(new NamedTest("malformed fallback SHA-1 " + mode + " aborts setup",
-                    () -> setup("sha1-" + mode, "base", "25.0.2", false, mode.equals("empty") ? "empty" : "valid SHA-1")));
+                    () -> setup("sha1-" + mode, "base", "25.0.4", false, mode.equals("empty") ? "empty" : "valid SHA-1")));
         }
         tests.add(new NamedTest("mismatched published SHA-256 cannot be rescued by a correct SHA-1",
-                () -> setup("sha256-mismatch", "base", "25.0.2", false, "checksum mismatch")));
+                () -> setup("sha256-mismatch", "base", "25.0.4", false, "checksum mismatch")));
         for (int status : List.of(404, 403, 429, 500)) {
             tests.add(new NamedTest("unavailable SHA-1 HTTP " + status + " warns and continues after unavailable SHA-256",
-                    () -> setup("sha1-http-" + status, "base", "25.0.2", true, "")));
+                    () -> setup("sha1-http-" + status, "base", "25.0.4", true, "")));
         }
         tests.add(new NamedTest("a missing JavaFX JAR remains an artifact error after valid fallback checksum",
-                () -> setup("jar-404", "base", "25.0.2", false, "HTTP 404")));
+                () -> setup("jar-404", "base", "25.0.4", false, "HTTP 404")));
         tests.add(new NamedTest("404 at another redirected resource is not proof the original sidecar is absent",
-                () -> setup("redirected-404", "base", "25.0.2", false, "HTTP 404")));
+                () -> setup("redirected-404", "base", "25.0.4", false, "HTTP 404")));
         tests.add(new NamedTest("JetBrains missing SHA-512 warns and continues",
-                () -> setup("jbr-404", "base", "25.0.2", true, "")));
+                () -> setup("jbr-404", "base", "25.0.4", true, "")));
         tests.add(new NamedTest("fallback does not bypass module descriptor validation",
-                () -> setup("no-descriptor", "base", "25.0.2", false, "module descriptor")));
+                () -> setup("no-descriptor", "base", "25.0.4", false, "module descriptor")));
         tests.add(new NamedTest("fallback does not bypass Windows native library validation",
-                () -> setup("no-native", "graphics", "25.0.2", false, "native library")));
+                () -> setup("no-native", "graphics", "25.0.4", false, "native library")));
         for (String mode : List.of("after-404", "after-sha1", "during-jar")) {
             tests.add(new NamedTest("cancellation " + mode + " rolls back before activation",
-                    () -> setup("cancel-" + mode, "base", "25.0.2", false, "cancel")));
+                    () -> setup("cancel-" + mode, "base", "25.0.4", false, "cancel")));
         }
         tests.add(new NamedTest("HTTP errors identify the failing path but not secret query parameters", this::errorContext));
         return tests;
     }
 
-    private void setup(String mode, String changed, String fxVersion, boolean success, String reason) throws Exception {
+    private void setup(String mode, String changed, String advertisedVersion, boolean success, String reason) throws Exception {
+        String fxVersion = "25.0.4";
         Path root = TestSupport.tempDirectory("maven-checksum");
         try {
             Network n = new Network();
             n.data(API, RuntimeDownloadTests.bytes("[{\"tag_name\":\"jbr-release-25.0.4b508.27\",\"draft\":false,\"prerelease\":false,\"body\":\""
                     + ORIGIN + FILE + " " + ORIGIN + FILE + ".checksum\"}]"));
             n.data(RuntimeCatalog.MAVEN + "javafx-controls/maven-metadata.xml", RuntimeDownloadTests.bytes(
-                    "<metadata><versioning><versions><version>24.0.1</version><version>" + fxVersion
+                    "<metadata><versioning><versions><version>24.0.1</version><version>" + advertisedVersion
                     + "</version><version>26-ea+1</version></versions></versioning></metadata>"));
             byte[] runtime = RuntimeDownloadTests.zip(Map.of("jbr/bin/java.exe", RuntimeDownloadTests.pe(),
-                    "jbr/release", RuntimeDownloadTests.bytes("JAVA_VERSION=\"25.0.4\"\nIMPLEMENTOR=\"JetBrains s.r.o.\"\n")));
+                    "jbr/release", RuntimeDownloadTests.bytes("JAVA_VERSION=\"25.0.4\"\nIMPLEMENTOR=\"JetBrains s.r.o.\"\nIMPLEMENTOR_VERSION=\"JBR-25.0.4+1-508.27-nomod\"\nJAVA_RUNTIME_VERSION=\"25.0.4+1-b508.27\"\n")));
             n.redirect(ORIGIN + FILE, 302, CDN + FILE);
             n.redirect(ORIGIN + FILE + ".checksum", 302, CDN + FILE + ".checksum");
             n.data(CDN + FILE, runtime);
@@ -199,6 +200,7 @@ public final class JavafxChecksumTests implements TestSuite {
             }
             Assertions.isFalse(n.requested().stream().anyMatch(u -> u.getPath().endsWith(".md5")), "never fall back to MD5");
             Assertions.equals("user-owned", Files.readString(manual.resolve("keep.txt")), "manual runtime untouched");
+            Assertions.isFalse(n.requested().stream().anyMatch(u -> u.getPath().endsWith("maven-metadata.xml")), "fixed pins never request catalogue metadata");
             n.assertClosed();
         } finally { TestSupport.deleteTree(root); }
     }
@@ -234,7 +236,7 @@ public final class JavafxChecksumTests implements TestSuite {
     }
     private void errorContext() throws Exception {
         Network n = new Network();
-        String path = artifact("base", "25.0.2") + ".sha256";
+        String path = artifact("base", "25.0.4") + ".sha256";
         String uri = path + "?token=do-not-print";
         n.data(uri, new byte[0]); n.routes.get(uri).status = 404;
         IOException error = Assertions.throwsType(IOException.class, () -> n.downloads.text(URI.create(uri), 100), "HTTP error expected");

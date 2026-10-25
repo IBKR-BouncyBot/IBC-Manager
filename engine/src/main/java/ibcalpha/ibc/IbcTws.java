@@ -312,6 +312,7 @@ public class IbcTws {
         List<WindowHandler> windowHandlers = new ArrayList<>();
 
         windowHandlers.add(new InvalidTwsInfoDialogHandler());
+        windowHandlers.add(new ExpiredSessionTokenDialogHandler());
         windowHandlers.add(new AcceptIncomingConnectionDialogHandler());
         windowHandlers.add(new BlindTradingWarningDialogHandler());
         windowHandlers.add(new LoginFrameHandler());

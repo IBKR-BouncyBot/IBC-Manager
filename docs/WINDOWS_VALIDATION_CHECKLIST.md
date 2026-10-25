@@ -1,13 +1,57 @@
-## Same-version JavaFX dependency repair
+# IBC Manager 2.3.0 - Windows acceptance
 
-An older managed payload may omit jdk.jsobject.jar. Stop all profiles using its
+These are pending target-machine checks, not claims of execution on the Linux
+build host. Record actual outcomes with the exact archive/runtime versions.
+See [TEST_REPORT.md](../TEST_REPORT.md) for executed checks.
+
+## 2.3.0 manager.8 established-session expiry and exact pins
+
+- [ ] Run the full headless and GUI gates, including ExpiredSessionTokenGuiSmoke.
+  Record any platform-limited fixtures separately from completed assertions.
+- [ ] In a paper Gateway 10.50.1e session, verify the exact `IBKR Gateway` expiry
+  dialog after a completed login requests one cold restart, reports the reason,
+  invalidates old readiness and reaches fresh credentials / real IB Key approval.
+  Confirm completed authentication and the owned API listener afterward.
+- [ ] Verify the retained logged-out warm-start expiry case, including the
+  `Gateway` title. The replacement must start without `-Drestart` even when a
+  saved restart descriptor exists alongside the dedicated expiry marker.
+- [ ] Confirm `TOKENEXPIREDPENDING<session-id>` survives a failed fresh login and
+  prevents fallback to stale warm data. Successful replacement login must clear
+  that exact guard; cleanup failures must remain visible. Existing explicit 2FA
+  and login-display-timeout retry policies must remain separate and start fresh.
+- [ ] Verify graceful post-login shutdown runs without an EDT exception. With a
+  controlled blocked-close fixture, verify the 30-second fallback is limited to
+  the affected engine JVM; unrelated profiles/processes remain untouched.
+- [ ] Exercise competing Stop and Pause, duplicate window events, changed message,
+  new login generation, active login/2FA, unrelated errors and invalid twsInfo.
+  They must retain their defined exclusion/precedence rules. A canceled or
+  unpreparable claimed recovery must not rearm inside the same engine JVM.
+  Stop after committed recovery retains the existing stop-in-progress response;
+  explicit Force Stop remains separate.
+- [ ] Verify normal daily warm restart, Pause/Start and Manager Restart still work.
+  An ordinary network disconnect must not trigger the expiry-recovery path.
+- [ ] Confirm new managed setup selects only JBR 25.0.4-b508.27 and JavaFX 25.0.4.
+  Newer/unavailable catalogue metadata must not select another version or block
+  fixed-coordinate selection. Missing required pinned downloads must fail visibly.
+- [ ] Confirm a complete owned payload with both exact pins is reused without a
+  download. A mismatched JBR or JavaFX version must require explicit maintenance;
+  removal of a correctly recorded older owned payload must remain possible.
+
+The previous 2.2.0 Windows validation and packaging logs passed their automated
+checks; they are historical evidence, not execution of this checklist. Use the
+current TEST_REPORT.md and [fix details](ESTABLISHED_SESSION_EXPIRY_FIX.md).
+
+## Older incompatible payloads only: JavaFX dependency repair
+
+A working JBR 25.0.4-b508.27 / JavaFX 25.0.4 runtime does not need removal for the 2.3.0 upgrade. An older
+incomplete managed payload may omit jdk.jsobject.jar. Stop all profiles using its
 installation, disable and Save on each owning profile, then enable and Save with
 this corrected package. Do not copy a JAR into the owned payload or edit its hash
 receipt. Verify payload/javafx/jdk.jsobject.jar exists after successful setup and
 Gateway starts without FindException. Missing dependencies must be ERROR, not a
 normal scheduled shutdown. See [dependency details](JAVAFX_DEPENDENCY_FIX.md).
 
-# Current 2.1.0 optional-probe acceptance
+## Retained optional-probe acceptance
 
 Confirm the shortened enable/removal consent. With an unavailable checksum and/or
 runtime inventory check, Save must complete with a SKIPPED warning and provenance.
@@ -18,7 +62,7 @@ Available checksum mismatches, unsafe archives, missing files, known wrong-versi
 module inventories and cancellation must still fail. Confirm later removal restores
 prior options and preserves manual/shared runtimes. Do not disable build tests.
 
-# Current 2.1.0 checksum-availability acceptance
+## Retained checksum-availability acceptance
 
 In Edit Profile, confirm the checkbox omits "1050 / ". Its permission dialog must say
 unavailable publisher checksums can be skipped with less assurance. Retry setup with a
@@ -29,10 +73,12 @@ cancellation, incomplete runtime files and incompatible modules still fail. Test
 restores the prior override/options and preserves manual files. Do not confuse build
 verification with optional publisher checksums: package-windows.bat still runs its tests.
 
-# IBC Manager 2.1.0 - Windows acceptance
+## Retained Windows acceptance checks
 
 These are target-machine checks, not claims of execution on the Linux build host.
 Use a paper account, backed-up data directory and retained remote recovery access.
+Verify a working 2.1.0/2.2.0-to-2.3.0 upgrade preserves the existing Java override, managed
+runtime selection, format-7 profiles and credentials without runtime reinstallation.
 
 ## Bootstrap and packaging
 
@@ -46,7 +92,8 @@ Use a paper account, backed-up data directory and retained remote recovery acces
 - [ ] The packaged runtime reports Microsoft Java 25. The installer and portable
   app work, and only those appear in Release_windows.zip. HTTPS downloads work
   from the packaged runtime, including publisher certificate validation.
-- [ ] Existing 2.0.4 profiles/DPAPI credentials load. Saving writes format 7.
+- [ ] Existing 2.1.0 format-7 profiles/DPAPI credentials load unchanged.
+  Existing 2.0.4 profiles also load; saving writes format 7.
   Legacy TWS profiles previously disabled remain disabled.
 
 ## Profiles and applications
@@ -75,7 +122,7 @@ Use a paper account, backed-up data directory and retained remote recovery acces
 ## Managed runtime installation
 
 - [ ] Declining checkbox consent or cancelling the editor changes no files/profile.
-- [ ] Explicit Save downloads pinned Windows x64 JBR 25.0.4-b508.27 and stable JavaFX 25,
+- [ ] Explicit Save downloads pinned Windows x64 JBR 25.0.4-b508.27 and JavaFX 25.0.4,
   verifies checksums, probes module resolution, writes the owned block and assigns
   the override. Windows native JavaFX libraries load from the private cache.
 - [ ] Network failure, checksum mismatch and cancellation retain the old setup.
@@ -107,8 +154,8 @@ fixture test counts.
 
 ## Pinned compatibility and native diagnostics
 
-- [ ] Disable/save all owners of a non-pinned managed installation, re-enable/save,
-  and confirm pinned JBR25.0.4-b508.27 in the launch output and provenance.
+- [ ] Only for an older non-pinned managed installation: disable/save all owners, re-enable/save,
+  and confirm JBR25.0.4-b508.27 plus JavaFX25.0.4 in the launch output and provenance.
 - [ ] Confirm actual post-2FA login and an RDP-disconnected/locked warm restart.
   Do not claim the compatibility correction passed from local module probes alone.
 - [ ] An actual invalid twsInfo dialog remains visible, reports ERROR once, and is

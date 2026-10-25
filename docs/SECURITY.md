@@ -37,6 +37,17 @@ Manual Stop never silently becomes force termination. A stalled-start recovery
 has separate bounded permissions and persistent loop limits. 2FA warm retry is
 not approval bypass. The Manager must remain active for its recovery watchdog.
 
+The 2.3.0 embedded-engine expiry handler has a separate, explicit boundary:
+only the known token-expiry dialog can request this automatic cold restart.
+After an established login it attempts graceful File / Close, then may terminate
+only its own Gateway JVM after 30 seconds while its prepared regular marker
+remains present. It neither enumerates nor kills other profiles. The wrapper
+starts fresh authentication and records a session-specific pending guard; a
+replacement that exits before successful login cannot fall back to stale warm
+data. Existing 2FA/display-timeout retry policies remain separate. Fixed events
+carry no dialog body, credentials or token. See
+[expiry recovery](ESTABLISHED_SESSION_EXPIRY_FIX.md) for failure boundaries.
+
 Migration backups are protected but may contain sensitive historical settings.
 Keep complete stopped backups until acceptance passes. Never concurrently run old
 and new Manager versions against the same data directory.
@@ -83,3 +94,12 @@ required artifacts and compatibility checks remain blocking. Local SHA-256 hashe
 protect subsequent integrity checks but do not establish publisher authenticity.
 This exception does not apply to Manager's Microsoft-Java prerequisite bootstrap,
 embedded-engine verification, build/test gates, or already-installed payload hashes.
+
+## 2.3.0 runtime identity
+
+The RDP workaround selects exactly JBR 25.0.4-b508.27 and JavaFX 25.0.4. Download
+metadata must identify the pinned JBR build; downloaded and reused JavaFX modules
+must match the pinned version and required module identities. A missing artifact
+does not select a newer runtime. Matching owned installations can be reused;
+mismatches require the documented explicit removal/reinstall workflow. Manual
+runtimes and Manager's Microsoft-Java prerequisite selection are unchanged.

@@ -1,0 +1,394 @@
+diff --git a/ibcalpha/ibc/EngineEvents.java b/ibcalpha/ibc/EngineEvents.java
+--- a/ibcalpha/ibc/EngineEvents.java
++++ b/ibcalpha/ibc/EngineEvents.java
+@@ -12,7 +12,8 @@
+             "ENGINE_STARTED", "GATEWAY_STARTING", "TWS_STARTING", "MAIN_WINDOW_READY",
+             "LOGIN_LOGGED_OUT", "LOGIN_LOGGING_IN", "LOGIN_AWAITING_CREDENTIALS",
+             "LOGIN_TWO_FA_IN_PROGRESS", "LOGIN_LOGGED_IN", "LOGIN_LOGIN_FAILED", "LOGIN_REJECTED_TWSINFO",
+-            "LOGIN_RESTART_TOKEN_EXPIRED",
++            "LOGIN_RESTART_TOKEN_EXPIRED", "SESSION_TOKEN_EXPIRED", "SESSION_TOKEN_RECOVERY_FAILED",
++            "SESSION_TOKEN_RECOVERY_GUARD_FAILED",
+             "COMMAND_SERVER_READY", "COMMAND_SERVER_CLOSED",
+             "SECOND_FACTOR_RETRY_ARMED", "SECOND_FACTOR_RETRY_DUE",
+             "SECOND_FACTOR_RETRY_STARTED", "SECOND_FACTOR_RETRY_BLOCKED");
+diff --git a/ibcalpha/ibc/ExpiredSessionTokenDialogHandler.java b/ibcalpha/ibc/ExpiredSessionTokenDialogHandler.java
+--- a/ibcalpha/ibc/ExpiredSessionTokenDialogHandler.java
++++ b/ibcalpha/ibc/ExpiredSessionTokenDialogHandler.java
+@@ -24,7 +24,7 @@
+ import javax.swing.text.html.HTMLEditorKit;
+ import javax.swing.text.html.parser.ParserDelegator;
+ 
+-/** Recover only the explicit expired-token rejection of a Gateway autorestart. */
++/** Recover only an explicit expired-token rejection of Gateway authentication. */
+ public final class ExpiredSessionTokenDialogHandler implements WindowHandler {
+     static final int MAX_COMPONENTS = 512;
+     static final int MAX_TEXT_LENGTH = 4096;
+@@ -37,7 +37,7 @@
+         boolean isEligible();
+         Object loginOwner();
+         long loginGeneration();
+-        void requestColdRestart();
++        void requestColdRestart(Runnable dismissDialog);
+     }
+ 
+     private final Context context;
+@@ -47,7 +47,12 @@
+     private boolean recoveryClaimed;
+ 
+     public ExpiredSessionTokenDialogHandler() {
+-        this(new EngineContext(), SwingUtilities::invokeLater);
++        this(30_000L);
++    }
++
++    // Package-private deadline seam for isolated process/GUI regression tests.
++    ExpiredSessionTokenDialogHandler(long gracefulTimeoutMillis) {
++        this(new EngineContext(gracefulTimeoutMillis), SwingUtilities::invokeLater);
+     }
+ 
+     ExpiredSessionTokenDialogHandler(Context context, Consumer<Runnable> enqueue) {
+@@ -60,16 +65,25 @@
+     }
+ 
+     @Override public boolean recogniseWindow(Window window) {
+-        return window instanceof JDialog dialog && "Gateway".equals(dialog.getTitle())
++        return window instanceof JDialog dialog
++                && ("Gateway".equals(dialog.getTitle()) || "IBKR Gateway".equals(dialog.getTitle()))
+                 && dialog.isDisplayable() && dialog.isShowing() && containsExpiry(dialog);
+     }
+ 
+     @Override public void handleWindow(Window window, int eventId) {
+         requireEdt();
+-        if (filterEvent(window, eventId)) handleCandidate(() -> recogniseWindow(window));
++        if (filterEvent(window, eventId)) handleCandidate(() -> recogniseWindow(window), () -> {
++            if (!SwingUtils.clickButton(window, "OK")) {
++                Utils.logError("Expired-token dialog could not be dismissed; cold-restart deadline remains active");
++            }
++        });
+     }
+ 
+     void handleCandidate(BooleanSupplier stillRecognised) {
++        handleCandidate(stillRecognised, () -> { });
++    }
++
++    void handleCandidate(BooleanSupplier stillRecognised, Runnable dismissDialog) {
+         requireEdt();
+         if (recoveryClaimed || !stillRecognised.getAsBoolean() || !context.isEligible()) return;
+         Object owner = context.loginOwner();
+@@ -81,7 +95,7 @@
+             // LoginManager, dismissed dialog or changed message cancels this action.
+             if (context.loginOwner() != owner || context.loginGeneration() != generation
+                     || !context.isEligible() || !stillRecognised.getAsBoolean()) return;
+-            context.requestColdRestart();
++            context.requestColdRestart(dismissDialog);
+         });
+     }
+ 
+@@ -162,19 +176,27 @@
+     }
+ 
+     private static final class EngineContext implements Context {
++        private final long gracefulTimeoutMillis;
++
++        EngineContext(long gracefulTimeoutMillis) {
++            if (gracefulTimeoutMillis <= 0) throw new IllegalArgumentException("Nonpositive graceful shutdown deadline");
++            this.gracefulTimeoutMillis = gracefulTimeoutMillis;
++        }
++
+         @Override public boolean isEligible() {
+-            return SessionManager.isGateway() && SessionManager.isRestart()
+-                    && !StopTask.shutdownInProgress()
+-                    && LoginManager.loginManager().getLoginState() == LoginManager.LoginState.LOGGED_OUT;
++            if (!SessionManager.isGateway() || StopTask.shutdownInProgress() || RestartTask.restartInProgress()) return false;
++            LoginManager.LoginState state = LoginManager.loginManager().getLoginState();
++            return state == LoginManager.LoginState.LOGGED_IN
++                    || (state == LoginManager.LoginState.LOGGED_OUT && SessionManager.isRestart());
+         }
+         @Override public Object loginOwner() { return LoginManager.loginManager(); }
+         @Override public long loginGeneration() { return LoginManager.loginManager().loginGeneration(); }
+-        @Override public void requestColdRestart() {
+-            // Remain on the EDT through StopTask's shutdown claim: another Swing
+-            // login/2FA event cannot run between the final check and this stop.
+-            EngineEvents.emit("LOGIN_RESTART_TOKEN_EXPIRED");
+-            Utils.logToConsole("Session token expired; restarting for fresh authentication");
+-            new StopTask(null, true, "Cold restart after expired security token").run();
++        @Override public void requestColdRestart(Runnable dismissDialog) {
++            // Claim on the EDT after the final state/message check. Established
++            // sessions then close on a worker, preserving the real login state.
++            ExpiredSessionTokenRecovery.start(
++                    LoginManager.loginManager().getLoginState() == LoginManager.LoginState.LOGGED_IN,
++                    dismissDialog, gracefulTimeoutMillis);
+         }
+     }
+ }
+diff --git a/ibcalpha/ibc/ExpiredSessionTokenRecovery.java b/ibcalpha/ibc/ExpiredSessionTokenRecovery.java
+new file mode 100644
+--- /dev/null
++++ b/ibcalpha/ibc/ExpiredSessionTokenRecovery.java
+@@ -0,0 +1,180 @@
++// IBC Manager integration; GPL-3.0-or-later, like the upstream engine.
++package ibcalpha.ibc;
++
++import java.io.IOException;
++import java.nio.file.Files;
++import java.nio.file.LinkOption;
++import java.nio.file.NoSuchFileException;
++import java.nio.file.Path;
++import java.nio.file.attribute.BasicFileAttributes;
++import java.util.concurrent.CountDownLatch;
++import java.util.concurrent.ExecutionException;
++import java.util.concurrent.FutureTask;
++import java.util.concurrent.TimeUnit;
++import java.util.concurrent.atomic.AtomicBoolean;
++import javax.swing.JFrame;
++import javax.swing.JMenuItem;
++import javax.swing.SwingUtilities;
++
++/** One confirmed token-expiry recovery, confined to the current Gateway JVM. */
++final class ExpiredSessionTokenRecovery {
++    private ExpiredSessionTokenRecovery() { }
++
++    static void start(boolean establishedSession, Runnable dismissDialog, long timeoutMillis) {
++        if (!SwingUtilities.isEventDispatchThread()) throw new IllegalStateException("Token recovery claim outside EDT");
++        if (timeoutMillis <= 0) throw new IllegalArgumentException("Nonpositive graceful shutdown deadline");
++        if (!StopTask.claimExpiryRecovery()) return;
++
++        Path marker = null;
++        boolean markerCreated = false;
++        try {
++            marker = markerPath("TOKENEXPIRED");
++            try {
++                Files.readAttributes(markerPath("TOKENEXPIREDPENDING"), BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
++                throw new IOException("Previous token recovery has not completed");
++            } catch (NoSuchFileException noPendingRecovery) {
++                // Only successful replacement login clears the wrapper's guard.
++            }
++            // CREATE_NEW prevents silently treating a directory, symlink or
++            // leftover request as a successfully prepared new recovery.
++            Files.createFile(marker);
++            markerCreated = true;
++            LoginManager.loginManager().cancelSecondFactorRetry();
++
++            if (!establishedSession) {
++                EngineEvents.emit("LOGIN_RESTART_TOKEN_EXPIRED");
++                Utils.logToConsole("Session token expired; restarting for fresh authentication");
++                CommandServer.commandServer().shutdown();
++                Utils.logToConsole("Login has not completed: exiting immediately");
++                Runtime.getRuntime().halt(0);
++                return;
++            }
++
++            Path preparedMarker = marker;
++            CountDownLatch dialogContinuation = new CountDownLatch(1);
++            AtomicBoolean cancelled = new AtomicBoolean();
++            Thread close = new Thread(() -> closeEstablishedSession(dialogContinuation, cancelled), "IBC-token-expiry-close");
++            Thread deadline = new Thread(() -> awaitDeadline(preparedMarker, timeoutMillis, close, cancelled), "IBC-token-expiry-deadline");
++            deadline.setDaemon(true);
++            close.setDaemon(true);
++            // Arm the independent deadline before either a worker dispatch or
++            // modal button callback can fail/block. It is never cancelled on
++            // menu acceptance alone: only actual JVM exit proves completion.
++            deadline.start();
++            EngineEvents.emit("SESSION_TOKEN_EXPIRED");
++            Utils.logToConsole("Session token expired; restarting for fresh authentication");
++            try {
++                close.start();
++            } catch (RuntimeException unavailableWorker) {
++                Utils.logError("Expired-token graceful shutdown worker unavailable; cold-restart deadline remains active");
++            }
++            // If OK opens a new modal synchronously, its nested event loop will
++            // execute this continuation. Never wait for that modal's dismissal
++            // before attempting File/Close. The normal return path also releases it.
++            SwingUtilities.invokeLater(dialogContinuation::countDown);
++            try {
++                dismissDialog.run();
++            } catch (RuntimeException unavailableDialog) {
++                Utils.logError("Expired-token dialog dismissal failed; cold-restart deadline remains active");
++            } finally {
++                dialogContinuation.countDown();
++            }
++        } catch (IOException | RuntimeException preparationFailure) {
++            if (markerCreated) {
++                try { Files.deleteIfExists(marker); }
++                catch (IOException | RuntimeException cleanupFailure) {
++                    Utils.logError("Expired-token request marker could not be removed after preparation failure");
++                }
++            }
++            StopTask.releaseExpiryRecovery();
++            EngineEvents.emit("SESSION_TOKEN_RECOVERY_FAILED");
++            Utils.logError("Expired-token cold restart could not be prepared; manual restart is required");
++        }
++    }
++
++    private static void closeEstablishedSession(CountDownLatch dialogContinuation, AtomicBoolean cancelled) {
++        try {
++            dialogContinuation.await();
++            // Do not falsify LoginState to select StopTask's immediate-halt
++            // branch. The established session receives its normal File/Close.
++            JFrame window = MainWindowManager.mainWindowManager().getMainWindow();
++            while (!cancelled.get() && StopTask.expiryRecoveryInProgress()) {
++                FutureTask<Integer> attempt = new FutureTask<>(() -> {
++                    // A queued GUI action must not outlive an aborted recovery.
++                    if (cancelled.get() || !StopTask.expiryRecoveryInProgress()) return 1;
++                    JMenuItem close = SwingUtils.findMenuItemInAnyMenuBar(window, new String[] {"File", "Close"});
++                    if (close == null) return -1;
++                    if (!close.isEnabled()) return 0;
++                    close.doClick();
++                    return 1;
++                });
++                SwingUtilities.invokeLater(attempt);
++                int result;
++                try { result = attempt.get(); }
++                catch (InterruptedException interrupted) { attempt.cancel(false); throw interrupted; }
++                if (result > 0) return;
++                if (result < 0) {
++                    Utils.logError("Expired-token graceful close control unavailable; cold-restart deadline remains active");
++                    return;
++                }
++                TimeUnit.MILLISECONDS.sleep(250);
++            }
++        } catch (InterruptedException interrupted) {
++            Thread.currentThread().interrupt();
++        } catch (ExecutionException | RuntimeException closeFailure) {
++            Utils.logError("Expired-token graceful shutdown failed; cold-restart deadline remains active");
++        }
++    }
++
++    private static void awaitDeadline(Path marker, long timeoutMillis, Thread close, AtomicBoolean cancelled) {
++        long remaining = TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
++        long started = System.nanoTime();
++        while (remaining > 0) {
++            try { TimeUnit.NANOSECONDS.sleep(remaining); }
++            catch (InterruptedException interrupted) { /* An interrupt cannot silently disable a claimed recovery. */ }
++            remaining = TimeUnit.MILLISECONDS.toNanos(timeoutMillis) - (System.nanoTime() - started);
++        }
++        // The wrapper needs this exact marker to guarantee fresh authentication.
++        // If it disappeared or is no longer a regular file, report failure
++        // without forcing exit. This does not authenticate file identity.
++        if (!StopTask.expiryRecoveryInProgress()) return;
++        boolean markerAvailable;
++        try { markerAvailable = Files.isRegularFile(marker, LinkOption.NOFOLLOW_LINKS); }
++        catch (RuntimeException unavailableMarker) { markerAvailable = false; }
++        if (!markerAvailable) {
++            cancelled.set(true);
++            close.interrupt();
++            StopTask.releaseExpiryRecovery();
++            EngineEvents.emit("SESSION_TOKEN_RECOVERY_FAILED");
++            Utils.logError("Expired-token restart marker is unavailable; current Gateway JVM was not forcibly stopped");
++            return;
++        }
++        Utils.logToConsole("Expired-token cold restart: graceful shutdown deadline reached; terminating current Gateway JVM");
++        Runtime.getRuntime().halt(0);
++    }
++
++    static void acknowledgeSuccessfulLogin() {
++        if (System.getProperty("jtsConfigDir", "").isBlank() || System.getProperty("ibcsessionid", "").isBlank()) return;
++        try {
++            Path marker = markerPath("TOKENEXPIREDPENDING");
++            BasicFileAttributes attributes = Files.readAttributes(marker, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
++            if (!attributes.isRegularFile()) throw new IOException("Invalid recovery completion marker");
++            Files.delete(marker);
++            Utils.logToConsole("Expired-token cold restart completed: login successful");
++        } catch (NoSuchFileException noPendingRecovery) {
++            // Ordinary fresh login / daily warm restart has no recovery marker.
++        } catch (IOException | RuntimeException cleanupFailure) {
++            EngineEvents.emit("SESSION_TOKEN_RECOVERY_GUARD_FAILED");
++            Utils.logError("Expired-token recovery completion marker could not be cleared; manual review is required");
++        }
++    }
++
++    private static Path markerPath(String prefix) throws IOException {
++        String directory = System.getProperty("jtsConfigDir", "");
++        String session = System.getProperty("ibcsessionid", "");
++        if (directory.isBlank() || !session.matches("[A-Za-z0-9_-]{1,128}")) {
++            throw new IOException("Missing or invalid token recovery location");
++        }
++        return Path.of(directory).resolve(prefix + session);
++    }
++}
+diff --git a/ibcalpha/ibc/LoginManager.java b/ibcalpha/ibc/LoginManager.java
+--- a/ibcalpha/ibc/LoginManager.java
++++ b/ibcalpha/ibc/LoginManager.java
+@@ -87,6 +87,7 @@
+         loginState = state;
+         loginStateGeneration++;
+         if (state != LoginState.TWO_FA_IN_PROGRESS) cancelSecondFactorRetry();
++        if (state == LoginState.LOGGED_IN) ExpiredSessionTokenRecovery.acknowledgeSuccessfulLogin();
+         if (state != null) EngineEvents.emit("LOGIN_" + state.name());
+         if (null != loginState) switch (loginState) {
+             case TWO_FA_IN_PROGRESS:
+diff --git a/ibcalpha/ibc/ReloginDialogHandler.java b/ibcalpha/ibc/ReloginDialogHandler.java
+--- a/ibcalpha/ibc/ReloginDialogHandler.java
++++ b/ibcalpha/ibc/ReloginDialogHandler.java
+@@ -36,6 +36,7 @@
+ 
+     @Override
+     public void handleWindow(Window window, int eventID) {
++        if (StopTask.shutdownInProgress()) return;
+         Utils.logToConsole("Re-login to session");
+         if (SwingUtils.clickButton(window, "Re-login"))  {
+             LoginManager.loginManager().setLoginState(LoginManager.LoginState.LOGGING_IN);
+diff --git a/ibcalpha/ibc/RestartTask.java b/ibcalpha/ibc/RestartTask.java
+--- a/ibcalpha/ibc/RestartTask.java
++++ b/ibcalpha/ibc/RestartTask.java
+@@ -40,6 +40,8 @@
+ 
+     private static final SwitchLock _Running = new SwitchLock();
+ 
++    static boolean restartInProgress() { return _Running.query(); }
++
+     private final CommandChannel mChannel;
+     
+     private final boolean mPauseOnly;
+@@ -57,11 +59,18 @@
+ 
+     @Override
+     public void run() {
+-        if (! _Running.set()) {
+-            Utils.logToConsole(mVerb + " already in progress");
+-            writeNack(mVerb + " already in progress");
+-            mChannel.close();
+-            return;
++        synchronized (StopTask.class) {
++            if (StopTask.shutdownInProgress()) {
++                writeNack("STOP already in progress");
++                if (mChannel != null) mChannel.close();
++                return;
++            }
++            if (! _Running.set()) {
++                Utils.logToConsole(mVerb + " already in progress");
++                writeNack(mVerb + " already in progress");
++                if (mChannel != null) mChannel.close();
++                return;
++            }
+         }
+ 
+         try {
+diff --git a/ibcalpha/ibc/StopTask.java b/ibcalpha/ibc/StopTask.java
+--- a/ibcalpha/ibc/StopTask.java
++++ b/ibcalpha/ibc/StopTask.java
+@@ -25,6 +25,25 @@
+         implements Runnable {
+ 
+     private static final SwitchLock _Running = new SwitchLock();
++    private static boolean expiryRecovery;
++
++    // Share the claim boundary with RestartTask so an accepted PAUSE/RESTART
++    // cannot be superseded by automatic token-expiry recovery.
++    static synchronized boolean claimExpiryRecovery() {
++        if (RestartTask.restartInProgress() || !_Running.set()) return false;
++        expiryRecovery = true;
++        return true;
++    }
++
++    static synchronized void releaseExpiryRecovery() {
++        if (!expiryRecovery) return;
++        expiryRecovery = false;
++        _Running.clear();
++    }
++
++    static synchronized boolean expiryRecoveryInProgress() {
++        return expiryRecovery;
++    }
+ 
+     private final CommandChannel mChannel;
+     private final boolean mForceColdRestart;

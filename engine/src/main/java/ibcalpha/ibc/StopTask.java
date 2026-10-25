@@ -25,6 +25,25 @@ class StopTask
         implements Runnable {
 
     private static final SwitchLock _Running = new SwitchLock();
+    private static boolean expiryRecovery;
+
+    // Share the claim boundary with RestartTask so an accepted PAUSE/RESTART
+    // cannot be superseded by automatic token-expiry recovery.
+    static synchronized boolean claimExpiryRecovery() {
+        if (RestartTask.restartInProgress() || !_Running.set()) return false;
+        expiryRecovery = true;
+        return true;
+    }
+
+    static synchronized void releaseExpiryRecovery() {
+        if (!expiryRecovery) return;
+        expiryRecovery = false;
+        _Running.clear();
+    }
+
+    static synchronized boolean expiryRecoveryInProgress() {
+        return expiryRecovery;
+    }
 
     private final CommandChannel mChannel;
     private final boolean mForceColdRestart;
@@ -41,7 +60,7 @@ class StopTask
         if (! _Running.set()) {
             Utils.logToConsole("STOP already in progress");
             writeNack("STOP already in progress");
-            mChannel.close();
+            if (mChannel != null) mChannel.close();
             return;
         }
 

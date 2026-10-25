@@ -1,0 +1,76 @@
+diff --git a/scripts/StartIBC.bat b/scripts/StartIBC.bat
+--- a/scripts/StartIBC.bat
++++ b/scripts/StartIBC.bat
+@@ -93,6 +93,7 @@
+ set E_CONFIG_NOT_EXIST=1006
+ set E_TWS_VMOPTIONS_NOT_FOUND=1007
+ set E_TWS_SETTINGS_PATH_NOT_EXIST=1008
++set E_TOKEN_EXPIRY_RECOVERY=1009
+ 
+ :: errorlevel set by IBC if second factor authentication dialog times out and
+ :: ExitAfterSecondFactorAuthenticationTimeout setting is true
+@@ -501,6 +502,49 @@
+ echo Program has exited
+ echo Error level is %ERRORLEVEL%
+ 
++:: Manager: only an explicit, current-session token-expiry request takes this path.
++:: Do not inspect or delete saved descriptors: this replacement must authenticate fresh.
++echo Check for token-expiry cold restart
++if exist "%TWS_SETTINGS_PATH%\TOKENEXPIRED%IBC_SESSION_ID%" (
++    if exist "%TWS_SETTINGS_PATH%\TOKENEXPIRED%IBC_SESSION_ID%\" (
++        set ERROR=%E_TOKEN_EXPIRY_RECOVERY%
++        set ERROR_MESSAGE=Token-expiry restart marker is not a regular file; restart stopped
++        goto :err
++    )
++    if exist "%TWS_SETTINGS_PATH%\PAUSE%IBC_SESSION_ID%" (
++        set ERROR=%E_TOKEN_EXPIRY_RECOVERY%
++        set ERROR_MESSAGE=Token-expiry restart conflicts with a requested pause; restart stopped
++        goto :err
++    )
++    del /q "%TWS_SETTINGS_PATH%\TOKENEXPIRED%IBC_SESSION_ID%" >nul 2>&1
++    if exist "%TWS_SETTINGS_PATH%\TOKENEXPIRED%IBC_SESSION_ID%" (
++        set ERROR=%E_TOKEN_EXPIRY_RECOVERY%
++        set ERROR_MESSAGE=Could not consume token-expiry restart marker; restart stopped
++        goto :err
++    )
++    if exist "%TWS_SETTINGS_PATH%\TOKENEXPIREDPENDING%IBC_SESSION_ID%" (
++        set ERROR=%E_TOKEN_EXPIRY_RECOVERY%
++        set ERROR_MESSAGE=Fresh authentication has not completed since the previous token-expiry recovery; restart stopped
++        goto :err
++    )
++    cmd /d /c exit 0
++    >"%TWS_SETTINGS_PATH%\TOKENEXPIREDPENDING%IBC_SESSION_ID%" echo Pending fresh authentication
++    if errorlevel 1 (
++        set ERROR=%E_TOKEN_EXPIRY_RECOVERY%
++        set ERROR_MESSAGE=Could not record pending token-expiry recovery; restart stopped
++        goto :err
++    )
++    if not exist "%TWS_SETTINGS_PATH%\TOKENEXPIREDPENDING%IBC_SESSION_ID%" (
++        set ERROR=%E_TOKEN_EXPIRY_RECOVERY%
++        set ERROR_MESSAGE=Pending token-expiry recovery marker is missing; restart stopped
++        goto :err
++    )
++    set AUTORESTART_OPTION=
++    set RESTART_NEEDED=
++    echo IBC will cold-restart shortly
++    goto :startIBC
++)
++
+ echo Check for 2FA dialog timed out
+ if %ERRORLEVEL% EQU %E_2FA_DIALOG_TIMED_OUT% (
+ 	if /I "%TWOFA_TO_ACTION%" == "RESTART" (
+@@ -518,6 +562,14 @@
+ 	echo IBC will restart shortly due to login dialog display timeout
+ 	ping localhost -n 2  >NUL
+ 	goto :startIBC
++)
++
++:: A replacement that exits before LOGIN_LOGGED_IN must not reuse stale warm data.
++:: The engine removes this marker only after successful fresh authentication.
++if exist "%TWS_SETTINGS_PATH%\TOKENEXPIREDPENDING%IBC_SESSION_ID%" (
++    set ERROR=%E_TOKEN_EXPIRY_RECOVERY%
++    set ERROR_MESSAGE=Fresh authentication did not complete after token-expiry recovery; automatic restart stopped
++    goto :err
+ )
+ 
+ echo Check for restart

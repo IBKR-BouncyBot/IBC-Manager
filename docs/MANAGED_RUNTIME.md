@@ -1,9 +1,9 @@
-> Current 2.1.0 dependency correction: install all eight OpenJFX modules, including
+> Retained dependency requirement: install all eight OpenJFX modules, including
 > `jdk.jsobject`. A returned fatal module-resolution error is not an unavailable
 > check. Old seven-library installations need disable/Save then enable/Save.
 > See [JAVAFX_DEPENDENCY_FIX.md](JAVAFX_DEPENDENCY_FIX.md).
 
-# Managed JBR / JavaFX workaround (2.1.0)
+# Managed JBR / JavaFX workaround (2.3.0)
 
 ## Scope and evidence
 
@@ -12,6 +12,9 @@ construction after disconnected-RDP restarts. The user confirmed a manual JBR 25
 JavaFX setup subsequently completed a warm restart while RDP was disconnected and
 Windows remained locked, without NoMachine or tscon. This release automates that
 configuration, not Java's entire graphics implementation or all future build behavior.
+The managed pair is pinned to **JBR 25.0.4-b508.27 + JavaFX 25.0.4**. Both versions
+match the working configuration in the October 25 diagnostics; later releases are
+not automatically selected. These pins do not certify future Gateway builds.
 No automatic workstation unlocking, console transfers or virtual-display installation
 is performed. Production remains Windows only. The download option is Windows x64.
 
@@ -66,7 +69,11 @@ not independent evidence of publisher authenticity. These weaker-integrity downl
 are specifically disclosed in the consent prompt before Save.
 
 Retry the explicit setup from Edit Profile after replacing the complete application.
-Previously installed, locally hash-checked managed runtimes are reused only when the recorded JBR matches the pin. A different build needs explicit removal/reinstallation, not in-place edits.
+Previously installed, locally hash-checked managed runtimes are reused only when
+both their recorded JBR build and JavaFX version match the pins and the required
+module identities remain correct. A different build/version needs explicit
+removal/reinstallation, not in-place edits. Removal of an older owned payload
+remains compatible with its recorded ownership and hashes.
 
 ## Explicit consent and download policy
 
@@ -81,8 +88,8 @@ Setup uses exactly **JBR 25.0.4-b508.27**, Windows x64 vanilla:
 substitute another JBR if that archive is unavailable. The publisher's SHA-512
 sidecar remains optional when unavailable, with the existing recorded warning.
 The fixed URL, local release version and any available JBR build metadata are checked.
-JavaFX resolves the newest
-numeric stable 25 release from OpenJFX Maven Central metadata. Eight Windows modular
+JavaFX is fixed to **25.0.4**. Setup does not consult Maven version metadata,
+select a newer version or fall back to another release. Eight Windows modular
 JARs (javafx.base, javafx.graphics, javafx.controls, javafx.fxml, javafx.media,
 javafx.swing, javafx.web and jdk.jsobject) are checked against their
 published SHA-256 when downloadable, then published SHA-1, or the explicit
@@ -90,7 +97,7 @@ unavailable-checksum behavior described above.
 
 These JARs include Windows natives and are a supported OpenJFX packaging method; a
 separate Gluon SDK ZIP is not needed. The downloaded JVM is checked as a Windows x64
-Java 25 JetBrains runtime and asked to resolve all eight OpenJFX 25 modules before
+Java 25 JetBrains runtime and asked to resolve all eight OpenJFX 25.0.4 modules before
 profile/VM-options commit. This probe does not launch IBKR or authenticate an account.
 Publisher URLs and computed checksums are recorded in payload/download-provenance.txt.
 
@@ -109,9 +116,11 @@ silently bypass access controls. Progress appears in the GUI. Cancel is cooperat
 while downloading/verifying and before the short commit phase; it does not interrupt
 an atomic save halfway through. HTTP connect/read timeouts bound stalled cancellation.
 
-No packages are downloaded at ordinary startup. A locally hash-checked already-managed installation matching the pin
-is reused. New releases are not silently installed into a working runtime. To select a
-newer release, release all registered profiles then enable again during maintenance.
+No packages are downloaded at ordinary startup. A locally hash-checked managed
+installation matching both exact pins is reused. Re-enabling setup in 2.3.0 still
+selects the same pinned pair; it does not opt into newer releases. If an older
+managed installation differs, stop sessions and disable/Save on all owners before
+enabling/Save again during maintenance. Manual runtime folders remain separate.
 
 ## Layout and options
 
@@ -162,14 +171,15 @@ changed leftover files are preserved. Do not manually delete the journals to hid
 
 Changing the application/root/version while managed ownership is active is refused.
 Disable and save first. Profile deletion is refused until it releases managed ownership.
-For rollback to 2.0.4, disable managed setup in 2.1 first, close it, then restore the
+For rollback to 2.0.4, disable managed setup in the current version first, close it, then restore the
 pre-upgrade data backup and old app together.
 
 ## Windows acceptance
 
-The automated installer and publisher-response handling were tested with isolated fixtures
-on Linux, not a Windows download/launch. The user-confirmed result was the earlier
-manual setup. Run the complete Windows checklist: Microsoft 25 bootstrap, successful
+Automated fixtures and live download/launch acceptance are separate. The supplied
+2.2.0 Windows logs passed their automated build and GUI gates, with four symbolic-link
+fixtures unavailable. They do not establish acceptance for 2.3.0. Consult TEST_REPORT.md
+for newly executed checks, then run the complete Windows checklist: Microsoft 25 bootstrap, successful
 fresh download, profile save, JavaFX module/native availability, .vmoptions quoting,
 RDP-disconnected locked warm restart, cold login/2FA, cancellation, two-owner removal,
 manual options preservation and final cleanup. Native file locks/antivirus can differ
@@ -185,7 +195,7 @@ from simulated interruption cases. Verify success predates RDP reconnection.
 
 ## Compatibility pin and current diagnostics
 
-The pin returns to the exact JBR build used in the successful manual test. It is not
+The pins retain the exact JBR build and JavaFX version recorded in the working setup. It is not
 proof that all other variables in that test match the current automated installation,
 nor that IBKR will accept every future Gateway build. No arbitrary identity values
 are injected to suppress a server rejection. The full OpenJFX dependency set, optional

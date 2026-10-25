@@ -7,7 +7,8 @@ the same toolchain; this is not a promise that different javac versions produce
 identical class bytes.
 
 `test.bat` runs the full headless suite. `validate-windows.bat` additionally runs
-the real Manager GUI smoke , `ibcalpha.ibc.EngineGuiSmoke` and `ibcalpha.ibc.SecondFactorRetryGuiSmoke`
+the real Manager GUI smoke, `ibcalpha.ibc.EngineGuiSmoke`,
+`ibcalpha.ibc.ExpiredSessionTokenGuiSmoke` and `ibcalpha.ibc.SecondFactorRetryGuiSmoke`
 in separate JVMs.
 The engine contract suite executes actual maintained IBC classes. Fresh JVM
 fixtures isolate static state and prove lifecycle output survives Gateway-style
@@ -62,3 +63,32 @@ The deterministic delayed-observer regression must remain enabled, as must the
 still-live-child, already-exited and interrupted-wait controls. A live native handle
 on Force Stop return, a timed-out wait, or an unrelated killed process must fail.
 See REATTACH_TEST_FIX.md for the reported Windows failure and local reproduction.
+
+## 2.3.0 established-session expiry and runtime pins
+
+The engine headless suite exercises exact dialog recognition, startup and
+established-session eligibility, deferred stale-action rejection, Stop/Pause
+arbitration, actual marker preparation, bounded termination in isolated child
+JVMs, marker-loss cancellation, pending recovery refusal and successful-login
+guard cleanup. Manager tests cover current/stale event generations, readiness
+revocation, error retention, invalid-twsInfo precedence and actual-child reset.
+
+`ExpiredSessionTokenGuiSmoke` has ten scenarios. Its three new production-engine
+child modes cover originally warm and originally fresh logged-in sessions,
+nested modal dismissal, real Relogin suppression, graceful File / Close and
+disabled-Close deadline termination. These require a usable display.
+
+`TokenExpiryWrapperTests` extracts the maintained Windows exit dispatcher and
+executes it under native CMD with inert launch/end labels, without Gateway. Its
+15 native scenarios check fresh startup, nonzero child exit, ordinary warm/cold/
+Pause/stop behavior, malformed and conflicting markers, failed-fresh guards,
+existing 2FA/display retries, and successful acknowledgment. Linux logs explicitly
+report these native checks as unavailable; the enclosing named tests returning
+success is not evidence that CMD executed. Run `validate-windows.bat` to execute
+them together with the GUI and platform tests.
+
+Runtime fixtures test fixed URLs with no moving catalogue lookup, exact JBR
+identity, all required JavaFX modules at 25.0.4, matching offline reuse, mismatch
+rejection, and retained safe removal of older owned payloads. Fixtures are not
+live publisher downloads, RDP sessions or IBKR authentication. Current executed
+results and outstanding gates are recorded in [TEST_REPORT.md](../TEST_REPORT.md).

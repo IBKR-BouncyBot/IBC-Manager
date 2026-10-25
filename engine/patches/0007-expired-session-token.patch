@@ -1,0 +1,243 @@
+diff --git a/ibcalpha/ibc/EngineEvents.java b/ibcalpha/ibc/EngineEvents.java
+--- a/ibcalpha/ibc/EngineEvents.java
++++ b/ibcalpha/ibc/EngineEvents.java
+@@ -12,6 +12,7 @@
+             "ENGINE_STARTED", "GATEWAY_STARTING", "TWS_STARTING", "MAIN_WINDOW_READY",
+             "LOGIN_LOGGED_OUT", "LOGIN_LOGGING_IN", "LOGIN_AWAITING_CREDENTIALS",
+             "LOGIN_TWO_FA_IN_PROGRESS", "LOGIN_LOGGED_IN", "LOGIN_LOGIN_FAILED", "LOGIN_REJECTED_TWSINFO",
++            "LOGIN_RESTART_TOKEN_EXPIRED",
+             "COMMAND_SERVER_READY", "COMMAND_SERVER_CLOSED",
+             "SECOND_FACTOR_RETRY_ARMED", "SECOND_FACTOR_RETRY_DUE",
+             "SECOND_FACTOR_RETRY_STARTED", "SECOND_FACTOR_RETRY_BLOCKED");
+diff --git a/ibcalpha/ibc/ExpiredSessionTokenDialogHandler.java b/ibcalpha/ibc/ExpiredSessionTokenDialogHandler.java
+new file mode 100644
+--- /dev/null
++++ b/ibcalpha/ibc/ExpiredSessionTokenDialogHandler.java
+@@ -0,0 +1,180 @@
++// IBC Manager integration; GPL-3.0-or-later, like the upstream engine.
++package ibcalpha.ibc;
++
++import java.awt.Component;
++import java.awt.Container;
++import java.awt.Window;
++import java.awt.event.WindowEvent;
++import java.io.IOException;
++import java.io.StringReader;
++import java.util.ArrayDeque;
++import java.util.Locale;
++import java.util.function.BooleanSupplier;
++import java.util.function.Consumer;
++import javax.swing.JButton;
++import javax.swing.JDialog;
++import javax.swing.JLabel;
++import javax.swing.JPasswordField;
++import javax.swing.SwingUtilities;
++import javax.swing.text.BadLocationException;
++import javax.swing.text.Document;
++import javax.swing.text.MutableAttributeSet;
++import javax.swing.text.JTextComponent;
++import javax.swing.text.html.HTML;
++import javax.swing.text.html.HTMLEditorKit;
++import javax.swing.text.html.parser.ParserDelegator;
++
++/** Recover only the explicit expired-token rejection of a Gateway autorestart. */
++public final class ExpiredSessionTokenDialogHandler implements WindowHandler {
++    static final int MAX_COMPONENTS = 512;
++    static final int MAX_TEXT_LENGTH = 4096;
++    private static final String EXPIRED =
++            "the security tokens associated with your login credentials have expired";
++    private static final String MANUAL_LOGIN =
++            "please manually enter your username and password to access ibkr gateway";
++
++    interface Context {
++        boolean isEligible();
++        Object loginOwner();
++        long loginGeneration();
++        void requestColdRestart();
++    }
++
++    private final Context context;
++    private final Consumer<Runnable> enqueue;
++    // IbcTws registers one handler for the engine lifetime. This covers all
++    // dialogs and repeated window events, not just one window's identity.
++    private boolean recoveryClaimed;
++
++    public ExpiredSessionTokenDialogHandler() {
++        this(new EngineContext(), SwingUtilities::invokeLater);
++    }
++
++    ExpiredSessionTokenDialogHandler(Context context, Consumer<Runnable> enqueue) {
++        this.context = context;
++        this.enqueue = enqueue;
++    }
++
++    @Override public boolean filterEvent(Window window, int eventId) {
++        return eventId == WindowEvent.WINDOW_OPENED || eventId == WindowEvent.WINDOW_ACTIVATED;
++    }
++
++    @Override public boolean recogniseWindow(Window window) {
++        return window instanceof JDialog dialog && "Gateway".equals(dialog.getTitle())
++                && dialog.isDisplayable() && dialog.isShowing() && containsExpiry(dialog);
++    }
++
++    @Override public void handleWindow(Window window, int eventId) {
++        requireEdt();
++        if (filterEvent(window, eventId)) handleCandidate(() -> recogniseWindow(window));
++    }
++
++    void handleCandidate(BooleanSupplier stillRecognised) {
++        requireEdt();
++        if (recoveryClaimed || !stillRecognised.getAsBoolean() || !context.isEligible()) return;
++        Object owner = context.loginOwner();
++        long generation = context.loginGeneration();
++        recoveryClaimed = true;
++        enqueue.accept(() -> {
++            requireEdt();
++            // A manual stop, login transition (even back to LOGGED_OUT), new
++            // LoginManager, dismissed dialog or changed message cancels this action.
++            if (context.loginOwner() != owner || context.loginGeneration() != generation
++                    || !context.isEligible() || !stillRecognised.getAsBoolean()) return;
++            context.requestColdRestart();
++        });
++    }
++
++    static boolean containsExpiry(Container root) {
++        ArrayDeque<Component> queue = new ArrayDeque<>();
++        queue.add(root);
++        StringBuilder displayed = new StringBuilder();
++        int visited = 0;
++        boolean ok = false;
++        while (!queue.isEmpty() && ++visited <= MAX_COMPONENTS) {
++            Component component = queue.removeFirst();
++            if (!component.isVisible()) continue;
++            String text = null;
++            if (component instanceof JLabel label) text = label.getText();
++            // Never read credentials, even if an application marks a password
++            // field noneditable. Only inspect ordinary display text controls.
++            if (component instanceof JTextComponent field && !(field instanceof JPasswordField)
++                    && !field.isEditable()) {
++                Document document = field.getDocument();
++                int length = document.getLength();
++                if (length <= MAX_TEXT_LENGTH) {
++                    try {
++                        // Read the bounded display document, not serialized HTML
++                        // (whose attributes can be much larger than its text).
++                        text = document.getText(0, length);
++                    } catch (BadLocationException changedDocument) {
++                        return false;
++                    }
++                }
++            }
++            if (text != null && text.length() <= MAX_TEXT_LENGTH) {
++                displayed.append(normalize(text)).append(' ');
++            }
++            if (component instanceof JButton button && button.isEnabled()
++                    && "OK".equals(button.getText())) ok = true;
++            if (component instanceof Container container) {
++                if (visited + queue.size() + container.getComponentCount() > MAX_COMPONENTS) return false;
++                for (Component child : container.getComponents()) queue.addLast(child);
++            }
++        }
++        return queue.isEmpty() && ok && matches(displayed.toString());
++    }
++
++    static boolean isMessage(String text) {
++        return text != null && text.length() <= MAX_TEXT_LENGTH && matches(normalize(text));
++    }
++
++    private static boolean matches(String text) {
++        String plain = text.replaceAll("[\\s\\p{Z}]+", " ").toLowerCase(Locale.ROOT);
++        return plain.contains(EXPIRED) && plain.contains(MANUAL_LOGIN);
++    }
++
++    private static String normalize(String text) {
++        StringBuilder plain = new StringBuilder();
++        try {
++            // Swing's own HTML parser decodes named/numeric entities and omits
++            // attributes and comments. No browser, URL or external file is used.
++            new ParserDelegator().parse(new StringReader(text), new HTMLEditorKit.ParserCallback() {
++                @Override public void handleText(char[] data, int pos) { plain.append(data); }
++                @Override public void handleSimpleTag(HTML.Tag tag, MutableAttributeSet attributes, int pos) {
++                    if (tag == HTML.Tag.BR || tag == HTML.Tag.HR) plain.append(' ');
++                }
++                @Override public void handleStartTag(HTML.Tag tag, MutableAttributeSet attributes, int pos) {
++                    if (tag.isBlock()) plain.append(' ');
++                }
++                @Override public void handleEndTag(HTML.Tag tag, int pos) {
++                    if (tag.isBlock()) plain.append(' ');
++                }
++            }, true);
++        } catch (IOException impossibleForStringReader) {
++            return "";
++        }
++        return plain.toString().replaceAll("[\\s\\p{Z}]+", " ").trim();
++    }
++
++    private static void requireEdt() {
++        if (!SwingUtilities.isEventDispatchThread()) throw new IllegalStateException("Token recovery outside EDT");
++    }
++
++    private static final class EngineContext implements Context {
++        @Override public boolean isEligible() {
++            return SessionManager.isGateway() && SessionManager.isRestart()
++                    && !StopTask.shutdownInProgress()
++                    && LoginManager.loginManager().getLoginState() == LoginManager.LoginState.LOGGED_OUT;
++        }
++        @Override public Object loginOwner() { return LoginManager.loginManager(); }
++        @Override public long loginGeneration() { return LoginManager.loginManager().loginGeneration(); }
++        @Override public void requestColdRestart() {
++            // Remain on the EDT through StopTask's shutdown claim: another Swing
++            // login/2FA event cannot run between the final check and this stop.
++            EngineEvents.emit("LOGIN_RESTART_TOKEN_EXPIRED");
++            Utils.logToConsole("Session token expired; restarting for fresh authentication");
++            new StopTask(null, true, "Cold restart after expired security token").run();
++        }
++    }
++}
+diff --git a/ibcalpha/ibc/IbcTws.java b/ibcalpha/ibc/IbcTws.java
+--- a/ibcalpha/ibc/IbcTws.java
++++ b/ibcalpha/ibc/IbcTws.java
+@@ -312,6 +312,7 @@
+         List<WindowHandler> windowHandlers = new ArrayList<>();
+ 
+         windowHandlers.add(new InvalidTwsInfoDialogHandler());
++        windowHandlers.add(new ExpiredSessionTokenDialogHandler());
+         windowHandlers.add(new AcceptIncomingConnectionDialogHandler());
+         windowHandlers.add(new BlindTradingWarningDialogHandler());
+         windowHandlers.add(new LoginFrameHandler());
+diff --git a/ibcalpha/ibc/LoginManager.java b/ibcalpha/ibc/LoginManager.java
+--- a/ibcalpha/ibc/LoginManager.java
++++ b/ibcalpha/ibc/LoginManager.java
+@@ -72,6 +72,12 @@
+     }
+     
+     private volatile LoginState loginState = LoginState.LOGGED_OUT;
++    private long loginStateGeneration;
++
++    synchronized long loginGeneration() {
++        return loginStateGeneration;
++    }
++
+     public LoginState getLoginState() {
+         return loginState;
+     }
+@@ -79,6 +85,7 @@
+     public synchronized void setLoginState(LoginState state) {
+         if (state == loginState) return;
+         loginState = state;
++        loginStateGeneration++;
+         if (state != LoginState.TWO_FA_IN_PROGRESS) cancelSecondFactorRetry();
+         if (state != null) EngineEvents.emit("LOGIN_" + state.name());
+         if (null != loginState) switch (loginState) {
+diff --git a/ibcalpha/ibc/StopTask.java b/ibcalpha/ibc/StopTask.java
+--- a/ibcalpha/ibc/StopTask.java
++++ b/ibcalpha/ibc/StopTask.java
+@@ -41,7 +41,7 @@
+         if (! _Running.set()) {
+             Utils.logToConsole("STOP already in progress");
+             writeNack("STOP already in progress");
+-            mChannel.close();
++            if (mChannel != null) mChannel.close();
+             return;
+         }
+ 

@@ -1,4 +1,4 @@
-# Batch files in IBC Manager 2.1.0
+# Batch files in IBC Manager 2.3.0
 
 This description follows the actual commands in `scripts/`. The matching root
 files delegate to them; use the root files for normal operation.

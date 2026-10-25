@@ -72,6 +72,12 @@ public abstract class LoginManager {
     }
     
     private volatile LoginState loginState = LoginState.LOGGED_OUT;
+    private long loginStateGeneration;
+
+    synchronized long loginGeneration() {
+        return loginStateGeneration;
+    }
+
     public LoginState getLoginState() {
         return loginState;
     }
@@ -79,7 +85,9 @@ public abstract class LoginManager {
     public synchronized void setLoginState(LoginState state) {
         if (state == loginState) return;
         loginState = state;
+        loginStateGeneration++;
         if (state != LoginState.TWO_FA_IN_PROGRESS) cancelSecondFactorRetry();
+        if (state == LoginState.LOGGED_IN) ExpiredSessionTokenRecovery.acknowledgeSuccessfulLogin();
         if (state != null) EngineEvents.emit("LOGIN_" + state.name());
         if (null != loginState) switch (loginState) {
             case TWO_FA_IN_PROGRESS:

@@ -39,18 +39,18 @@ public final class WorkaroundTests implements TestSuite {
     @Override public String name() { return "Managed JBR25/JavaFX setup: ownership, consent boundaries, rollback and supply chain"; }
     @Override public List<NamedTest> tests() {
         List<NamedTest> tests = new ArrayList<>(List.of(
-                new NamedTest("runtime selection pins JBR even when a newer stable build is advertised", this::catalog),
+                new NamedTest("runtime selection pins JBR and JavaFX even when newer releases are advertised", this::catalog),
                 new NamedTest("fixed coordinates are independent of unavailable release catalogue listings", this::noRelease),
-                new NamedTest("JavaFX metadata stays in the released 25 family", this::fxMetadata),
+                new NamedTest("JavaFX artifact selection rejects every version except the compatibility pin", this::fxMetadata),
                 new NamedTest("release JSON decoder handles escapes and rejects ambiguity", this::json),
                 new NamedTest("runtime downloads permit only HTTPS publisher paths and safe redirects", this::uris),
-                new NamedTest("complete verified runtime setup resolves all seven JavaFX modules", this::installer),
+                new NamedTest("complete verified runtime setup resolves all eight JavaFX modules", this::installer),
                 new NamedTest("checksum mismatch aborts before executable verification", this::checksum),
                 new NamedTest("missing JavaFX native binary aborts setup", this::missingNative),
                 new NamedTest("wrong JavaFX module version aborts setup", this::badModules),
                 new NamedTest("non-Windows Java launcher aborts setup", this::badPlatform),
                 new NamedTest("unavailable runtime verification is reported without blocking setup", this::runtimeFailure),
-                new NamedTest("metadata network failure occurs before any application configuration write", this::networkFailure),
+                new NamedTest("required download failure occurs before any application configuration write", this::networkFailure),
                 new NamedTest("owned VM options preserve external edits on removal", this::externalOptions),
                 new NamedTest("changed owned block prevents unsafe removal", this::tamperedOptions),
                 new NamedTest("new external module options prevent ambiguous rollback", this::conflictingOptions),
@@ -109,6 +109,42 @@ public final class WorkaroundTests implements TestSuite {
         tests.add(new NamedTest("wrong JBR build with the same Java version is rejected", () -> pinnedBuildMetadata(false)));
         tests.add(new NamedTest("available exact JBR build metadata permits installation", () -> pinnedBuildMetadata(true)));
         tests.add(new NamedTest("unavailable pinned archive never selects a newer or older runtime", this::missingPinnedArchive));
+        tests.add(new NamedTest("same pinned runtime is reused offline without changing ownership or payload", this::matchingPinsReuse));
+        tests.add(new NamedTest("non-pinned JavaFX runtime cannot start or save but remains removable", this::oldJavafxPin));
+        tests.add(new NamedTest("non-pinned shared JavaFX cannot be adopted by another profile", this::oldSharedJavafxPin));
+        tests.add(new NamedTest("installer metadata cannot activate a non-pinned JavaFX runtime", this::wrongInstallerJavafx));
+        tests.add(new NamedTest("cached JavaFX descriptor is checked independently of the version receipt", this::wrongCachedJavafx));
+        tests.add(new NamedTest("actual JBR implementor build notation without b is validated", this::implementorBuildNotation));
+        tests.add(new NamedTest("exact JBR runtime identity alone is accepted", () -> acceptedJbrIdentity("JAVA_RUNTIME_VERSION=\"25.0.4+1-b508.27\"\n")));
+        tests.add(new NamedTest("actual paired JBR identities support Windows line endings", () -> acceptedJbrIdentity(
+                "IMPLEMENTOR_VERSION=\"JBR-25.0.4+1-508.27-nomod\"\r\nJAVA_RUNTIME_VERSION=\"25.0.4+1-b508.27\"\r\n")));
+        String exactRuntime = "JAVA_RUNTIME_VERSION=\"25.0.4+1-b508.27\"\n";
+        String exactImplementor = "IMPLEMENTOR_VERSION=\"JBR-25.0.4+1-508.27-nomod\"\n";
+        for (var identity : List.of(
+                Map.entry("missing", ""),
+                Map.entry("unquoted", "JAVA_RUNTIME_VERSION=25.0.4+1-b508.27\n"),
+                Map.entry("empty", "JAVA_RUNTIME_VERSION=\"\"\n"),
+                Map.entry("unrecognized", "JAVA_RUNTIME_VERSION=\"25.0.4+1\"\n"),
+                Map.entry("extra numeric runtime suffix", "JAVA_RUNTIME_VERSION=\"25.0.4+1-b508.27.1\"\n"),
+                Map.entry("extra text runtime suffix", "JAVA_RUNTIME_VERSION=\"25.0.4+1-b508.27-ea\"\n"),
+                Map.entry("different runtime build", "JAVA_RUNTIME_VERSION=\"25.0.4+1-b635.70\"\n"),
+                Map.entry("different upstream build", "JAVA_RUNTIME_VERSION=\"25.0.4+2-b508.27\"\n"),
+                Map.entry("extra numeric implementor suffix", "IMPLEMENTOR_VERSION=\"JBR-25.0.4+1-508.27.1-nomod\"\n"),
+                Map.entry("unrecognized implementor", "IMPLEMENTOR_VERSION=\"JetBrains\"\n"),
+                Map.entry("malformed implementor quote", "IMPLEMENTOR_VERSION=\"JBR-25.0.4+1-508.27-nomod\n"),
+                Map.entry("valid implementor with contradictory runtime", exactImplementor + "JAVA_RUNTIME_VERSION=\"25.0.4+1-b635.70\"\n"),
+                Map.entry("valid runtime with contradictory implementor", exactRuntime + "IMPLEMENTOR_VERSION=\"JBR-25.0.4+1-508.27.1-nomod\"\n"),
+                Map.entry("valid runtime with malformed implementor", exactRuntime + "IMPLEMENTOR_VERSION=\"\"\n"),
+                Map.entry("duplicate contradictory runtime", exactRuntime + "JAVA_RUNTIME_VERSION=\"25.0.4+1-b635.70\"\n"))) {
+            tests.add(new NamedTest("JBR identity rejects " + identity.getKey(), () -> rejectedJbrIdentity(identity.getValue())));
+        }
+        tests.add(new NamedTest("runtime consent names both exact compatibility pins", this::pinnedConsent));
+        for (String version : List.of("25", "25.0.3", "25.0.5", "25.0.4.1", "25.0.4-ea+1")) {
+            tests.add(new NamedTest("downloaded JavaFX descriptor rejects non-pinned version " + version,
+                    () -> wrongJavafxDescriptor(version)));
+            tests.add(new NamedTest("runtime inventory rejects non-pinned JavaFX version " + version,
+                    () -> wrongJavafxInventory(version)));
+        }
         tests.add(new NamedTest("copied data directories cannot borrow another installation owner", () -> {
             try (Fixture f = new Fixture()) {
                 Profile enabled = f.enable();
@@ -239,12 +275,140 @@ public final class WorkaroundTests implements TestSuite {
     private void pagedCatalogue() throws Exception {
         RuntimeDownloads source = new RuntimeDownloads() {
             @Override public String text(URI uri, int max) {
-                if (uri.toString().contains("maven-metadata")) return "<metadata><version>25.0.4</version></metadata>";
-                throw new AssertionError("JBR pin must not query a moving catalogue: " + uri);
+                throw new AssertionError("Pinned versions must not query either publisher catalogue: " + uri);
             }
             @Override public void file(URI uri, Path p, long limit, BooleanSupplier cancelled) { throw new AssertionError("catalogue must not download binaries"); }
         };
         Assertions.equals("25.0.4-b508.27", new RuntimeCatalog(source).resolve().jbrVersion(), "JBR stays pinned without a catalogue");
+        Assertions.equals("25.0.4", new RuntimeCatalog(source).resolve().javafxVersion(), "JavaFX stays pinned without a catalogue");
+    }
+
+    private void matchingPinsReuse() throws Exception {
+        try (Fixture f = new Fixture()) {
+            Profile enabled = f.enable();
+            Map<String, byte[]> before = new LinkedHashMap<>();
+            for (String file : List.of("state.properties", "payload.sha256", "installed.vmoptions")) {
+                before.put(file, Files.readAllBytes(f.dir.resolve(file)));
+            }
+            byte[] options = Files.readAllBytes(f.options);
+            f.failDownload = true;
+            ManagedRuntimeService.checkBeforeStart(enabled, f.paths);
+            Assertions.equals(enabled, f.service.save(enabled, enabled, f.writer(), p -> { }, x -> { }, () -> false), "existing pinned installation retained");
+            Assertions.equals(1, f.downloads.get(), "save and launch never contact installer for the valid cache");
+            same(options, Files.readAllBytes(f.options), "working VM options preserved");
+            for (var entry : before.entrySet()) same(entry.getValue(), Files.readAllBytes(f.dir.resolve(entry.getKey())), "cache receipt preserved: " + entry.getKey());
+        }
+    }
+
+    private void oldJavafxPin() throws Exception {
+        try (Fixture f = new Fixture()) {
+            Profile enabled = f.enable();
+            Path state = f.dir.resolve("state.properties");
+            Files.writeString(state, Files.readString(state).replace("javafx=25.0.4", "javafx=25.0.5"));
+            byte[] options = Files.readAllBytes(f.options);
+            IOException error = Assertions.throwsType(IOException.class, () -> ManagedRuntimeService.checkBeforeStart(enabled, f.paths), "JavaFX pin enforced on existing installation");
+            Assertions.contains(error.getMessage(), "JavaFX 25.0.4", "diagnosis includes the exact required JavaFX version");
+            Assertions.throwsType(IOException.class, () -> f.service.save(enabled, enabled, f.writer(), p -> { }, x -> { }, () -> false), "save cannot silently retain a different JavaFX version");
+            same(options, Files.readAllBytes(f.options), "rejected reuse does not rewrite options");
+            Assertions.equals(1, f.downloads.get(), "no automatic replacement download");
+            f.disable(enabled); f.assertOriginal();
+            Profile repaired = f.enable(); ManagedRuntimeService.checkBeforeStart(repaired, f.paths);
+            Assertions.contains(Files.readString(f.dir.resolve("state.properties")), "javafx=25.0.4", "explicit reinstall records exact pin");
+        }
+    }
+
+    private void oldSharedJavafxPin() throws Exception {
+        try (Fixture f = new Fixture()) {
+            Profile enabled = f.enable();
+            Path state = f.dir.resolve("state.properties");
+            Files.writeString(state, Files.readString(state).replace("javafx=25.0.4", "javafx=25.0.3"));
+            byte[] before = Files.readAllBytes(state);
+            Profile copy = f.profile.toBuilder().id(UUID.randomUUID()).name("Another owner").managedHeadlessRuntime(true).build();
+            Assertions.throwsType(IOException.class, () -> f.service.save(null, copy, f.writer(), p -> { }, x -> { }, () -> false), "different JavaFX cannot be silently adopted");
+            same(before, Files.readAllBytes(state), "existing ownership preserved");
+            Assertions.fileExists(enabled.ibcJavaPath().resolve("java.exe"), "existing payload preserved");
+            Assertions.equals(1, f.downloads.get(), "no implicit reinstall");
+        }
+    }
+
+    private void wrongInstallerJavafx() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.installedJavafxVersion = "25.0.5";
+            IOException error = Assertions.throwsType(IOException.class, f::enable, "installer cannot activate a different version");
+            Assertions.contains(error.getMessage(), "pinned JavaFX 25.0.4", "version mismatch is actionable");
+            f.assertOriginal();
+        }
+    }
+
+    private void wrongCachedJavafx() throws Exception {
+        try (Fixture f = new Fixture()) {
+            Profile enabled = f.enable();
+            Path jar = f.dir.resolve("payload/javafx/javafx.base.jar");
+            String oldHash = hash(Files.readAllBytes(jar), "SHA-256");
+            Files.write(jar, zip(Map.of("module-info.class", JavafxModuleFixture.descriptor("base", "25.0.5"))));
+            Path hashes = f.dir.resolve("payload.sha256");
+            Files.writeString(hashes, Files.readString(hashes).replace(oldHash, hash(Files.readAllBytes(jar), "SHA-256")));
+            IOException error = Assertions.throwsType(IOException.class, () -> ManagedRuntimeService.checkBeforeStart(enabled, f.paths), "coherent receipt cannot hide a different module version");
+            Assertions.contains(error.getMessage(), "expected 25.0.4", "actual module descriptor checked");
+            Assertions.contains(error.getMessage(), "Disable and Save", "module mismatch explains explicit reinstall");
+            Assertions.throwsType(IOException.class, () -> f.service.save(enabled, enabled, f.writer(), p -> { }, x -> { }, () -> false), "save also checks module contents");
+            f.disable(enabled); f.assertOriginal();
+        }
+    }
+
+    private void implementorBuildNotation() throws Exception {
+        for (String build : List.of("508.27", "635.70")) try (InstallFixture f = new InstallFixture()) {
+            f.downloads.archive = zip(Map.of("jbr/bin/java.exe", pe(), "jbr/release", bytes(
+                    "JAVA_VERSION=\"25.0.4\"\nIMPLEMENTOR=\"JetBrains s.r.o.\"\nIMPLEMENTOR_VERSION=\"JBR-25.0.4+1-" + build + "-nomod\"\n")));
+            if (build.equals("508.27")) f.run();
+            else {
+                Assertions.throwsType(IOException.class, f::run, "build metadata without b must still match");
+                Assertions.equals(0, f.executions.get(), "wrong build never executed");
+            }
+        }
+    }
+
+    private void acceptedJbrIdentity(String fields) throws Exception {
+        try (InstallFixture f = new InstallFixture()) {
+            f.downloads.archive = zip(Map.of("jbr/bin/java.exe", pe(), "jbr/release", bytes(
+                    "JAVA_VERSION=\"25.0.4\"\nIMPLEMENTOR=\"JetBrains s.r.o.\"\n" + fields)));
+            f.run();
+            Assertions.equals(1, f.executions.get(), "exact build identity permits the runtime probe");
+        }
+    }
+
+    private void rejectedJbrIdentity(String fields) throws Exception {
+        try (InstallFixture f = new InstallFixture()) {
+            f.downloads.archive = zip(Map.of("jbr/bin/java.exe", pe(), "jbr/release", bytes(
+                    "JAVA_VERSION=\"25.0.4\"\nIMPLEMENTOR=\"JetBrains s.r.o.\"\n" + fields)));
+            IOException error = Assertions.throwsType(IOException.class, f::run, "archive URL cannot substitute for exact runtime build identity");
+            Assertions.contains(error.getMessage(), "pinned JBR 25.0.4-b508.27", "identity failure identifies the required build");
+            Assertions.equals(0, f.executions.get(), "unproven or contradictory build identity is never executed");
+        }
+    }
+
+    private void pinnedConsent() {
+        Assertions.contains(ManagedRuntimeService.CONSENT, "JBR 25.0.4-b508.27", "exact runtime named before installation");
+        Assertions.contains(ManagedRuntimeService.CONSENT, "JavaFX 25.0.4", "exact modules named before installation");
+        Assertions.contains(ManagedRuntimeService.CONSENT, "pinned JBR and JavaFX versions", "both components have fixed versions");
+    }
+
+    private void wrongJavafxDescriptor(String version) throws Exception {
+        try (InstallFixture f = new InstallFixture()) {
+            f.downloads.modules.put("base", zip(Map.of("module-info.class", JavafxModuleFixture.descriptor("base", version))));
+            IOException error = Assertions.throwsType(IOException.class, f::run, "correct URL and checksum do not replace version validation");
+            Assertions.contains(error.getMessage(), "expected 25.0.4", "required exact module version recorded");
+            Assertions.equals(0, f.executions.get(), "incorrect module never reaches process execution");
+        }
+    }
+
+    private void wrongJavafxInventory(String version) throws Exception {
+        try (InstallFixture f = new InstallFixture()) {
+            f.output = f.output.replace("javafx.base@25.0.4", "javafx.base@" + version);
+            IOException error = Assertions.throwsType(IOException.class, f::run, "a resolved different patch is a real incompatibility");
+            Assertions.contains(error.getMessage(), "Pinned JavaFX 25.0.4", "inventory uses the same exact pin");
+            Assertions.equals(1, f.executions.get(), "actual inventory response was checked");
+        }
     }
 
     private void oldManagedPin() throws Exception {
@@ -315,8 +479,9 @@ public final class WorkaroundTests implements TestSuite {
                 + release("26.0.4", "900.1", false, false) + "]";
         var selected = new RuntimeCatalog(downloads).resolve();
         Assertions.equals("25.0.4-b508.27", selected.jbrVersion(), "exact compatibility build");
-        Assertions.equals("25.0.4", selected.javafxVersion(), "newest stable 25 FX");
+        Assertions.equals("25.0.4", selected.javafxVersion(), "exact JavaFX compatibility version");
         Assertions.contains(selected.jbrZip().toString(), "windows-x64-b508.27.zip", "release architecture/flavour");
+        Assertions.equals(0, downloads.catalogueRequests.get(), "selection is independent of advertised releases");
     }
     private void noRelease() throws Exception {
         for (String json : List.of("[]", "{}", "[{\"tag_name\":\"jbr-release-25.0.4b508.27\",\"draft\":false,\"prerelease\":false,\"body\":\"no checksum\"}]")) {
@@ -325,10 +490,13 @@ public final class WorkaroundTests implements TestSuite {
         }
     }
     private void fxMetadata() throws Exception {
-        Assertions.equals("25.0.12", RuntimeCatalog.latestJavafxVersion("<versions><version>25.0.4</version><version>25.0.12</version><version>26</version><version>25.1-ea+1</version></versions>"), "numeric ordering");
-        for (String xml : List.of("<version>26</version>", "<!DOCTYPE foo><version>25</version>", "<version>25-ea</version>")) {
-            Assertions.throwsType(IOException.class, () -> RuntimeCatalog.latestJavafxVersion(xml), "untrusted or incompatible metadata");
+        for (String version : List.of("25", "25.0.3", "25.0.5", "25.0.4.1", "25.0.4-ea+1", "26")) {
+            Assertions.throwsType(IllegalArgumentException.class, () -> RuntimeCatalog.artifactUrl("base", version), "non-pinned artifact version rejected");
+            Assertions.throwsType(IllegalArgumentException.class,
+                    () -> new RuntimeCatalog.Selection("25.0.4-b508.27", RuntimeCatalog.JBR_ZIP, version), "non-pinned selection rejected");
         }
+        Assertions.equals("https://repo.maven.apache.org/maven2/org/openjfx/jdk-jsobject/25.0.4/jdk-jsobject-25.0.4-win.jar",
+                RuntimeCatalog.artifactUrl("jsobject", "25.0.4"), "exact eighth-module publisher coordinates");
     }
     private void json() throws Exception {
         Assertions.equals("x\ny", ((Map<?, ?>)Json.read("{\"v\":\"x\\ny\"}")).get("v"), "escaped string");
@@ -371,7 +539,7 @@ public final class WorkaroundTests implements TestSuite {
     }
     private void badPlatform() throws Exception {
         try (InstallFixture f = new InstallFixture()) {
-            f.downloads.archive = zip(Map.of("jbr/bin/java.exe", new byte[100], "jbr/release", bytes("JAVA_VERSION=\"25.0.4\"\nIMPLEMENTOR=\"JetBrains\"")));
+            f.downloads.archive = zip(Map.of("jbr/bin/java.exe", new byte[100], "jbr/release", bytes("JAVA_VERSION=\"25.0.4\"\nIMPLEMENTOR=\"JetBrains s.r.o.\"\nIMPLEMENTOR_VERSION=\"JBR-25.0.4+1-508.27-nomod\"\nJAVA_RUNTIME_VERSION=\"25.0.4+1-b508.27\"\n")));
             Assertions.throwsType(IOException.class, f::run, "wrong executable type"); Assertions.equals(0, f.executions.get(), "no execution");
         }
     }
@@ -648,12 +816,13 @@ public final class WorkaroundTests implements TestSuite {
     private static final class FakeDownloads implements RuntimeDownloads {
         String releases = "[" + release("25.0.4", "508.27", false, false) + "]";
         boolean fail; boolean badChecksum; boolean archiveUnavailable;
+        final AtomicInteger catalogueRequests = new AtomicInteger();
         final List<URI> files = new ArrayList<>();
         byte[] archive;
         final Map<String, byte[]> modules = new LinkedHashMap<>();
         FakeDownloads() {
             try {
-                archive = zip(Map.of("jbr/bin/java.exe", pe(), "jbr/release", bytes("JAVA_VERSION=\"25.0.4\"\nIMPLEMENTOR=\"JetBrains s.r.o.\"\n")));
+                archive = zip(Map.of("jbr/bin/java.exe", pe(), "jbr/release", bytes("JAVA_VERSION=\"25.0.4\"\nIMPLEMENTOR=\"JetBrains s.r.o.\"\nIMPLEMENTOR_VERSION=\"JBR-25.0.4+1-508.27-nomod\"\nJAVA_RUNTIME_VERSION=\"25.0.4+1-b508.27\"\n")));
                 for (String module : RuntimeCatalog.FX_MODULES) {
                     Map<String, byte[]> entries = new LinkedHashMap<>(); entries.put("module-info.class", JavafxModuleFixture.descriptor(module, "25.0.4"));
                     String lib = switch (module) { case "graphics" -> "glass.dll"; case "media" -> "jfxmedia.dll"; case "web" -> "jfxwebkit.dll"; default -> null; };
@@ -670,8 +839,8 @@ public final class WorkaroundTests implements TestSuite {
         }
         @Override public String text(URI uri, int max) throws IOException {
             if (fail) throw new IOException("Publisher unavailable (fixture)");
-            if (uri.getHost().equals("api.github.com")) return releases;
-            if (uri.getPath().endsWith("maven-metadata.xml")) return "<versions><version>26.0.2</version><version>25.0.3</version><version>25.0.4</version><version>25.0.5-ea</version></versions>";
+            if (uri.getHost().equals("api.github.com")) { catalogueRequests.incrementAndGet(); return releases; }
+            if (uri.getPath().endsWith("maven-metadata.xml")) { catalogueRequests.incrementAndGet(); return "<versions><version>26.0.2</version><version>25.0.3</version><version>25.0.4</version><version>25.0.5</version></versions>"; }
             String suffix = uri.toString().endsWith(".checksum") ? ".checksum" : ".sha256";
             try { return badChecksum ? "0".repeat(suffix.equals(".checksum") ? 128 : 64) : hash(content(URI.create(uri.toString().substring(0, uri.toString().length() - suffix.length()))), suffix.equals(".checksum") ? "SHA-512" : "SHA-256"); }
             catch (Exception failure) { throw new IOException(failure); }
@@ -703,6 +872,7 @@ public final class WorkaroundTests implements TestSuite {
         final Path manual = Files.createDirectories(root.resolve("manual")); final Profile profile; final Path options; final Path dir;
         final byte[] original = bytes("# original\r\n-Xmx768m\r\n--module-path=C:/manual/lib\r\n--add-modules=javafx.controls\r\n");
         final ManagedRuntimeService service; boolean failDownload; boolean editOnDownload;
+        String installedJavafxVersion = "25.0.4";
         Fixture() throws IOException { this(TargetType.GATEWAY); }
         Fixture(TargetType target) throws IOException {
             Profile base = TestSupport.validProfile(root.resolve("application"));
@@ -721,7 +891,7 @@ public final class WorkaroundTests implements TestSuite {
                 FakeDownloads provider = new FakeDownloads();
                 for (String module : RuntimeCatalog.FX_MODULES) Files.write(stage.resolve("javafx/" + RuntimeCatalog.moduleName(module) + ".jar"), provider.modules.get(module));
                 if (editOnDownload) Files.writeString(options, "-Xmx4096m\n");
-                return new RuntimeBundleInstaller.Installed("25.0.4-b508.27", "25.0.4");
+                return new RuntimeBundleInstaller.Installed("25.0.4-b508.27", installedJavafxVersion);
             });
         }
         ManagedRuntimeService.ProfileWriter writer() { return (previous, desired) -> repo.save(desired); }

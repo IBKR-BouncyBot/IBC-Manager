@@ -191,7 +191,7 @@ public final class RuntimeVerificationTests implements TestSuite {
                 RuntimeDownloadTests.bytes("[{\"tag_name\":\"jbr-release-25.0.4b508.27\",\"draft\":false,\"prerelease\":false,\"body\":\"[zip](" + origin + ")\"}]"));
         n.data(RuntimeCatalog.MAVEN + "javafx-controls/maven-metadata.xml", RuntimeDownloadTests.bytes("<versions><version>25.0.4</version></versions>"));
         byte[] zip = RuntimeDownloadTests.zip(Map.of("jbr/bin/java.exe", RuntimeDownloadTests.pe(),
-                "jbr/release", RuntimeDownloadTests.bytes("JAVA_VERSION=\"25.0.4\"\nIMPLEMENTOR=\"JetBrains s.r.o.\"\n")));
+                "jbr/release", RuntimeDownloadTests.bytes("JAVA_VERSION=\"25.0.4\"\nIMPLEMENTOR=\"JetBrains s.r.o.\"\nIMPLEMENTOR_VERSION=\"JBR-25.0.4+1-508.27-nomod\"\nJAVA_RUNTIME_VERSION=\"25.0.4+1-b508.27\"\n")));
         n.redirect(origin, 302, cdn); n.data(cdn, zip);
         n.redirect(origin + ".checksum", 302, cdn + ".checksum");
         n.data(cdn + ".checksum", RuntimeDownloadTests.bytes(RuntimeDownloadTests.hash(zip, "SHA-512")));

@@ -1,5 +1,52 @@
 # Changelog
 
+## 2.3.0 - 2026-10-25 - established-session expiry recovery and exact runtime pins
+
+- Recover from the exact expired-security-token dialog titled `Gateway` or
+  `IBKR Gateway`, including expiry during reconnect after a completed login.
+  Keep the existing pre-login warm-restart recovery and ordinary warm restarts.
+- Dispatch established-session shutdown outside the Swing event thread, dismiss
+  the verified expiry modal, and bound graceful shutdown to 30 seconds before a
+  fallback limited to the affected engine JVM. Preserve duplicate, stale-action,
+  Stop/PAUSE and active-2FA guards.
+- Report established-session expiry through a distinct generation-checked engine
+  event, invalidate old login/API readiness, and show the fresh-authentication
+  recovery reason. A dedicated expiry marker makes the next child a cold start.
+  A same-session pending guard prevents fallback to stale warm data until actual
+  successful login clears it; existing fresh-login retry policies remain separate.
+- Keep the handler's one-shot claim after cancellation or preparation failure;
+  it does not automatically rearm inside the same engine JVM. Stop/Pause claims
+  made before recovery take precedence. Stop after commitment retains the existing
+  in-progress response, and explicit Force Stop remains separate.
+- Pin both managed-workaround components: JBR `25.0.4-b508.27` and JavaFX
+  `25.0.4`. Do not select newer JavaFX versions from repository metadata or silently
+  update an existing runtime. Matching owned payloads remain reusable; manual
+  runtimes and compatible removal of older owned payloads are retained.
+- Add regressions for the October 25 sequence and exact runtime selection/reuse.
+  Application version is 2.3.0; engine revision is `3.24.2-manager.8`; profiles
+  remain format 7. See TEST_REPORT.md for checks actually executed and outstanding
+  Windows/live acceptance, and docs/ESTABLISHED_SESSION_EXPIRY_FIX.md for evidence.
+
+
+## 2.2.0 - 2026-10-18 - expired restart-token recovery
+
+- Recognize the explicit Gateway restart-token expiry message in displayed labels
+  and noneditable HTML text controls, including the JTextPane used by Gateway 10.50.1e.
+- Request one existing cold restart only for a logged-out Gateway autorestart;
+  cancel queued recovery after authentication progress, provider replacement,
+  dialog dismissal or shutdown. Fresh starts cannot enter this recovery loop.
+- Report the reason through a generation-checked engine event. Preserve normal
+  login/2FA waits, the invalid-twsInfo handler, schedules and pinned runtimes.
+- Keep warm token restart support and the existing Windows launcher paths. The new
+  recovery only handles the explicit expired-token case during Gateway autorestart.
+- Retain JBR 25.0.4-b508.27, the existing JavaFX configuration, and profile format 7.
+  Upgrading a working 2.1.0 installation does not require runtime reinstallation.
+- Add focused extraction, lifecycle, process-isolated cold-restart and GUI tests.
+  Engine revision is 3.24.2-manager.7. See TEST_REPORT.md and
+  docs/EXPIRED_SESSION_TOKEN_FIX.md for executed checks and remaining gates.
+- Document restart modes and the compatible 2.1.0-to-2.2.0 upgrade procedure.
+
+
 ## 2.1.0 - Java 25, managed headless workaround, profile copy and TWS
 
 - Move Manager bootstrap/native runtime to Microsoft OpenJDK 25 without replacing

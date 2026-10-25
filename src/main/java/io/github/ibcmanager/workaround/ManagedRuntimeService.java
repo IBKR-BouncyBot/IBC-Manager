@@ -35,8 +35,8 @@ import java.util.function.Consumer;
 
 /** Per-installation, reference-counted and journalled JBR/JavaFX setup. No system Java is replaced. */
 public final class ManagedRuntimeService {
-    public static final String CONSENT = "Install JBR 25.0.4-b508.27 and JavaFX for RDP startup?\n\n"
-            + "On Save, Manager downloads this pinned JBR build and JavaFX 25, backs up and updates this installation's "
+    public static final String CONSENT = "Install JBR 25.0.4-b508.27 and JavaFX 25.0.4 for RDP startup?\n\n"
+            + "On Save, Manager downloads these pinned JBR and JavaFX versions, backs up and updates this installation's "
             + ".vmoptions, and selects JBR. Stop all profiles using it first.\n\n"
             + "Unavailable checksum or runtime checks are skipped with a warning; files are then not fully verified. "
             + "Detected corruption and unsafe downloads still stop setup.\n\n"
@@ -141,6 +141,9 @@ public final class ManagedRuntimeService {
                     RuntimeBundleInstaller.Installed version = installer.install(payload, progress, cancelled);
                     if (!RuntimeCatalog.JBR_VERSION.equals(version.jbrVersion())) {
                         throw new IOException("Installer did not provide pinned JBR " + RuntimeCatalog.JBR_VERSION);
+                    }
+                    if (!RuntimeCatalog.JAVAFX_VERSION.equals(version.javafxVersion())) {
+                        throw new IOException("Installer did not provide pinned JavaFX " + RuntimeCatalog.JAVAFX_VERSION);
                     }
                     write(stage.resolve(HASHES), payloadManifest(payload));
                     write(stage.resolve(ORIGINAL), beforeOptions);
@@ -353,8 +356,10 @@ public final class ManagedRuntimeService {
         return options.getParent().resolve(".ibc-manager-jbr25-" + name);
     }
     private static void requirePinned(Properties state) throws IOException {
-        if (!RuntimeCatalog.JBR_VERSION.equals(state.getProperty("jbr"))) {
-            throw new IOException("Managed JBR must be " + RuntimeCatalog.JBR_VERSION
+        if (!RuntimeCatalog.JBR_VERSION.equals(state.getProperty("jbr"))
+                || !RuntimeCatalog.JAVAFX_VERSION.equals(state.getProperty("javafx"))) {
+            throw new IOException("Managed runtime must use JBR " + RuntimeCatalog.JBR_VERSION
+                    + " and JavaFX " + RuntimeCatalog.JAVAFX_VERSION
                     + ". Disable and Save the workaround on all profiles sharing this installation, then enable it again. "
                     + "Existing runtime files were not changed.");
         }
@@ -414,6 +419,13 @@ public final class ManagedRuntimeService {
                 throw new IOException("Managed JavaFX installation is missing " + file
                         + ". Stop profiles using this installation. Disable and Save the workaround on all its profiles, "
                         + "then enable and Save it again to install the complete runtime. Do not edit payload hashes.");
+            }
+            try {
+                RuntimeBundleInstaller.requireJavafxModule(directory.resolve("payload/javafx").resolve(file), module);
+            } catch (IOException failure) {
+                throw new IOException("Managed JavaFX validation failed: " + failure.getMessage()
+                        + ". Stop profiles using this installation. Disable and Save the workaround on all its profiles, "
+                        + "then enable and Save it again to install the pinned runtime. Existing runtime files were not changed.", failure);
             }
         }
     }

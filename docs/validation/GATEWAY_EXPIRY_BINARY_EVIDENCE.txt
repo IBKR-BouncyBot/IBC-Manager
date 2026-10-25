@@ -1,0 +1,25 @@
+Gateway 10.50.1e expired-token dialog: static binary verification
+2026-10-18
+
+Archive: user-supplied jars.zip
+SHA-256: 9e2cf87d790dbfc384170f416be1d805d4b69430e4ece173742188cbd0588176
+
+jts4launch-1050.jar SHA-256: e635ccb623a15b025c44effdb37834a42cc1fdded7a1ee3b5860ba5c9d4ed4b8
+  ibgateway/af.class SHA-256: 459c7f3b779c84e7c7200829deace758efadfc738db3c607f02717d21529e819
+  ibgateway/N.class SHA-256: 72ec84f7317992475ea241421493802ef3052426a7d78021b0ee105969c4f950
+  ibgateway/aw.class SHA-256: 3487a4d23d9a6d0897a6070055ac138f55766aae91b055f90fcab9200d57558a
+twslaunch-1050.jar SHA-256: ec776dd692f9b7d81f64ac973e8ee5e70b1fba872f2f2f67bc2399ac51b2ced7
+  twslaunch/jutils/ax.class SHA-256: 5b578d8a9ed18d5477e2d6a25ec586c4646f3f3e5e331baeee65fe97f958b134
+
+Verified bytecode path:
+1. ibgateway.af.a(String, Integer, twslaunch.jauthentication.al, int, AuthDispatcher.AuthProcessState) logs Authorization failed and passes the same failure String into new ibgateway.N. javap lines 288-422; bytecode 102-114 logs, 211-220 captures String.
+2. ibgateway.N.run() obtains localized Gateway_login_error and concatenates it with failure String using template "<prefix>: <message>"; invokes ibgateway.aw.b(String). N.javap lines 20-43, bytecode 18-35; N.verbose.javap BootstrapMethods lines182-185.
+3. Both ji18n/Language.properties in jts4launch-1050.jar and twslaunch/ji18n/LauncherLanguage.properties in twslaunch-1050.jar define Gateway_login_error = Connection to server failed.
+4. ibgateway.aw.b(String), aw.javap lines687-758: bytecode52 constructs javax.swing.JTextPane; 63 constructs HTMLEditorKit; 70 calls JTextPane.setEditorKit; 75-76 sets editable=false; 100-104 passes d(message) into setText; 122-134 embeds pane as JOptionPane message and creates JDialog titled Gateway (title bytecode45-50 when no alternate GW title). Dialog modal true and visible true at139-154.
+5. ibgateway.aw.d(String), aw.javap lines760-786, detects <html> or </html> and invokes jutils.dP.o(String). Inherited method twslaunch.jutils.ax.o(String), ax.javap lines3206-3211, calls l then m. l strips html wrappers and converts <br>/<br/> to newline (3036-3059); m converts newline to <br> and wraps HTML if needed (3061-3106).
+
+Conclusion: noneditable JTextPane containing HTML is the actual Gateway authorization-failure control in the supplied binary. Reading only JLabel text misses the message, consistent with recorded GATEWAY-only extraction. Reading displayed text via JTextComponent.getDocument().getText(...) reaches the message. No launcher.log monitor or Gateway reflection is needed to extract it.
+
+Limitations: static bytecode analysis only. No Gateway process launched, no real top-level dialog observed, no IBKR login attempted, and no production installation changed. This establishes component construction and text flow, not successful live recovery.
+
+Commands: java --module jdk.jdeps/com.sun.tools.javap.Main -classpath <jts4launch-1050.jar>:<twslaunch-1050.jar> -c -p <class>. Verbose option -v -p used for N concat BootstrapMethods.

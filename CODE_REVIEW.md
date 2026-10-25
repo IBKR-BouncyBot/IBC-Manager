@@ -1,4 +1,66 @@
-# IBC Manager 2.1.0 - scoped compatibility and diagnostics review
+# IBC Manager 2.3.0 — established-session expiry and exact runtime pins
+
+Reviewed against the supplied 2.2.0 source. The 25 October diagnostic identifies
+an established Gateway session still marked LOGGED_IN when the explicit expiry
+dialog titled `IBKR Gateway` appeared. Both the old title/state gates and Manager's
+startup-only event gate missed that sequence. A normal daily warm restart had
+succeeded beforehand. The encrypted current application log does not establish
+the proprietary upstream cause; this fix responds to the explicit visible error.
+
+## Implementation boundary
+
+The embedded engine owns exact dialog recognition, login-state eligibility,
+shared Stop/Pause/Restart arbitration, dialog dismissal and bounded shutdown.
+Its bundled Windows launcher owns fresh replacement startup and a per-session
+pending guard. Manager only interprets the new fixed events for recovery/error
+status; the process controller is unchanged. Separately, Manager's workaround
+installer now selects and validates both requested runtime pins.
+
+## Review findings addressed
+
+- Preserve the real LOGGED_IN state and run graceful File / Close on a worker.
+  The EDT only inspects/clicks Swing controls. A continuation handles OK opening
+  another modal; an independent 30-second deadline prevents an indefinite wait.
+- The deadline can halt only its own JVM, with the prepared regular marker still
+  present. Marker loss cancels pending actions, releases ownership and reports
+  failure. Already executed GUI actions cannot be rolled back.
+- Stop/Pause/Restart claims are coordinated before expiry recovery commits.
+  Automatic Re-login is suppressed during the committed shutdown. A later
+  manual Stop retains its existing in-progress response; Force Stop is separate.
+- The dedicated TOKENEXPIRED marker takes priority over saved warm data. The
+  wrapper resets inherited ERRORLEVEL before creating the pending guard, and
+  refuses failed/conflicting markers. It never broadly removes authentication data.
+- TOKENEXPIREDPENDING prevents a failed replacement from reverting to a stale
+  descriptor. Only actual successful engine login removes the matching guard.
+  Existing explicit 2FA/display-timeout retry policies remain separate.
+- Manager revokes stale readiness without inventing a process-exit observation.
+  Failure events remain actionable; invalid-twsInfo precedence, generation and
+  sequence checks, active-login boundaries and explicit resets remain intact.
+- JBR 25.0.4-b508.27 and JavaFX 25.0.4 are fixed selections. Exact JBR build
+  metadata and JavaFX module versions are validated. Matching owned payloads
+  can be reused offline; mismatches use explicit maintenance. Manual runtimes,
+  previous-payload removal, profile format 7 and Manager's bootstrap are retained.
+- No launcher identity spoofing, new trading/API connection, credential bypass,
+  live installation changes or broker logins were performed.
+
+A separate review found no remaining blocking source issue after the marker,
+modal-continuation and exact-build metadata refinements. A canceled or failed
+handler attempt deliberately stays latched for that JVM; manual intervention is
+required instead of rearming on repeated stale notifications.
+
+## Verification and remaining limits
+
+See [TEST_REPORT.md](TEST_REPORT.md) for executed commands, exact case counts,
+unchanged baseline failures and artifact verification. The archived upstream
+hashes and complete Java/resource patch replay were checked. Source review and
+fixtures do not prove real Windows CMD/Swing/RDP/IBKR behavior. Current Windows
+validation and paper-Gateway expiry/2FA acceptance remain required. Earlier 2.2.0
+Windows passing logs are historical evidence, not execution of 2.3.0.
+
+See [incident and implementation references](docs/ESTABLISHED_SESSION_EXPIRY_FIX.md).
+The following review describes the preceding manager.6 changes.
+
+# Historical scoped compatibility and diagnostics review
 
 ## Scope
 

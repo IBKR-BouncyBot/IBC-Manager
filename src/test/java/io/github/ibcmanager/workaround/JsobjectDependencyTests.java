@@ -150,7 +150,7 @@ public final class JsobjectDependencyTests implements TestSuite {
                 "[{\"tag_name\":\"jbr-release-25.0.4b508.27\",\"draft\":false,\"prerelease\":false,\"body\":\"[zip](" + jbr + ")\"}]"));
         network.data(RuntimeCatalog.MAVEN + "javafx-controls/maven-metadata.xml", RuntimeDownloadTests.bytes("<versions><version>25.0.4</version></versions>"));
         byte[] runtime = RuntimeDownloadTests.zip(Map.of("jbr/bin/java.exe", RuntimeDownloadTests.pe(),
-                "jbr/release", RuntimeDownloadTests.bytes("JAVA_VERSION=\"25.0.4\"\nIMPLEMENTOR=\"JetBrains\"\n")));
+                "jbr/release", RuntimeDownloadTests.bytes("JAVA_VERSION=\"25.0.4\"\nIMPLEMENTOR=\"JetBrains s.r.o.\"\nIMPLEMENTOR_VERSION=\"JBR-25.0.4+1-508.27-nomod\"\nJAVA_RUNTIME_VERSION=\"25.0.4+1-b508.27\"\n")));
         network.data(jbr, runtime); network.data(jbr + ".checksum", RuntimeDownloadTests.bytes(RuntimeDownloadTests.hash(runtime, "SHA-512")));
         for (String component : COMPONENTS) {
             String artifact = component.equals("jsobject") ? "jdk-jsobject" : "javafx-" + component;

@@ -301,6 +301,8 @@ public final class BuildProject {
         runJava(List.of("-Djava.awt.headless=false", "-classpath", testClasspath(),
                 "ibcalpha.ibc.EngineGuiSmoke"));
         runJava(List.of("-Djava.awt.headless=false", "-classpath", testClasspath(),
+                "ibcalpha.ibc.ExpiredSessionTokenGuiSmoke"));
+        runJava(List.of("-Djava.awt.headless=false", "-classpath", testClasspath(),
                 "ibcalpha.ibc.SecondFactorRetryGuiSmoke"));
     }
 

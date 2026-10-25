@@ -1,0 +1,41 @@
+0008-established-session-expiry.patch: 7 files; 19671 bytes
+ibcalpha/ibc/EngineEvents.java
+ibcalpha/ibc/ExpiredSessionTokenDialogHandler.java
+ibcalpha/ibc/ExpiredSessionTokenRecovery.java
+ibcalpha/ibc/LoginManager.java
+ibcalpha/ibc/ReloginDialogHandler.java
+ibcalpha/ibc/RestartTask.java
+ibcalpha/ibc/StopTask.java
+
+0003-token-expiry-cold-restart.patch: 1 files; 3172 bytes
+scripts/StartIBC.bat
+
+All 89 archived upstream hashes match; hash manifest unchanged.
+
+Applied Java 0001-manager-integration.patch
+
+Applied Java 0002-second-factor-deadline.patch
+
+Applied Java 0003-returned-login-retry.patch
+
+Applied Java 0004-headless-command-dispatch.patch
+
+Applied Java 0005-tws-restoration.patch
+
+Applied Java 0006-invalid-twsinfo.patch
+
+Applied Java 0007-expired-session-token.patch
+
+Applied Java 0008-established-session-expiry.patch
+
+All 91 maintained Java files reproduced byte-for-byte.
+
+Applied resource 0001-capture-stderr.patch
+
+Applied resource 0002-preserve-full-vmoptions.patch
+
+Applied resource 0003-token-expiry-cold-restart.patch
+
+Both maintained Windows resources reproduced byte-for-byte after CRLF restoration.
+
+Production source/resources were not modified during patch generation or replay.

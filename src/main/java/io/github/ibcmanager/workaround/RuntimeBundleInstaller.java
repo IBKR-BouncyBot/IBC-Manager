@@ -41,10 +41,12 @@ public final class RuntimeBundleInstaller {
             throw new IOException("The managed JBR/JavaFX workaround currently requires Windows x64");
         }
         requireNotCancelled(cancelled);
-        progress.accept("Preparing pinned JBR 25.0.4-b508.27 and released JavaFX 25 (Windows x64)...");
+        progress.accept("Preparing pinned JBR 25.0.4-b508.27 and JavaFX 25.0.4 (Windows x64)...");
         RuntimeCatalog.Selection selected = new RuntimeCatalog(downloads).resolve();
         progress.accept("Downloading and verifying JBR " + selected.jbrVersion() + "...");
-        StringBuilder provenance = new StringBuilder("Publisher artifacts selected on explicit user request.\n");
+        StringBuilder provenance = new StringBuilder("Publisher artifacts selected on explicit user request.\n")
+                .append("Pinned compatibility versions: JBR ").append(RuntimeCatalog.JBR_VERSION)
+                .append("; JavaFX ").append(RuntimeCatalog.JAVAFX_VERSION).append("\n");
         Path zip = stage.resolve("runtime.zip");
         Verification jbrVerification = checksum(URI.create(selected.jbrZip() + ".checksum"), "SHA-512", cancelled);
         int uncheckedArtifacts = jbrVerification.published().isEmpty() ? 1 : 0;
@@ -66,12 +68,20 @@ public final class RuntimeBundleInstaller {
         if (!Pattern.compile("(?m)^JAVA_VERSION=\"25\\.0\\.4\"\r?$").matcher(release).find() || !release.contains("JetBrains")) {
             throw new IOException("Downloaded runtime is not the pinned JetBrains Java 25.0.4 build");
         }
-        var buildFields = Pattern.compile("(?m)^(?:JAVA_RUNTIME_VERSION|IMPLEMENTOR_VERSION)=\"([^\"]+)\"\\r?$").matcher(release);
+        var buildFields = Pattern.compile("(?m)^(JAVA_RUNTIME_VERSION|IMPLEMENTOR_VERSION)=(.*)$").matcher(release);
+        boolean foundBuildIdentity = false;
         while (buildFields.find()) {
-            var build = Pattern.compile("(?:^|-)b([0-9]+\\.[0-9]+)(?:$|[^0-9.])").matcher(buildFields.group(1));
-            if (build.find() && !build.group(1).equals("508.27")) {
-                throw new IOException("Downloaded runtime build differs from pinned JBR 25.0.4-b508.27");
+            String expected = buildFields.group(1).equals("JAVA_RUNTIME_VERSION")
+                    ? "\"25\\.0\\.4\\+1-b508\\.27\""
+                    : "\"JBR-25\\.0\\.4\\+1-b?508\\.27(?:-nomod)?\"";
+            if (!buildFields.group(2).matches(expected)) {
+                throw new IOException("Downloaded runtime identity does not match pinned JBR " + RuntimeCatalog.JBR_VERSION
+                        + ": " + buildFields.group(1));
             }
+            foundBuildIdentity = true;
+        }
+        if (!foundBuildIdentity) {
+            throw new IOException("Downloaded runtime has no build identity for pinned JBR " + RuntimeCatalog.JBR_VERSION);
         }
         requireWindowsX64(stage.resolve("jbr/bin/java.exe"));
         Path javafx = stage.resolve("javafx"); Files.createDirectory(javafx);
@@ -83,25 +93,7 @@ public final class RuntimeBundleInstaller {
             if (verification.published().isEmpty()) uncheckedArtifacts++;
             download(URI.create(base), verification, jar, progress, cancelled);
             recordProvenance(provenance, URI.create(base), verification, jar);
-            try (JarFile archive = new JarFile(jar.toFile())) {
-                if (archive.getEntry("module-info.class") == null) throw new IOException("JavaFX artifact has no module descriptor: " + module);
-                // Inspect the downloaded descriptor rather than assuming a filename proves
-                // that the module exists. This also rejects Maven's unclassified Empty JAR.
-                try (var input = archive.getInputStream(archive.getEntry("module-info.class"))) {
-                    java.lang.module.ModuleDescriptor descriptor = java.lang.module.ModuleDescriptor.read(input);
-                    if (!descriptor.name().equals(RuntimeCatalog.moduleName(module))
-                            || !descriptor.rawVersion().orElse("").matches("25(?:[.+].*)?")) {
-                        throw new IOException("Wrong JavaFX module identity/version: " + module);
-                    }
-                } catch (java.lang.module.InvalidModuleDescriptorException ex) {
-                    throw new IOException("Invalid JavaFX module descriptor: " + module, ex);
-                }
-                // Native binaries remain in the vendor's module JAR and are loaded by JavaFX.
-                String nativeName = switch (module) { case "graphics" -> "glass.dll"; case "media" -> "jfxmedia.dll"; case "web" -> "jfxwebkit.dll"; default -> null; };
-                if (nativeName != null && archive.stream().noneMatch(e -> e.getName().equals(nativeName) || e.getName().endsWith("/" + nativeName))) {
-                    throw new IOException("JavaFX Windows native library is missing: " + nativeName);
-                }
-            }
+            requireJavafxModule(jar, module);
         }
         boolean runtimeVerified = probeRuntime(stage.resolve("jbr/bin/java.exe"), javafx,
                 provenance, progress, cancelled);
@@ -114,6 +106,29 @@ public final class RuntimeBundleInstaller {
         Files.writeString(stage.resolve("download-provenance.txt"), provenance.toString(), StandardCharsets.UTF_8);
         return new Installed(selected.jbrVersion(), selected.javafxVersion());
     }
+    /** Check actual module identity for both downloaded and already-owned payloads. */
+    static void requireJavafxModule(Path jar, String module) throws IOException {
+        try (JarFile archive = new JarFile(jar.toFile())) {
+            if (archive.getEntry("module-info.class") == null) throw new IOException("JavaFX artifact has no module descriptor: " + module);
+            // Inspect the downloaded descriptor rather than assuming a filename proves
+            // that the module exists. This also rejects Maven's unclassified Empty JAR.
+            try (var input = archive.getInputStream(archive.getEntry("module-info.class"))) {
+                java.lang.module.ModuleDescriptor descriptor = java.lang.module.ModuleDescriptor.read(input);
+                if (!descriptor.name().equals(RuntimeCatalog.moduleName(module))
+                        || !RuntimeCatalog.JAVAFX_VERSION.equals(descriptor.rawVersion().orElse(""))) {
+                    throw new IOException("Wrong JavaFX module identity/version: " + module + "; expected " + RuntimeCatalog.JAVAFX_VERSION);
+                }
+            } catch (java.lang.module.InvalidModuleDescriptorException ex) {
+                throw new IOException("Invalid JavaFX module descriptor: " + module, ex);
+            }
+            // Native binaries remain in the vendor's module JAR and are loaded by JavaFX.
+            String nativeName = switch (module) { case "graphics" -> "glass.dll"; case "media" -> "jfxmedia.dll"; case "web" -> "jfxwebkit.dll"; default -> null; };
+            if (nativeName != null && archive.stream().noneMatch(e -> e.getName().equals(nativeName) || e.getName().endsWith("/" + nativeName))) {
+                throw new IOException("JavaFX Windows native library is missing: " + nativeName);
+            }
+        }
+    }
+
     /** The inventory subprocess is a best-effort setup check, not a required application launch. */
     private boolean probeRuntime(Path executable, Path javafx, StringBuilder provenance,
             Consumer<String> progress, BooleanSupplier cancelled) throws IOException {
@@ -164,11 +179,11 @@ public final class RuntimeBundleInstaller {
         // an unavailable check. Keep this proven compatibility failure blocking.
         for (String module : RuntimeCatalog.FX_MODULES) {
             if (!Pattern.compile("(?m)^" + Pattern.quote(RuntimeCatalog.moduleName(module))
-                    + "@25(?:[.+\\s]|$)").matcher(inventory).find()) {
-                throw new IOException("JavaFX 25 module could not be resolved: " + module);
+                    + "@" + Pattern.quote(RuntimeCatalog.JAVAFX_VERSION) + "(?:[ \\t]+[^\\r\\n]+)?[ \\t]*$").matcher(inventory).find()) {
+                throw new IOException("Pinned JavaFX " + RuntimeCatalog.JAVAFX_VERSION + " module could not be resolved: " + module);
             }
         }
-        provenance.append("Runtime compatibility verification PASSED: all eight OpenJFX 25 modules resolved (including jdk.jsobject).\n");
+        provenance.append("Runtime compatibility verification PASSED: all eight OpenJFX 25.0.4 modules resolved (including jdk.jsobject).\n");
         return true;
     }
 

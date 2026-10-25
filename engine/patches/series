@@ -4,3 +4,5 @@
 0004-headless-command-dispatch.patch
 0005-tws-restoration.patch
 0006-invalid-twsinfo.patch
+0007-expired-session-token.patch
+0008-established-session-expiry.patch

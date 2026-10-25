@@ -1,4 +1,4 @@
-# User guide - IBC Manager 2.1.0
+# User guide - IBC Manager 2.3.0
 
 Use the root README for installation, profile creation and Windows packaging.
 Manager uses Microsoft OpenJDK 25. The optional JetBrains runtime is a separate
@@ -36,7 +36,8 @@ and enter a password when required. Cancelling the copy editor saves nothing.
 
 ## Managed headless workaround
 
-The checkbox below IBC Java override explains the JBR 25/JavaFX 25 download and
+The checkbox below IBC Java override explains the pinned JBR 25.0.4-b508.27 /
+JavaFX 25.0.4 download and
 asks permission. All known sessions using the installation must be stopped. Save
 performs setup; Cancel makes no change. A progress window permits cooperative
 cancellation before the short commit phase. Unknown or conflicting files are
@@ -46,7 +47,9 @@ Deselect, confirm and Save to restore the previous override and module options.
 Shared runtime files remain until the last registered profile releases them.
 Manual Java/JavaFX installations are never deleted. Disable and save before
 changing the application, installation root or version, or deleting the profile.
-See [managed runtime details](MANAGED_RUNTIME.md) for ownership and recovery rules.
+A complete owned payload matching both exact pins and its recorded hashes is
+reused. A mismatched managed version requires explicit removal and reinstallation;
+it is not silently replaced. See [managed runtime details](MANAGED_RUNTIME.md).
 
 The helper does not change Windows locking, RDP configuration or display drivers.
 Verify a scheduled restart while RDP is disconnected and Windows remains locked;
@@ -58,6 +61,22 @@ surviving disconnection is not that test.
 Start, Stop, Restart, Pause and Force Stop retain confirmation dialogs. Normal
 Stop does not silently force termination. Restart performs a controlled Stop and
 fresh Start, not a persistent daily-schedule edit. Start resumes a paused profile.
+
+Warm restarts remain supported through the existing token-based launcher path.
+Version 2.3.0 handles the explicit expired-token message both during warm-restart
+login and during reconnect after completed login. It requests one cold restart and
+shows the recovery reason. Normal login/2FA waits remain protected; fresh
+authentication can require IBKR approval. A failed replacement cannot fall back to
+stale warm authentication while its same-session recovery guard remains pending;
+successful login clears that guard. Existing explicit 2FA/display-timeout retries
+remain separate and continue with fresh authentication.
+
+A Stop or Pause already claimed before expiry recovery prevents that recovery.
+After recovery commits, a later Stop retains the existing stop-in-progress behavior;
+Force Stop remains an explicit separate action. If a claimed recovery is canceled
+or cannot be prepared, the handler does not rearm within that engine JVM: manual
+intervention is required. See
+[restart modes](RESTART_MODES.md) for each mode and its limits.
 
 Green means a verified owned local API listener, not a verified bot/account
 session. Specific errors remain visible in Details and Logs. Two-factor approval

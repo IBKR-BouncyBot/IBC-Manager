@@ -62,10 +62,12 @@ public final class UnavailableChecksumTests implements TestSuite {
         for (String mode : List.of("tls-header", "tls-body", "tls-read", "tls-nested", "cancel-header",
                 "cancel-checksum", "cancel-warning", "cancel-download", "cancel-validation", "empty-checksum",
                 "oversize-checksum", "malformed-checksum", "mismatched-checksum", "changed-target",
-                "unsafe-host", "insecure-redirect", "redirect-loop", "invalid-status", "metadata-failure")) {
+                "unsafe-host", "insecure-redirect", "redirect-loop", "invalid-status")) {
             cases.add(new NamedTest("checksum continuation still rejects " + mode,
                     () -> scenario(mode, false, 0, mode.equals("cancel-validation") ? 1 : 0)));
         }
+        cases.add(new NamedTest("unavailable catalogue metadata cannot change pinned installation",
+                () -> scenario("metadata-failure", true, 9, 1)));
         cases.add(new NamedTest("mixed unavailable and published checksums retain exact per-artifact provenance",
                 () -> scenario("mixed", true, 4, 1)));
         cases.add(new NamedTest("published checksum mismatch remains fatal beside other skipped checksums",
@@ -117,7 +119,7 @@ public final class UnavailableChecksumTests implements TestSuite {
                 case "jar-404" -> n.routes.get(artifact("base")).status = 404;
                 case "zip-404" -> n.routes.get(CDN + FILE).status = 404;
                 case "jar-transfer" -> n.routes.get(artifact("base")).bodyFailure = true;
-                case "native-missing" -> n.data(artifact("graphics"), RuntimeDownloadTests.zip(Map.of("module-info.class", JavafxModuleFixture.descriptor("graphics", "25.0.2"))));
+                case "native-missing" -> n.data(artifact("graphics"), RuntimeDownloadTests.zip(Map.of("module-info.class", JavafxModuleFixture.descriptor("graphics", "25.0.4"))));
                 case "descriptor-missing" -> n.data(artifact("base"), RuntimeDownloadTests.zip(Map.of("other", new byte[] {1})));
                 case "pe-invalid" -> n.data(CDN + FILE, runtime(new byte[] {0}, release("25")));
                 case "release-invalid" -> n.data(CDN + FILE, runtime(RuntimeDownloadTests.pe(), release("21")));
@@ -160,7 +162,7 @@ public final class UnavailableChecksumTests implements TestSuite {
                 Assertions.equals("--list-modules", cmd.get(cmd.size() - 1), "compatibility probe only; no Gateway login");
                 String modules = RuntimeCatalog.FX_MODULES.stream()
                         .filter(m -> !mode.equals("module-missing") || !m.equals("web"))
-                        .map(m -> RuntimeCatalog.moduleName(m) + "@" + (mode.equals("module-wrong") ? "21" : "25.0.2") + "\n")
+                        .map(m -> RuntimeCatalog.moduleName(m) + "@" + (mode.equals("module-wrong") ? "21" : "25.0.4") + "\n")
                         .collect(java.util.stream.Collectors.joining());
                 return new CommandResult(mode.equals("runtime-invalid") ? 1 : 0, modules, "test probe", mode.equals("runtime-timeout"));
             });
@@ -201,6 +203,7 @@ public final class UnavailableChecksumTests implements TestSuite {
                 Assertions.equals(before, repo.loadAll().profiles().get(0), "failed setup does not change profile");
                 Assertions.isFalse(Files.exists(ManagedRuntimeService.directory(options)), "failed activation is rolled back");
             }
+            Assertions.isFalse(n.requested().stream().anyMatch(u -> u.getPath().endsWith("maven-metadata.xml")), "pinned versions need no catalogue request");
             Assertions.equals(expectedExecutions, executions.get(), "invalid transfer/content cannot reach runtime validation");
             Assertions.equals(original, Files.readString(options), "options restored or untouched");
             Assertions.equals("keep", Files.readString(manual.resolve("keep.txt")), "manual files preserved");
@@ -241,19 +244,19 @@ public final class UnavailableChecksumTests implements TestSuite {
     private static String releaseRecord(String version, String build, String body) {
         return "{\"tag_name\":\"jbr-release-" + version + "b" + build + "\",\"draft\":false,\"prerelease\":false,\"body\":\"" + body + "\"}";
     }
-    private static String artifact(String module) { return RuntimeCatalog.MAVEN + RuntimeCatalog.artifactId(module) + "/25.0.2/" + RuntimeCatalog.artifactId(module) + "-25.0.2-win.jar"; }
-    private static byte[] release(String version) { return RuntimeDownloadTests.bytes("JAVA_VERSION=\"" + version + "\"\nIMPLEMENTOR=\"JetBrains s.r.o.\"\n"); }
+    private static String artifact(String module) { return RuntimeCatalog.MAVEN + RuntimeCatalog.artifactId(module) + "/25.0.4/" + RuntimeCatalog.artifactId(module) + "-25.0.4-win.jar"; }
+    private static byte[] release(String version) { return RuntimeDownloadTests.bytes("JAVA_VERSION=\"" + version + "\"\nIMPLEMENTOR=\"JetBrains s.r.o.\"\nIMPLEMENTOR_VERSION=\"JBR-25.0.4+1-508.27-nomod\"\nJAVA_RUNTIME_VERSION=\"25.0.4+1-b508.27\"\n"); }
     private static byte[] runtime(byte[] executable, byte[] metadata) throws IOException { return RuntimeDownloadTests.zip(Map.of("jbr/bin/java.exe", executable, "jbr/release", metadata)); }
     private static int occurrences(String text, String token) { return (text.length() - text.replace(token, "").length()) / token.length(); }
     private static Network network() throws Exception {
         Network n = new Network();
         n.data(API, RuntimeDownloadTests.bytes("[" + releaseRecord("25.0.4", "508.27", ORIGIN + FILE) + "]"));
-        n.data(RuntimeCatalog.MAVEN + "javafx-controls/maven-metadata.xml", RuntimeDownloadTests.bytes("<versions><version>25.0.2</version></versions>"));
+        n.data(RuntimeCatalog.MAVEN + "javafx-controls/maven-metadata.xml", RuntimeDownloadTests.bytes("<versions><version>25.0.4</version></versions>"));
         byte[] zip = runtime(RuntimeDownloadTests.pe(), release("25.0.4"));
         n.redirect(ORIGIN + FILE, 302, CDN + FILE); n.redirect(ORIGIN + FILE + ".checksum", 302, JBR_HASH);
         n.data(CDN + FILE, zip); n.data(JBR_HASH, RuntimeDownloadTests.bytes(RuntimeDownloadTests.hash(zip, "SHA-512")));
         for (String module : RuntimeCatalog.FX_MODULES) {
-            Map<String, byte[]> entries = new LinkedHashMap<>(); entries.put("module-info.class", JavafxModuleFixture.descriptor(module, "25.0.2"));
+            Map<String, byte[]> entries = new LinkedHashMap<>(); entries.put("module-info.class", JavafxModuleFixture.descriptor(module, "25.0.4"));
             String nativeName = switch (module) { case "graphics" -> "glass.dll"; case "media" -> "jfxmedia.dll"; case "web" -> "jfxwebkit.dll"; default -> null; };
             if (nativeName != null) entries.put(nativeName, RuntimeDownloadTests.pe());
             byte[] jar = RuntimeDownloadTests.zip(entries); n.data(artifact(module), jar);

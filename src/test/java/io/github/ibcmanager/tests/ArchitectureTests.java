@@ -518,11 +518,11 @@ public final class ArchitectureTests implements TestSuite {
         int releaseArchive = canonical.indexOf("windows-release-zip");
         Assertions.isTrue(releaseArchive > exePackaging,
                 "the Windows release ZIP must be assembled only after EXE installer creation");
-        Assertions.contains(canonical, "IBC_Manager_2.1.0_Release_windows.zip",
+        Assertions.contains(canonical, "IBC_Manager_2.3.0_Release_windows.zip",
                 "Windows release ZIP must use the requested versioned filename");
         Assertions.contains(canonical, "--main-class io.github.ibcmanager.app.IbcManagerApp",
                 "packaging must use the production entry point");
-        Assertions.contains(canonical, "IBC-Manager-2.1.0.jar",
+        Assertions.contains(canonical, "IBC-Manager-2.3.0.jar",
                 "packaging must use the versioned release JAR");
         String driver = Files.readString(
                 ROOT.resolve("src/build/java/io/github/ibcmanager/build/BuildProject.java"),
